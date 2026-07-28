@@ -1,24 +1,34 @@
-import React, { useState } from 'react';
-import { Article } from '../types';
+import React, { useEffect, useState } from 'react';
+import { Article, ReferenceOption } from '../types';
 
 interface NewArticleModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (article: Omit<Article, 'id'>) => Promise<void>;
+  categories: ReferenceOption[];
+  brands: ReferenceOption[];
+  units: ReferenceOption[];
 }
 
-export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClose, onSave }) => {
+export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClose, onSave, categories, brands, units }) => {
   const [code, setCode] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState<'pneus' | 'camaras' | 'servicos' | 'acessorios'>('pneus');
-  const [brand, setBrand] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [brandId, setBrandId] = useState('');
+  const [unitId, setUnitId] = useState('');
   const [size, setSize] = useState('');
-  const [stock, setStock] = useState<number>(10);
-  const [minStock, setMinStock] = useState<number>(5);
-  const [costPrice, setCostPrice] = useState<number>(1000);
-  const [profitMargin, setProfitMargin] = useState<number>(25);
+  const [minStock, setMinStock] = useState<number>(0);
+  const [costPrice, setCostPrice] = useState<number>(0);
+  const [profitMargin, setProfitMargin] = useState<number>(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setCategoryId(categories[0]?.id ?? '');
+    setBrandId('');
+    setUnitId(units[0]?.id ?? '');
+  }, [isOpen, categories, units]);
 
   if (!isOpen) return null;
 
@@ -35,14 +45,19 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
     setSaving(true);
     setError('');
     try {
+      const selectedCategory = categories.find((item) => item.id === categoryId);
+      const normalizedCategory = selectedCategory?.name.toLowerCase() ?? '';
       await onSave({
         code: code.toUpperCase(),
         description,
-        category,
-        brand,
+        category: normalizedCategory.includes('câmara') ? 'camaras' : normalizedCategory.includes('servi') ? 'servicos' : normalizedCategory.includes('acess') ? 'acessorios' : 'pneus',
+        categoryId,
+        brandId: brandId || undefined,
+        unitId,
+        brand: brands.find((item) => item.id === brandId)?.name,
         size,
-        unit: category === 'servicos' ? 'SER' : 'UN',
-        stock: Number(stock),
+        unit: units.find((item) => item.id === unitId)?.code ?? '',
+        stock: 0,
         minStock: Number(minStock),
         costPrice: Number(costPrice),
         profitMargin: Number(profitMargin),
@@ -76,7 +91,7 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
               {error}
             </p>
           )}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-xs font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase mb-1">
                 Código do Artigo *
@@ -96,14 +111,11 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
                 Categoria
               </label>
               <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value as any)}
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
                 className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white rounded p-2 text-sm focus-ring"
               >
-                <option value="pneus">Pneus Ligeiros / Pesados</option>
-                <option value="camaras">Câmaras de Ar</option>
-                <option value="servicos">Serviços (Montagem / Alinhamento)</option>
-                <option value="acessorios">Acessórios / Jantes</option>
+                {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
             </div>
           </div>
@@ -122,18 +134,12 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-xs font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase mb-1">
                 Marca / Fabricante
               </label>
-              <input
-                type="text"
-                value={brand}
-                onChange={(e) => setBrand(e.target.value)}
-                placeholder="Ex: Michelin, Bridgestone, Pirelli"
-                className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white rounded p-2 text-sm focus-ring"
-              />
+              <select value={brandId} onChange={(event) => setBrandId(event.target.value)} className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white rounded p-2 text-sm focus-ring"><option value="">Sem marca</option>{brands.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
             </div>
             <div>
               <label className="block text-xs font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase mb-1">
@@ -149,17 +155,8 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
             </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-3 bg-[#f3f4f5] dark:bg-[#282c2e] p-3 rounded border border-[#c3c6d1] dark:border-[#43474f]">
-            <div>
-              <label className="block text-[11px] font-bold text-[#43474f] dark:text-[#c3c6d1] mb-1">Stock Inicial</label>
-              <input
-                type="number"
-                min="0"
-                value={stock}
-                onChange={(e) => setStock(Number(e.target.value))}
-                className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-sm font-mono"
-              />
-            </div>
+          <div className="grid grid-cols-1 gap-3 bg-[#f3f4f5] dark:bg-[#282c2e] p-3 rounded border border-[#c3c6d1] dark:border-[#43474f] sm:grid-cols-2 lg:grid-cols-4">
+            <div><label className="block text-[11px] font-bold text-[#43474f] dark:text-[#c3c6d1] mb-1">Unidade</label><select required value={unitId} onChange={(event) => setUnitId(event.target.value)} className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-sm">{units.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
             <div>
               <label className="block text-[11px] font-bold text-[#43474f] dark:text-[#c3c6d1] mb-1">Stock Mínimo</label>
               <input

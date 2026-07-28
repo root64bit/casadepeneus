@@ -27,14 +27,10 @@ import {
   SaleInvoice,
   StockMovement,
   UserSummary,
+  UserContext,
+  DashboardMetrics,
+  ReferenceOption,
 } from './types';
-import {
-  INITIAL_ARTICLES,
-  INITIAL_SALES,
-  INITIAL_CLIENTS,
-  INITIAL_SUPPLIERS,
-  INITIAL_STOCK_MOVEMENTS
-} from './data/mockData';
 import { supabase } from './lib/supabase';
 import {
   createArticle,
@@ -49,91 +45,54 @@ import {
 } from './lib/appData';
 import type { PartyInput } from './lib/appData';
 
-const useMockData = import.meta.env.VITE_USE_MOCK_DATA === 'true';
-const demoPermissions = [
-  'products.view',
-  'products.view_cost',
-  'products.create',
-  'stock.view',
-  'stock.entry.confirm',
-  'stock.exit.confirm',
-  'sales.create',
-  'sales.confirm',
-  'customers.view',
-  'customers.create',
-  'suppliers.view',
-  'suppliers.create',
-  'payments.view',
-  'payments.pay_supplier',
-  'payments.allocate_supplier',
-  'documents.view',
-  'purchases.invoice.create',
-  'purchases.invoice.confirm',
-  'customers.view_balance',
-  'suppliers.view_balance',
-  'settings.manage',
-  'reports.sales',
-  'reports.stock',
-  'reports.receivables',
-  'reports.payables',
-  'reports.tax',
-  'reports.export',
-];
-const demoCompany: CompanyProfile = {
-  name: 'Casa de Pneus — Demonstração',
-  taxNumber: '',
-  address: '',
-  city: '',
-  country: 'Moçambique',
-  phone: '',
-  email: '',
-  currency: 'MZN',
+const emptyCompany: CompanyProfile = {
+  name: 'Casa de Pneus', taxNumber: '', address: '', city: '',
+  country: '', phone: '', email: '', currency: 'MZN',
+};
+const pathToTab = () => {
+  const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
+  return !path || path === 'login' ? 'dashboard' : path;
+};
+const tabAccess: Record<string, string[]> = {
+  dashboard: ['dashboard.read', 'products.view'],
+  inventory: ['products.read', 'products.view', 'stock.read', 'stock.view'],
+  sales: ['sales.create'],
+  purchases: ['purchases.read', 'purchases.invoice.create'],
+  movements: ['stock.read', 'stock.view', 'stock.direct_entry', 'stock.direct_exit'],
+  entities: ['customers.read', 'customers.view', 'suppliers.read', 'suppliers.view'],
+  documents: ['documents.view', 'sales.read', 'purchases.read'],
+  accounts: ['payments.read', 'payments.view', 'accounts.read'],
+  reports: ['reports.read', 'reports.sales', 'reports.stock'],
+  administration: ['settings.manage', 'users.manage'],
 };
 
 function App() {
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [activeTab, setActiveTab] = useState<string>(pathToTab);
   const [globalSearch, setGlobalSearch] = useState<string>('');
 
   const [session, setSession] = useState<Session | null>(null);
-  const [checkingSession, setCheckingSession] = useState(!useMockData);
-  const [dataLoading, setDataLoading] = useState(!useMockData);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState('');
-  const [articles, setArticles] = useState<Article[]>(useMockData ? INITIAL_ARTICLES : []);
-  const [company, setCompany] = useState<CompanyProfile>(demoCompany);
-  const [permissions, setPermissions] = useState<string[]>(
-    useMockData ? demoPermissions : [],
-  );
-  const [sales, setSales] = useState<SaleInvoice[]>(useMockData ? INITIAL_SALES : []);
-  const [clients, setClients] = useState(useMockData ? INITIAL_CLIENTS : []);
-  const [suppliers, setSuppliers] = useState(useMockData ? INITIAL_SUPPLIERS : []);
-  const [movements, setMovements] = useState<StockMovement[]>(
-    useMockData ? INITIAL_STOCK_MOVEMENTS : [],
-  );
-  const [documents, setDocuments] = useState<DocumentRecord[]>(
-    useMockData
-      ? INITIAL_SALES.map((sale) => ({
-          id: sale.id,
-          displayNumber: sale.docNumber,
-          date: sale.date,
-          dueDate: sale.date,
-          typeCode: 'CUSTOMER_INVOICE',
-          typeName: 'Factura',
-          partyType: 'CUSTOMER' as const,
-          partyId: sale.clientId ?? '',
-          partyName: sale.clientName,
-          status: sale.status === 'Concluída' ? 'CONFIRMED' : 'PARTIALLY_PAID',
-          netTotal: sale.subtotalBruto - sale.descontoTotal,
-          taxTotal: sale.ivaTotal,
-          grandTotal: sale.totalAmount,
-          paidAmount: sale.paidAmount,
-          outstandingAmount: sale.pendingAmount,
-        }))
-      : [],
-  );
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [company, setCompany] = useState<CompanyProfile>(emptyCompany);
+  const [permissions, setPermissions] = useState<string[]>([]);
+  const [userContext, setUserContext] = useState<UserContext | null>(null);
+  const [dashboardMetrics, setDashboardMetrics] = useState<DashboardMetrics | null>(null);
+  const [sales, setSales] = useState<SaleInvoice[]>([]);
+  const [clients, setClients] = useState<import('./types').Client[]>([]);
+  const [suppliers, setSuppliers] = useState<import('./types').Supplier[]>([]);
+  const [movements, setMovements] = useState<StockMovement[]>([]);
+  const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [ledger, setLedger] = useState<LedgerRecord[]>([]);
   const [users, setUsers] = useState<UserSummary[]>([]);
   const [systemMode, setSystemMode] = useState('MIGRATION');
+  const [paymentTerms, setPaymentTerms] = useState<ReferenceOption[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<ReferenceOption[]>([]);
+  const [productCategories, setProductCategories] = useState<ReferenceOption[]>([]);
+  const [brands, setBrands] = useState<ReferenceOption[]>([]);
+  const [units, setUnits] = useState<ReferenceOption[]>([]);
 
   // Modals
   const [isNewArticleModalOpen, setNewArticleModalOpen] = useState(false);
@@ -148,7 +107,7 @@ function App() {
   const [partyModalType, setPartyModalType] = useState<'customer' | 'supplier' | null>(null);
 
   const refreshData = useCallback(async () => {
-    if (useMockData || !session) return;
+    if (!session) return;
     setDataLoading(true);
     setDataError('');
     try {
@@ -165,15 +124,28 @@ function App() {
       setLedger(data.ledger);
       setUsers(data.users);
       setSystemMode(data.systemMode);
+      setUserContext(data.userContext);
+      setDashboardMetrics(data.dashboardMetrics);
+      setPaymentTerms(data.paymentTerms);
+      setPaymentMethods(data.paymentMethods);
+      setProductCategories(data.productCategories);
+      setBrands(data.brands);
+      setUnits(data.units);
     } catch (error) {
-      setDataError(error instanceof Error ? error.message : 'Falha ao carregar dados.');
+      const message = error instanceof Error ? error.message : String((error as { message?: string })?.message ?? '');
+      if (message.includes('USER_INACTIVE')) {
+        await supabase?.auth.signOut();
+        setDataError('Esta conta está desativada. Contacte o administrador.');
+      } else {
+        setDataError(message || 'Falha ao carregar dados.');
+      }
     } finally {
       setDataLoading(false);
     }
   }, [session]);
 
   useEffect(() => {
-    if (useMockData || !supabase) {
+    if (!supabase) {
       setCheckingSession(false);
       return;
     }
@@ -194,13 +166,26 @@ function App() {
     void refreshData();
   }, [refreshData]);
 
+  useEffect(() => {
+    const onPopState = () => setActiveTab(pathToTab());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
+    if (!userContext || activeTab === 'unauthorized') return;
+    const required = tabAccess[activeTab];
+    if (!required || !required.some((code) => permissions.includes(code))) {
+      void supabase?.rpc('record_access_denied', {
+        p_route: window.location.pathname,
+        p_reason: `Missing permission for ${activeTab}`,
+      });
+      setActiveTab('unauthorized');
+    }
+  }, [activeTab, permissions, userContext]);
+
   // Handlers
   const handleAddArticle = async (article: Omit<Article, 'id'>) => {
-    if (useMockData) {
-      setArticles((current) => [...current, { ...article, id: `art-${Date.now()}` }]);
-      return;
-    }
-
     try {
       await createArticle(article);
       await refreshData();
@@ -211,21 +196,11 @@ function App() {
   };
 
   const handleCompleteSale = async (sale: SaleInvoice): Promise<SaleInvoice> => {
-    if (useMockData) {
-      setSales((current) => [sale, ...current]);
-      if (sale.paymentMethod !== 'Crédito 30 Dias') {
-        setPaymentSale(sale);
-        setPaymentModalAmount(sale.totalAmount);
-        setPaymentModalClient(sale.clientName);
-        setPaymentModalOpen(true);
-      }
-      return sale;
-    }
     if (!sale.clientId) throw new Error('Cliente da venda não identificado.');
 
     const savedSale = await createCustomerSale(sale, sale.clientId);
     await refreshData();
-    if (sale.paymentMethod !== 'Crédito 30 Dias') {
+    if (savedSale.paymentMethodCode) {
       setPaymentSale(savedSale);
       setPaymentModalAmount(savedSale.totalAmount);
       setPaymentModalClient(savedSale.clientName);
@@ -235,24 +210,6 @@ function App() {
   };
 
   const handleAddMovement = async (mov: StockMovement) => {
-    if (useMockData) {
-      setMovements((current) => [mov, ...current]);
-      setArticles((current) =>
-        current.map((article) =>
-          article.code === mov.articleCode
-            ? {
-                ...article,
-                stock:
-                  mov.type === 'entrada'
-                    ? article.stock + mov.quantity
-                    : Math.max(0, article.stock - mov.quantity),
-              }
-            : article,
-        ),
-      );
-      return;
-    }
-
     try {
       await postStockMovement(mov);
       await refreshData();
@@ -263,22 +220,13 @@ function App() {
   };
 
   const handleConfirmPayment = async (
-    method: 'Pronto Pagamento (Numerário)' | 'Transferência Bancária (M-Pesa)',
+    methodCode: string,
     paidAmount: number,
     reference: string,
   ) => {
-    if (useMockData) {
-      setPaymentModalOpen(false);
-      if (paymentSale) {
-        setPrintInvoice({ ...paymentSale, paidAmount, pendingAmount: 0, status: 'Concluída' });
-        setPrintModalOpen(true);
-      }
-      setPaymentSale(null);
-      return;
-    }
     if (!paymentSale) throw new Error('Fatura do pagamento não identificada.');
 
-    await createCustomerPayment(paymentSale, method, paidAmount, reference);
+    await createCustomerPayment(paymentSale, methodCode, paidAmount, reference);
     await refreshData();
     setPaymentModalOpen(false);
     setPrintInvoice({ ...paymentSale, paidAmount, pendingAmount: 0, status: 'Concluída' });
@@ -295,70 +243,12 @@ function App() {
     type: 'customer' | 'supplier',
     input: PartyInput,
   ) => {
-    if (useMockData) {
-      if (type === 'customer') {
-        setClients((current) => [
-          ...current,
-          {
-            id: `test-customer-${Date.now()}`,
-            name: input.name,
-            nuit: input.taxNumber,
-            address: input.address,
-            phone: input.telephone,
-            email: input.email,
-            pendingBalance: 0,
-          },
-        ]);
-      } else {
-        setSuppliers((current) => [
-          ...current,
-          {
-            id: `test-supplier-${Date.now()}`,
-            name: input.name,
-            nuit: input.taxNumber,
-            address: input.address,
-            phone: input.telephone,
-            contactPerson: input.contactPerson ?? '',
-            totalPurchases: 0,
-          },
-        ]);
-      }
-      return;
-    }
-
     if (type === 'customer') await createCustomer(input);
     else await createSupplier(input);
     await refreshData();
   };
 
   const handleCreateSupplierInvoice = async (invoice: import('./types').PurchaseInvoiceInput) => {
-    if (useMockData) {
-      const supplier = suppliers.find((item) => item.id === invoice.supplierId);
-      const net = invoice.items.reduce(
-        (sum, item) => sum + item.quantity * item.unitCost * (1 - item.discountPercent / 100),
-        0,
-      );
-      const tax = net * 0.16;
-      const document: DocumentRecord = {
-        id: `test-purchase-${Date.now()}`,
-        displayNumber: `TEST-COMPRA-${Date.now()}`,
-        date: invoice.date,
-        dueDate: invoice.date,
-        typeCode: 'SUPPLIER_INVOICE',
-        typeName: 'Factura de Fornecedor',
-        partyType: 'SUPPLIER',
-        partyId: invoice.supplierId,
-        partyName: supplier?.name ?? '',
-        status: 'CONFIRMED',
-        netTotal: net,
-        taxTotal: tax,
-        grandTotal: net + tax,
-        paidAmount: 0,
-        outstandingAmount: net + tax,
-      };
-      setDocuments((current) => [document, ...current]);
-      return document;
-    }
     const document = await createSupplierInvoice(invoice);
     await refreshData();
     return document;
@@ -370,18 +260,22 @@ function App() {
     amount: number,
     reference: string,
   ) => {
-    if (useMockData) {
-      setDocuments((current) =>
-        current.map((item) =>
-          item.id === document.id
-            ? { ...item, status: 'PAID', paidAmount: item.grandTotal, outstandingAmount: 0 }
-            : item,
-        ),
-      );
-      return;
-    }
     await createSupplierPayment(document, method, amount, reference);
     await refreshData();
+  };
+
+  const handleUpdateUser = async (user: UserSummary, active: boolean) => {
+    try {
+      const { error } = await supabase!.rpc('admin_update_user_profile', {
+        p_user_id: user.id,
+        p_full_name: user.fullName,
+        p_is_active: active,
+      });
+      if (error) throw new Error(error.message);
+      await refreshData();
+    } catch (cause) {
+      setDataError(cause instanceof Error ? cause.message : 'Falha ao atualizar utilizador.');
+    }
   };
 
   // Global keyboard shortcuts
@@ -439,6 +333,8 @@ function App() {
             articles={articles}
             sales={sales}
             clients={clients}
+            metrics={dashboardMetrics}
+            permissions={permissions}
             setActiveTab={setActiveTab}
             onOpenNewArticleModal={() => setNewArticleModalOpen(true)}
           />
@@ -468,6 +364,9 @@ function App() {
                 || permissions.includes('payments.allocate_customer')
               )
             }
+            operatorName={userContext?.fullName ?? ''}
+            paymentTerms={paymentTerms}
+            paymentMethods={paymentMethods}
           />
         );
       case 'purchases':
@@ -489,6 +388,7 @@ function App() {
             }
             onCreateInvoice={handleCreateSupplierInvoice}
             onPayInvoice={handleSupplierPayment}
+            paymentTerms={paymentTerms}
           />
         );
       case 'movements':
@@ -497,8 +397,10 @@ function App() {
             movements={movements}
             articles={articles}
             onAddMovement={handleAddMovement}
-            canPostEntry={permissions.includes('stock.entry.confirm')}
-            canPostExit={permissions.includes('stock.exit.confirm')}
+            canPostEntry={permissions.includes('stock.direct_entry') || permissions.includes('stock.entry.confirm')}
+            canPostExit={permissions.includes('stock.direct_exit') || permissions.includes('stock.exit.confirm')}
+            warehouses={userContext?.warehouses ?? []}
+            operatorName={userContext?.fullName ?? ''}
           />
         );
       case 'entities':
@@ -515,12 +417,6 @@ function App() {
       case 'reports':
         return (
           <Reports
-            sales={sales}
-            clients={clients}
-            suppliers={suppliers}
-            articles={articles}
-            payments={payments}
-            ledger={ledger}
             permissions={permissions}
           />
         );
@@ -547,10 +443,13 @@ function App() {
             systemMode={systemMode}
             users={users}
             permissions={permissions}
+            onUpdateUser={handleUpdateUser}
           />
         );
       case 'stitch':
         return <StitchConnection />;
+      case 'unauthorized':
+        return <section role="alert" className="mx-auto max-w-xl rounded-xl border border-amber-300 bg-amber-50 p-6 text-amber-950"><h1 className="text-xl font-black">Acesso não autorizado</h1><p className="mt-2 text-sm">O seu perfil não permite abrir esta área. A tentativa foi registada para auditoria.</p><button className="mt-5 rounded bg-primary px-4 py-2 font-bold text-white" onClick={() => { setActiveTab('dashboard'); window.history.replaceState({}, '', '/'); }}>Voltar ao início</button></section>;
       default:
         return null;
     }
@@ -564,17 +463,13 @@ function App() {
         globalSearch={globalSearch}
         setGlobalSearch={setGlobalSearch}
         onTriggerShortcut={handleTriggerShortcut}
-        userLabel={session?.user.email ?? (useMockData ? 'Modo demonstração' : 'Utilizador')}
-        connectionLabel={useMockData ? 'Dados de demonstração' : 'Supabase produção'}
-        onSignOut={
-          useMockData || !supabase
-            ? undefined
-            : () => {
-                void supabase?.auth.signOut();
-              }
-        }
+        userLabel={userContext?.fullName || session?.user.email || 'Utilizador'}
+        roleLabel={userContext?.roles.map((role) => role.name).join(', ')}
+        companyName={company.name}
+        systemMode={systemMode}
+        warehouseLabel={userContext?.warehouses.map((warehouse) => warehouse.name).join(', ')}
+        onSignOut={() => { void supabase?.auth.signOut(); }}
         permissions={permissions}
-        showDeveloperTools={useMockData}
       >
         {dataError && (
           <div role="alert" className="mb-4 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
@@ -598,6 +493,9 @@ function App() {
         isOpen={isNewArticleModalOpen}
         onClose={() => setNewArticleModalOpen(false)}
         onSave={handleAddArticle}
+        categories={productCategories}
+        brands={brands}
+        units={units}
       />
       <PaymentModal
         isOpen={isPaymentModalOpen}
@@ -605,6 +503,7 @@ function App() {
         totalAmount={paymentModalAmount}
         clientName={paymentModalClient}
         onConfirmPayment={handleConfirmPayment}
+        paymentMethods={paymentMethods.filter((method) => method.allowsCustomerReceipt)}
       />
       <PrintInvoiceModal
         isOpen={isPrintModalOpen}
@@ -625,14 +524,18 @@ function App() {
         type={partyModalType}
         onClose={() => setPartyModalType(null)}
         onSave={handleSaveParty}
+        paymentTerms={paymentTerms}
       />
     </>
   );
 
-  if (useMockData) return application;
-
   return (
-    <AuthGate session={session} checking={checkingSession}>
+    <AuthGate
+      session={session}
+      checking={checkingSession}
+      userContext={userContext}
+      onPasswordChanged={refreshData}
+    >
       {application}
     </AuthGate>
   );

@@ -10,6 +10,9 @@ import type {
   Supplier,
   UserSummary,
   PurchaseInvoiceInput,
+  UserContext,
+  DashboardMetrics,
+  ReferenceOption,
 } from '../types';
 import { requireSupabase } from './supabase';
 
@@ -26,11 +29,18 @@ export interface AppData {
   ledger: LedgerRecord[];
   users: UserSummary[];
   systemMode: string;
+  userContext: UserContext;
+  dashboardMetrics: DashboardMetrics;
+  paymentTerms: ReferenceOption[];
+  paymentMethods: ReferenceOption[];
+  productCategories: ReferenceOption[];
+  brands: ReferenceOption[];
+  units: ReferenceOption[];
 }
 
 export async function createArticle(article: Omit<Article, 'id'>): Promise<void> {
   const client = requireSupabase();
-  const { error } = await client.rpc('create_operational_product', {
+  const { error } = await client.rpc('create_operational_product_v2', {
     p_product: {
       code: article.code,
       description: article.description,
@@ -41,6 +51,9 @@ export async function createArticle(article: Omit<Article, 'id'>): Promise<void>
       sale_price_excl: article.sellPrice,
       sale_price_incl: article.sellPriceWithIva,
       notes: article.size ? `Medida: ${article.size}` : null,
+      category_id: article.categoryId,
+      brand_id: article.brandId,
+      unit_id: article.unitId,
     },
   });
   if (error) throw error;
@@ -96,6 +109,7 @@ export async function createSupplier(input: PartyInput): Promise<void> {
 
 export async function postStockMovement(movement: StockMovement): Promise<void> {
   const client = requireSupabase();
+  if (!movement.warehouseId) throw new Error('Selecione o armazém.');
   const articleResult = await client
     .from('products')
     .select('id')
@@ -103,11 +117,15 @@ export async function postStockMovement(movement: StockMovement): Promise<void> 
     .single();
   if (articleResult.error) throw articleResult.error;
 
-  const { error } = await client.rpc('post_operational_stock_movement', {
+  const { error } = await client.rpc('post_operational_stock_movement_v2', {
+    p_warehouse_id: movement.warehouseId,
     p_product_id: articleResult.data.id,
     p_movement_type: movement.type === 'entrada' ? 'direct_entry' : 'direct_exit',
     p_quantity: movement.quantity,
-    p_document_reference: movement.docRef || null,
+    p_reason: movement.reason?.trim(),
+    p_reference: movement.docRef?.trim() || null,
+    p_notes: movement.notes?.trim() || null,
+    p_idempotency_key: crypto.randomUUID(),
   });
   if (error) throw error;
 }
@@ -121,8 +139,7 @@ export async function createCustomerSale(
   const { data, error } = await client.rpc('create_and_confirm_customer_sale', {
     p_customer_id: customerId,
     p_document_date: sale.date,
-    p_payment_term_code:
-      sale.paymentMethod === 'Crédito 30 Dias' ? '30_DIAS' : 'DINHEIRO',
+    p_payment_term_code: sale.paymentTermCode ?? 'DINHEIRO',
     p_items: sale.items.map((item) => ({
       article_id: item.articleId,
       quantity: item.quantity,
@@ -146,13 +163,11 @@ export async function createCustomerSale(
 
 export async function createCustomerPayment(
   sale: SaleInvoice,
-  method: SaleInvoice['paymentMethod'],
+  methodCode: string,
   amount: number,
   reference: string,
 ): Promise<void> {
   if (!sale.clientId) throw new Error('Cliente do pagamento não identificado.');
-  const methodCode =
-    method === 'Pronto Pagamento (Numerário)' ? 'CASH' : 'MPESA';
   const { error } = await requireSupabase().rpc('create_and_confirm_customer_payment', {
     p_customer_id: sale.clientId,
     p_document_id: sale.id,
@@ -238,6 +253,35 @@ const categoryValue = (name: unknown): Article['category'] => {
   return 'pneus';
 };
 
+export interface OperationalReportData {
+  rows: Row[];
+  totalCount: number;
+  totals: Record<string, number>;
+}
+
+export async function loadOperationalReport(
+  report: string,
+  from: string,
+  to: string,
+  limit: number,
+  offset: number,
+): Promise<OperationalReportData> {
+  const { data, error } = await requireSupabase().rpc('get_operational_report', {
+    p_report: report,
+    p_from: from || null,
+    p_to: to || null,
+    p_limit: limit,
+    p_offset: offset,
+  });
+  if (error) throw new Error(error.message);
+  const result = data as Row;
+  return {
+    rows: result.rows ?? [],
+    totalCount: numberValue(result.total_count),
+    totals: result.totals ?? {},
+  };
+}
+
 export async function loadAppData(): Promise<AppData> {
   const client = requireSupabase();
   const companyIdResult = await client.rpc('get_user_company_id');
@@ -245,8 +289,10 @@ export async function loadAppData(): Promise<AppData> {
     throw companyIdResult.error ?? new Error('Empresa do utilizador não definida.');
   }
 
-  const [permissionsResult, modeResult, companyResult, productsResult, balancesResult, customersResult, suppliersResult, documentsResult, movementsResult, paymentsResult, ledgerResult, usersResult] =
+  const [contextResult, metricsResult, permissionsResult, modeResult, companyResult, productsResult, balancesResult, customersResult, suppliersResult, documentsResult, movementsResult, paymentsResult, ledgerResult, usersResult, paymentTermsResult, paymentMethodsResult, categoriesResult, brandsResult, unitsResult] =
     await Promise.all([
+      client.rpc('get_current_user_context'),
+      client.rpc('get_dashboard_metrics'),
       client.rpc('get_user_permissions'),
       client
         .from('system_settings')
@@ -262,26 +308,29 @@ export async function loadAppData(): Promise<AppData> {
         .from('products')
         .select('id,code,description,min_stock,avg_cost,profit_pct,sale_price_excl,sale_price_incl,product_categories(name),brands(name),units_of_measure(abbreviation)')
         .eq('is_active', true)
-        .order('code'),
-      client.from('inventory_balances').select('product_id,quantity'),
+        .order('code')
+        .limit(500),
+      client.from('inventory_balances').select('product_id,quantity').limit(1000),
       client
         .from('customers')
         .select('id,name,tax_number,telephone,email,current_balance,customer_addresses(address_line_1,is_primary)')
         .eq('active', true)
-        .order('name'),
+        .order('name')
+        .limit(500),
       client
         .from('suppliers')
         .select('id,name,tax_number,telephone,contact_person,current_balance,supplier_addresses(address_line_1,is_primary)')
         .eq('active', true)
-        .order('name'),
+        .order('name')
+        .limit(500),
       client
         .from('documents')
-        .select('id,display_number,document_date,due_date,status,subtotal,discount_total,net_total,tax_total,grand_total,amount_paid,outstanding_amount,salesperson_name,customer_id,supplier_id,customers(name,tax_number),suppliers(name,tax_number),document_types(code,name),document_lines(id,product_id,product_code_snapshot,description_snapshot,quantity,unit_price,discount_percentage,tax_rate_snapshot,total_amount)')
+        .select('id,display_number,document_date,due_date,status,subtotal,discount_total,net_total,tax_total,grand_total,amount_paid,outstanding_amount,salesperson_name,customer_id,supplier_id,customers(name,tax_number),suppliers(name,tax_number),payment_terms(code,name),document_types(code,name),document_lines(id,product_id,product_code_snapshot,description_snapshot,quantity,unit_price,discount_percentage,tax_rate_snapshot,total_amount)')
         .order('document_date', { ascending: false })
         .limit(250),
       client
         .from('stock_movements')
-        .select('id,movement_type,legacy_ref,created_at,quantity_in,quantity_out,products(code,description),customers(name),suppliers(name),user_profiles(full_name)')
+        .select('id,movement_type,legacy_ref,created_at,quantity_in,quantity_out,products(code,description),warehouses(id,name),user_profiles(full_name)')
         .order('created_at', { ascending: false })
         .limit(500),
       client
@@ -297,10 +346,28 @@ export async function loadAppData(): Promise<AppData> {
       client
         .from('user_profiles')
         .select('id,full_name,email,is_active,user_roles(roles(name))')
-        .order('full_name'),
+        .order('full_name')
+        .limit(250),
+      client
+        .from('payment_terms')
+        .select('id,code,name,requires_immediate_payment')
+        .eq('active', true)
+        .order('payment_days')
+        .limit(100),
+      client
+        .from('payment_methods')
+        .select('id,code,name,requires_reference,allows_customer_receipt,allows_supplier_payment')
+        .eq('active', true)
+        .order('display_order')
+        .limit(100),
+      client.from('product_categories').select('id,code,name').order('name').limit(250),
+      client.from('brands').select('id,name').order('name').limit(250),
+      client.from('units_of_measure').select('id,name,abbreviation').order('name').limit(100),
     ]);
 
   const failed = [
+    contextResult,
+    metricsResult,
     permissionsResult,
     modeResult,
     companyResult,
@@ -313,9 +380,42 @@ export async function loadAppData(): Promise<AppData> {
     paymentsResult,
     ledgerResult,
     usersResult,
+    paymentTermsResult,
+    paymentMethodsResult,
+    categoriesResult,
+    brandsResult,
+    unitsResult,
   ].find((result) => result.error);
   if (failed?.error) throw failed.error;
   if (!companyResult.data) throw new Error('Dados da empresa não encontrados.');
+
+  const rawContext = contextResult.data as Row;
+  const userContext: UserContext = {
+    userId: rawContext.user_id,
+    companyId: rawContext.company_id,
+    fullName: rawContext.full_name,
+    email: rawContext.email,
+    isActive: Boolean(rawContext.is_active),
+    forcePasswordChange: Boolean(rawContext.force_password_change),
+    roles: rawContext.roles ?? [],
+    permissions: rawContext.permissions ?? [],
+    branches: rawContext.branches ?? [],
+    warehouses: rawContext.warehouses ?? [],
+    systemMode: rawContext.system_mode ?? 'UNKNOWN',
+  };
+  if (!userContext.isActive) throw new Error('USER_INACTIVE');
+
+  const rawMetrics = metricsResult.data as Row;
+  const dashboardMetrics: DashboardMetrics = {
+    activeProducts: numberValue(rawMetrics.active_products),
+    lowStockProducts: numberValue(rawMetrics.low_stock_products),
+    outOfStockProducts: numberValue(rawMetrics.out_of_stock_products),
+    salesToday: numberValue(rawMetrics.sales_today),
+    receivables: numberValue(rawMetrics.receivables),
+    payables: numberValue(rawMetrics.payables),
+    draftDocuments: numberValue(rawMetrics.draft_documents),
+    serverDate: rawMetrics.server_date ?? '',
+  };
 
   const company: CompanyProfile = {
     name: companyResult.data.name,
@@ -383,6 +483,7 @@ export async function loadAppData(): Promise<AppData> {
     .filter((row: Row) => Boolean(row.customer_id))
     .map((row: Row) => {
     const customer = relation(row.customers);
+    const paymentTerm = relation(row.payment_terms);
     return {
       id: row.id,
       docNumber: row.display_number ?? 'Rascunho',
@@ -390,7 +491,8 @@ export async function loadAppData(): Promise<AppData> {
       clientName: customer?.name ?? 'Cliente não identificado',
       clientNuit: customer?.tax_number ?? '',
       clientAddress: '',
-      paymentMethod: 'Crédito 30 Dias',
+      paymentMethod: paymentTerm?.name ?? '',
+      paymentTermCode: paymentTerm?.code ?? undefined,
       sellerName: row.salesperson_name ?? '',
       items: ((row.document_lines ?? []) as Row[]).map((line) => ({
         articleId: line.product_id ?? line.id,
@@ -451,8 +553,10 @@ export async function loadAppData(): Promise<AppData> {
       articleCode: product?.code ?? '',
       articleDescription: product?.description ?? '',
       quantity: Math.max(numberValue(row.quantity_in), numberValue(row.quantity_out)),
-      entityName: relation(row.customers)?.name ?? relation(row.suppliers)?.name ?? '',
+      entityName: '',
       operator: relation(row.user_profiles)?.full_name ?? '',
+      warehouseId: relation(row.warehouses)?.id ?? undefined,
+      warehouseName: relation(row.warehouses)?.name ?? undefined,
     };
   });
 
@@ -490,6 +594,30 @@ export async function loadAppData(): Promise<AppData> {
       .filter(Boolean),
   }));
 
+  const paymentTerms: ReferenceOption[] = (paymentTermsResult.data ?? []).map((row: Row) => ({
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    requiresImmediatePayment: Boolean(row.requires_immediate_payment),
+  }));
+  const paymentMethods: ReferenceOption[] = (paymentMethodsResult.data ?? []).map((row: Row) => ({
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    requiresReference: Boolean(row.requires_reference),
+    allowsCustomerReceipt: Boolean(row.allows_customer_receipt),
+    allowsSupplierPayment: Boolean(row.allows_supplier_payment),
+  }));
+  const productCategories: ReferenceOption[] = (categoriesResult.data ?? []).map((row: Row) => ({
+    id: row.id, code: row.code, name: row.name,
+  }));
+  const brands: ReferenceOption[] = (brandsResult.data ?? []).map((row: Row) => ({
+    id: row.id, code: row.id, name: row.name,
+  }));
+  const units: ReferenceOption[] = (unitsResult.data ?? []).map((row: Row) => ({
+    id: row.id, code: row.abbreviation, name: `${row.name} (${row.abbreviation})`,
+  }));
+
   return {
     company,
     permissions: permissionsResult.data ?? [],
@@ -503,5 +631,12 @@ export async function loadAppData(): Promise<AppData> {
     ledger,
     users,
     systemMode: modeResult.data?.setting_value ?? 'UNKNOWN',
+    userContext,
+    dashboardMetrics,
+    paymentTerms,
+    paymentMethods,
+    productCategories,
+    brands,
+    units,
   };
 }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Article, SaleInvoice, SaleItem, Client } from '../types';
+import { Article, SaleInvoice, SaleItem, Client, ReferenceOption } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
 
 interface NewSaleProps {
@@ -8,6 +8,9 @@ interface NewSaleProps {
   onCompleteSale: (sale: SaleInvoice) => Promise<SaleInvoice>;
   onOpenPrintModal: (sale: SaleInvoice) => void;
   canReceivePayment: boolean;
+  operatorName: string;
+  paymentTerms: ReferenceOption[];
+  paymentMethods: ReferenceOption[];
 }
 
 export const NewSale: React.FC<NewSaleProps> = ({
@@ -16,17 +19,23 @@ export const NewSale: React.FC<NewSaleProps> = ({
   onCompleteSale,
   onOpenPrintModal,
   canReceivePayment,
+  operatorName,
+  paymentTerms,
+  paymentMethods,
 }) => {
-  const [docNumber] = useState(`VD 24/${Math.floor(1000 + Math.random() * 9000)}`);
+  const [docNumber] = useState('A atribuir ao confirmar');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id ?? '');
   const [selectedClientName, setSelectedClientName] = useState(clients[0]?.name ?? '');
   const [clientNuit, setClientNuit] = useState(clients[0]?.nuit ?? '');
   const [clientAddress, setClientAddress] = useState(clients[0]?.address ?? '');
-  const [paymentMethod, setPaymentMethod] = useState<'Pronto Pagamento (Numerário)' | 'Transferência Bancária (M-Pesa)' | 'Crédito 30 Dias'>(
-    canReceivePayment ? 'Pronto Pagamento (Numerário)' : 'Crédito 30 Dias',
+  const immediateTerm = paymentTerms.find((item) => item.requiresImmediatePayment);
+  const creditTerm = paymentTerms.find((item) => !item.requiresImmediatePayment);
+  const receiptMethod = paymentMethods.find((item) => item.allowsCustomerReceipt);
+  const [paymentSelection, setPaymentSelection] = useState(
+    canReceivePayment && receiptMethod ? `METHOD:${receiptMethod.code}` : `TERM:${creditTerm?.code ?? immediateTerm?.code ?? ''}`,
   );
-  const [sellerName] = useState('Operador Balcão');
+  const [sellerName] = useState(operatorName);
 
   // Active items in the POS cart
   const [items, setItems] = useState<SaleItem[]>([]);
@@ -104,16 +113,23 @@ export const NewSale: React.FC<NewSaleProps> = ({
       clientName: selectedClientName,
       clientNuit,
       clientAddress,
-      paymentMethod,
+      paymentMethod:
+        paymentSelection.startsWith('METHOD:')
+          ? paymentMethods.find((item) => item.code === paymentSelection.slice(7))?.name ?? ''
+          : paymentTerms.find((item) => item.code === paymentSelection.slice(5))?.name ?? '',
+      paymentMethodCode: paymentSelection.startsWith('METHOD:') ? paymentSelection.slice(7) : undefined,
+      paymentTermCode: paymentSelection.startsWith('TERM:')
+        ? paymentSelection.slice(5)
+        : immediateTerm?.code,
       sellerName,
       items,
       subtotalBruto,
       descontoTotal,
       ivaTotal,
       totalAmount: Math.round(totalFinalAmount * 100) / 100,
-      paidAmount: paymentMethod === 'Crédito 30 Dias' ? 0 : Math.round(totalFinalAmount * 100) / 100,
-      pendingAmount: paymentMethod === 'Crédito 30 Dias' ? Math.round(totalFinalAmount * 100) / 100 : 0,
-      status: paymentMethod === 'Crédito 30 Dias' ? 'Pendente' : 'Concluída',
+      paidAmount: paymentSelection.startsWith('TERM:') && paymentSelection.slice(5) !== immediateTerm?.code ? 0 : Math.round(totalFinalAmount * 100) / 100,
+      pendingAmount: paymentSelection.startsWith('TERM:') && paymentSelection.slice(5) !== immediateTerm?.code ? Math.round(totalFinalAmount * 100) / 100 : 0,
+      status: paymentSelection.startsWith('TERM:') && paymentSelection.slice(5) !== immediateTerm?.code ? 'Pendente' : 'Concluída',
       time: new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })
     };
 
@@ -121,7 +137,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
     setSaveError('');
     try {
       const savedSale = await onCompleteSale(newSale);
-      if (savedSale.paymentMethod === 'Crédito 30 Dias') {
+      if (!savedSale.paymentMethodCode) {
         onOpenPrintModal(savedSale);
       }
       setItems([]);
@@ -174,13 +190,12 @@ export const NewSale: React.FC<NewSaleProps> = ({
           <div className="col-span-12 md:col-span-4">
             <label className="block font-bold text-[#737780] uppercase mb-1">Condição de Pagamento</label>
             <select
-              value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value as any)}
+              value={paymentSelection}
+              onChange={(e) => setPaymentSelection(e.target.value)}
               className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring font-bold text-[#003366] dark:text-[#a7c8ff]"
             >
-              {canReceivePayment && <option value="Pronto Pagamento (Numerário)">Pronto Pagamento (Numerário)</option>}
-              {canReceivePayment && <option value="Transferência Bancária (M-Pesa)">Transferência Bancária (M-Pesa / TPA)</option>}
-              <option value="Crédito 30 Dias">Crédito 30 Dias</option>
+              {canReceivePayment && paymentMethods.filter((item) => item.allowsCustomerReceipt).map((item) => <option key={item.id} value={`METHOD:${item.code}`}>{item.name}</option>)}
+              {paymentTerms.map((item) => <option key={item.id} value={`TERM:${item.code}`}>{item.name}</option>)}
             </select>
             {!canReceivePayment && (
               <p className="mt-1 text-[10px] text-[#737780]">Recebimentos exigem perfil de caixa.</p>

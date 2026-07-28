@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { formatMZN } from '../stitch/stitchConfig';
+import type { ReferenceOption } from '../types';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -7,10 +8,11 @@ interface PaymentModalProps {
   totalAmount: number;
   clientName: string;
   onConfirmPayment: (
-    paymentMethod: 'Pronto Pagamento (Numerário)' | 'Transferência Bancária (M-Pesa)',
+    paymentMethodCode: string,
     paidAmount: number,
     reference: string,
   ) => Promise<void>;
+  paymentMethods: ReferenceOption[];
 }
 
 export const PaymentModal: React.FC<PaymentModalProps> = ({
@@ -18,9 +20,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   onClose,
   totalAmount,
   clientName,
-  onConfirmPayment
+  onConfirmPayment,
+  paymentMethods,
 }) => {
-  const [method, setMethod] = useState<'Pronto Pagamento (Numerário)' | 'Transferência Bancária (M-Pesa)' | 'Crédito 30 Dias'>('Pronto Pagamento (Numerário)');
+  const [method, setMethod] = useState('');
   const [paidInput, setPaidInput] = useState<number>(totalAmount);
   const [reference, setReference] = useState('');
   const [saving, setSaving] = useState(false);
@@ -31,6 +34,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setPaidInput(totalAmount);
       setReference('');
       setError('');
+      setMethod(paymentMethods[0]?.code ?? '');
     }
   }, [isOpen, totalAmount]);
 
@@ -40,8 +44,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (method === 'Crédito 30 Dias') return;
-    if (method === 'Transferência Bancária (M-Pesa)' && !reference.trim()) {
+    const selectedMethod = paymentMethods.find((item) => item.code === method);
+    if (!selectedMethod) return;
+    if (selectedMethod.requiresReference && !reference.trim()) {
       setError('Introduza a referência da transferência ou pagamento móvel.');
       return;
     }
@@ -83,37 +88,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             <label className="block text-xs font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase mb-2">
               Método de Pagamento
             </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setMethod('Pronto Pagamento (Numerário)')}
-                className={`p-3 rounded text-xs font-bold border text-center flex flex-col items-center justify-center space-y-1 transition-all ${
-                  method === 'Pronto Pagamento (Numerário)'
-                    ? 'border-[#003366] bg-[#003366] text-white'
-                    : 'border-[#c3c6d1] dark:border-[#43474f] text-[#191c1d] dark:text-white hover:bg-[#edeeef]'
-                }`}
-              >
-                <span className="material-symbols-outlined">payments</span>
-                <span>Numerário</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setMethod('Transferência Bancária (M-Pesa)')}
-                className={`p-3 rounded text-xs font-bold border text-center flex flex-col items-center justify-center space-y-1 transition-all ${
-                  method === 'Transferência Bancária (M-Pesa)'
-                    ? 'border-[#003366] bg-[#003366] text-white'
-                    : 'border-[#c3c6d1] dark:border-[#43474f] text-[#191c1d] dark:text-white hover:bg-[#edeeef]'
-                }`}
-              >
-                <span className="material-symbols-outlined">phone_android</span>
-                <span>M-Pesa / TPA</span>
-              </button>
-
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {paymentMethods.map((item) => <button key={item.id} type="button" onClick={() => setMethod(item.code)} className={`p-3 rounded text-xs font-bold border text-center ${method === item.code ? 'border-[#003366] bg-[#003366] text-white' : 'border-[#c3c6d1] dark:border-[#43474f]'}`}>{item.name}</button>)}
             </div>
           </div>
 
-          {method === 'Transferência Bancária (M-Pesa)' && (
+          {paymentMethods.find((item) => item.code === method)?.requiresReference && (
             <div>
               <label className="block text-xs font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase mb-1">
                 Referência da Transação
@@ -141,7 +121,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             />
           </div>
 
-          {method === 'Pronto Pagamento (Numerário)' && (
+          {!paymentMethods.find((item) => item.code === method)?.requiresReference && (
             <div className="flex justify-between items-center bg-[#80f98b]/20 text-[#007327] p-3 rounded border border-[#006e25]/30">
               <span className="text-xs font-bold uppercase">Troco a Devolver:</span>
               <strong className="text-xl font-mono">{formatMZN(changeDue)}</strong>

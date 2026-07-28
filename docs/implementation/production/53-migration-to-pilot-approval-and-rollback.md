@@ -8,13 +8,13 @@ separate signed package and an explicitly authorised mode-change operation.
 
 ## Approval checklist
 
-- [ ] Exposed database credentials rotated and all dependent connections tested.
+- [ ] Exposed database password and Management token rotated; publishable/secret
+      API-key migration and dependent application checks are complete.
 - [ ] Git secret-history review accepted or history rewritten under a separate
       coordinated credential-revocation plan.
 - [ ] Production frontend URL and owner-only access tested.
-- [ ] Named pilot users created; default roles replaced with approved roles.
-- [ ] ADMIN, SALES_OP, CASHIER, STOCK_OP, PURCHASING_OP, ACCOUNTING_OP, and
-      READ_ONLY acceptance tests signed.
+- [x] Initial Administrator and Manager users created with forced password change.
+- [ ] `ADMINISTRATOR` and `MANAGER_LIMITED` business acceptance tests signed.
 - [ ] Company identity, NUIT, address, contacts, branches, warehouses, fiscal
       period, tax codes, payment terms, and payment methods approved.
 - [ ] Printer/browser combinations verified for invoices, supplier documents,

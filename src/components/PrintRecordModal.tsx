@@ -57,7 +57,7 @@ export function PrintRecordModal({
             </div>
           </header>
 
-          <section className="grid grid-cols-2 gap-4 rounded border bg-gray-50 p-4 text-sm">
+          <section className="grid grid-cols-1 gap-4 rounded border bg-gray-50 p-4 text-sm sm:grid-cols-2">
             <div>
               <span className="block text-xs font-bold uppercase text-gray-500">Entidade</span>
               <strong>{partyName}</strong>

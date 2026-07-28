@@ -1,55 +1,62 @@
-import React, { useEffect, useState } from 'react';
-import { StockMovement, Article } from '../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import type { AccessScope, Article, StockMovement } from '../types';
 
 interface StockMovementsProps {
   movements: StockMovement[];
   articles: Article[];
-  onAddMovement: (mov: StockMovement) => Promise<void>;
+  warehouses: AccessScope[];
+  operatorName: string;
+  onAddMovement: (movement: StockMovement) => Promise<void>;
   canPostEntry: boolean;
   canPostExit: boolean;
 }
 
 export const StockMovements: React.FC<StockMovementsProps> = ({
-  movements,
-  articles,
-  onAddMovement,
-  canPostEntry,
-  canPostExit,
+  movements, articles, warehouses, operatorName, onAddMovement, canPostEntry, canPostExit,
 }) => {
-  const [type, setType] = useState<'entrada' | 'saida'>('entrada');
-  const [docRef, setDocRef] = useState(`G-E/${Math.floor(100 + Math.random() * 900)}`);
-  const [articleId, setArticleId] = useState(articles[0]?.id || '');
-  const [quantity, setQuantity] = useState(10);
-  const [entityName, setEntityName] = useState('Continental SA');
+  const [type, setType] = useState<'entrada' | 'saida'>(canPostEntry ? 'entrada' : 'saida');
+  const [warehouseId, setWarehouseId] = useState('');
+  const [articleId, setArticleId] = useState('');
+  const [quantity, setQuantity] = useState(1);
+  const [reason, setReason] = useState('');
+  const [reference, setReference] = useState('');
+  const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const article = useMemo(() => articles.find((item) => item.id === articleId), [articles, articleId]);
+  const expectedStock = article ? article.stock + (type === 'entrada' ? quantity : -quantity) : 0;
 
-  useEffect(() => {
-    if (!canPostEntry && canPostExit) setType('saida');
-  }, [canPostEntry, canPostExit]);
+  useEffect(() => { if (!warehouseId && warehouses[0]) setWarehouseId(warehouses[0].id); }, [warehouses, warehouseId]);
+  useEffect(() => { if (!articleId && articles[0]) setArticleId(articles[0].id); }, [articles, articleId]);
+  useEffect(() => { if (!canPostEntry && canPostExit) setType('saida'); }, [canPostEntry, canPostExit]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const art = articles.find(a => a.id === articleId);
-    if (!art) return;
-
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!article || !warehouseId) return;
+    if (type === 'saida' && expectedStock < 0) {
+      setError('A saída excede o stock disponível.');
+      return;
+    }
+    const confirmed = window.confirm(`Confirmar ${type} de ${quantity} unidade(s) de ${article.code}? Stock previsto: ${expectedStock}.`);
+    if (!confirmed) return;
     setSaving(true);
     setError('');
+    setSuccess('');
     try {
       await onAddMovement({
-        id: `mov-${Date.now()}`,
-        type,
-        docRef,
-        date: new Date().toISOString().split('T')[0],
-        articleCode: art.code,
-        articleDescription: art.description,
-        quantity,
-        entityName,
-        operator: 'Operador Balcão'
+        id: '', type, warehouseId, warehouseName: warehouses.find((item) => item.id === warehouseId)?.name,
+        docRef: reference, date: new Date().toISOString(), articleCode: article.code,
+        articleDescription: article.description, quantity, entityName: '', operator: operatorName,
+        reason, notes,
       });
-      alert(`Movimento de ${type.toUpperCase()} registado com sucesso!`);
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Falha ao registar movimento.');
+      setReason('');
+      setReference('');
+      setNotes('');
+      setQuantity(1);
+      setSuccess('Movimento registado e confirmado no stock.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Falha ao registar movimento.');
     } finally {
       setSaving(false);
     }
@@ -57,122 +64,30 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Form to Register Stock Movement */}
-      {(canPostEntry || canPostExit) && <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-5 rounded shadow-sm">
-        <h3 className="font-bold text-[#001e40] dark:text-[#a7c8ff] text-sm flex items-center mb-4">
-          <span className="material-symbols-outlined mr-2">swap_horiz</span>
-          Registar Nova Entrada / Saída de Stock
-        </h3>
-
-        <form onSubmit={handleSubmit} className="grid grid-cols-12 gap-4 text-xs">
-          {error && (
-            <p role="alert" className="col-span-12 rounded bg-red-50 p-3 font-bold text-red-700">
-              {error}
-            </p>
-          )}
-          <div className="col-span-12 md:col-span-2">
-            <label className="block font-bold text-[#737780] uppercase mb-1">Tipo de Operação</label>
-            <select
-              value={type}
-              onChange={(e) => setType(e.target.value as any)}
-              className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white rounded p-2 text-sm focus-ring font-bold"
-            >
-              {canPostEntry && <option value="entrada">ENTRADA (Fornecedor)</option>}
-              {canPostExit && <option value="saida">SAÍDA (Ajuste / Cliente)</option>}
-            </select>
-          </div>
-
-          <div className="col-span-12 md:col-span-2">
-            <label className="block font-bold text-[#737780] uppercase mb-1">Nº Guia / Doc Ref</label>
-            <input
-              type="text"
-              required
-              value={docRef}
-              onChange={(e) => setDocRef(e.target.value)}
-              className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white rounded p-2 text-sm font-mono focus-ring"
-            />
-          </div>
-
-          <div className="col-span-12 md:col-span-4">
-            <label className="block font-bold text-[#737780] uppercase mb-1">Artigo / Pneu</label>
-            <select
-              value={articleId}
-              onChange={(e) => setArticleId(e.target.value)}
-              className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white rounded p-2 text-sm focus-ring"
-            >
-              {articles.map(a => (
-                <option key={a.id} value={a.id}>
-                  [{a.code}] {a.description} (Stock Atual: {a.stock})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="col-span-12 md:col-span-2">
-            <label className="block font-bold text-[#737780] uppercase mb-1">Quantidade</label>
-            <input
-              type="number"
-              min="1"
-              required
-              value={quantity}
-              onChange={(e) => setQuantity(Number(e.target.value))}
-              className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white rounded p-2 text-sm font-mono font-bold focus-ring"
-            />
-          </div>
-
-          <div className="col-span-12 md:col-span-2 flex items-end">
-            <button
-              type="submit"
-              disabled={saving || !articleId || quantity <= 0}
-              className="w-full py-2.5 bg-[#003366] text-white font-bold text-xs uppercase rounded hover:brightness-110 shadow disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {saving ? 'A registar…' : 'Registar'}
-            </button>
-          </div>
-        </form>
-      </section>}
-
-      {/* Movement Logs History Table */}
-      <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded overflow-hidden shadow-sm">
-        <div className="bg-[#e7e8e9] dark:bg-[#282c2e] px-4 py-3 border-b border-[#c3c6d1] dark:border-[#43474f]">
-          <h3 className="font-bold text-[#001e40] dark:text-[#a7c8ff] text-sm uppercase">Histórico de Movimentos</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse font-mono">
-            <thead className="bg-[#f8f9fa] dark:bg-[#282c2e] text-[#737780] uppercase border-b border-[#c3c6d1]">
-              <tr>
-                <th className="p-3">Data</th>
-                <th className="p-3">Tipo</th>
-                <th className="p-3">Doc Ref</th>
-                <th className="p-3">Código</th>
-                <th className="p-3">Descrição Artigo</th>
-                <th className="p-3 text-center">Qtd</th>
-                <th className="p-3">Entidade</th>
-                <th className="p-3">Operador</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f]">
-              {movements.map((mov) => (
-                <tr key={mov.id} className="hover:bg-[#f3f4f5] dark:hover:bg-[#282c2e]">
-                  <td className="p-3 font-sans text-gray-500">{mov.date}</td>
-                  <td className="p-3 font-bold">
-                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-extrabold ${
-                      mov.type === 'entrada' ? 'bg-[#80f98b]/30 text-[#007327]' : 'bg-[#ffdad6] text-[#ba1a1a]'
-                    }`}>
-                      {mov.type}
-                    </span>
-                  </td>
-                  <td className="p-3 font-bold text-[#003366] dark:text-[#a7c8ff]">{mov.docRef}</td>
-                  <td className="p-3 font-bold">{mov.articleCode}</td>
-                  <td className="p-3 font-sans font-medium">{mov.articleDescription}</td>
-                  <td className="p-3 text-center font-extrabold text-sm">{mov.quantity}</td>
-                  <td className="p-3 font-sans">{mov.entityName}</td>
-                  <td className="p-3 font-sans text-gray-500">{mov.operator}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {(canPostEntry || canPostExit) && (
+        <section className="rounded-lg border bg-white p-4 shadow-sm dark:bg-[#1f2325] sm:p-5">
+          <h2 className="mb-4 text-sm font-black text-primary dark:text-blue-200">Registar entrada ou saída direta</h2>
+          <form onSubmit={submit} className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 xl:grid-cols-4">
+            <label className="font-bold">Operação<select value={type} onChange={(event) => setType(event.target.value as 'entrada' | 'saida')} className="mt-1 w-full rounded border p-3 dark:bg-slate-800">{canPostEntry && <option value="entrada">Entrada direta</option>}{canPostExit && <option value="saida">Saída direta</option>}</select></label>
+            <label className="font-bold">Armazém<select required value={warehouseId} onChange={(event) => setWarehouseId(event.target.value)} className="mt-1 w-full rounded border p-3 dark:bg-slate-800"><option value="">Selecione</option>{warehouses.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.name}</option>)}</select></label>
+            <label className="font-bold sm:col-span-2">Artigo<select required value={articleId} onChange={(event) => setArticleId(event.target.value)} className="mt-1 w-full rounded border p-3 dark:bg-slate-800"><option value="">Selecione</option>{articles.map((item) => <option key={item.id} value={item.id}>[{item.code}] {item.description} · Stock {item.stock}</option>)}</select></label>
+            <label className="font-bold">Quantidade<input required type="number" min="0.001" step="0.001" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} className="mt-1 w-full rounded border p-3 dark:bg-slate-800" /></label>
+            <label className="font-bold">Motivo<input required maxLength={200} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Motivo operacional" className="mt-1 w-full rounded border p-3 dark:bg-slate-800" /></label>
+            <label className="font-bold">Referência opcional<input maxLength={100} value={reference} onChange={(event) => setReference(event.target.value)} className="mt-1 w-full rounded border p-3 dark:bg-slate-800" /></label>
+            <label className="font-bold">Utilizador<input readOnly value={operatorName} className="mt-1 w-full rounded border bg-slate-100 p-3 dark:bg-slate-800" /></label>
+            <label className="font-bold sm:col-span-2 xl:col-span-4">Notas<textarea maxLength={500} value={notes} onChange={(event) => setNotes(event.target.value)} className="mt-1 w-full rounded border p-3 dark:bg-slate-800" /></label>
+            <div className="rounded bg-slate-100 p-3 text-sm sm:col-span-2 xl:col-span-3 dark:bg-slate-800">Stock atual: <b>{article?.stock ?? 0}</b> · Stock previsto: <b className={expectedStock < 0 ? 'text-red-700' : ''}>{expectedStock}</b></div>
+            <button disabled={saving || !articleId || !warehouseId || !reason.trim() || quantity <= 0} className="rounded bg-primary px-4 py-3 font-black text-white disabled:opacity-50">{saving ? 'A registar…' : 'Confirmar movimento'}</button>
+            {error && <p role="alert" className="rounded bg-red-50 p-3 font-bold text-red-700 sm:col-span-2 xl:col-span-4">{error}</p>}
+            {success && <p role="status" className="rounded bg-green-50 p-3 font-bold text-green-800 sm:col-span-2 xl:col-span-4">{success}</p>}
+          </form>
+        </section>
+      )}
+      <section className="overflow-hidden rounded-lg border bg-white shadow-sm dark:bg-[#1f2325]">
+        <h2 className="border-b bg-slate-100 px-4 py-3 text-sm font-black uppercase dark:bg-slate-800">Histórico de movimentos</h2>
+        {movements.length === 0 ? <p className="p-8 text-center text-sm text-slate-500">Sem movimentos para apresentar.</p> : (
+          <div className="overflow-x-auto"><table className="min-w-[760px] w-full text-left text-xs"><thead><tr className="border-b bg-slate-50 uppercase dark:bg-slate-800"><th className="p-3">Data</th><th className="p-3">Tipo</th><th className="p-3">Referência</th><th className="p-3">Artigo</th><th className="p-3 text-right">Quantidade</th><th className="p-3">Operador</th></tr></thead><tbody>{movements.map((item) => <tr key={item.id} className="border-b"><td className="p-3">{new Date(item.date).toLocaleString('pt-PT')}</td><td className="p-3 font-bold">{item.type}</td><td className="p-3">{item.docRef || '—'}</td><td className="p-3">[{item.articleCode}] {item.articleDescription}</td><td className="p-3 text-right font-bold">{item.quantity}</td><td className="p-3">{item.operator || '—'}</td></tr>)}</tbody></table></div>
+        )}
       </section>
     </div>
   );

@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "node scripts/clean_sites_build.js && tsc && vite build && node scripts/prepare_sites_build.js",
+    "audit:static-data": "node scripts/audit-static-operational-data.js",
+    "audit:security": "node scripts/audit-repository-security.js",
+    "check": "npm run audit:security && npm run audit:static-data && node scripts/validate_migration_016_rollback.js && npm run build",
     "preview": "vite preview"
   },
   "dependencies": {

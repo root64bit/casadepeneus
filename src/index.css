@@ -199,6 +199,43 @@ input[type="number"] {
   -moz-appearance: textfield;
 }
 
+button,
+input,
+select,
+textarea {
+  min-height: 44px;
+}
+
+@media print {
+  body {
+    background: #fff !important;
+    color: #000 !important;
+    overflow: visible !important;
+  }
+  aside,
+  header,
+  footer,
+  button,
+  [data-screen-only] {
+    display: none !important;
+  }
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  table {
+    break-inside: auto;
+  }
+  tr {
+    break-inside: avoid;
+    break-after: auto;
+  }
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+}
+
 /* ── Print Styles ── */
 @media print {
   .no-print,

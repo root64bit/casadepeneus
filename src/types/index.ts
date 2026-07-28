@@ -12,6 +12,9 @@ export interface Article {
   category: 'pneus' | 'camaras' | 'servicos' | 'acessorios';
   brand?: string;
   size?: string;
+  categoryId?: string;
+  brandId?: string;
+  unitId?: string;
 }
 
 export interface SaleItem {
@@ -33,7 +36,9 @@ export interface SaleInvoice {
   clientName: string;
   clientNuit: string;
   clientAddress: string;
-  paymentMethod: 'Pronto Pagamento (Numerário)' | 'Transferência Bancária (M-Pesa)' | 'Crédito 30 Dias';
+  paymentMethod: string;
+  paymentTermCode?: string;
+  paymentMethodCode?: string;
   sellerName: string;
   items: SaleItem[];
   subtotalBruto: number;
@@ -56,6 +61,56 @@ export interface StockMovement {
   quantity: number;
   entityName: string; // Fornecedor ou Cliente
   operator: string;
+  warehouseId?: string;
+  warehouseName?: string;
+  reason?: string;
+  notes?: string;
+}
+
+export interface AccessScope {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface RoleSummary {
+  code: string;
+  name: string;
+}
+
+export interface UserContext {
+  userId: string;
+  companyId: string;
+  fullName: string;
+  email: string;
+  isActive: boolean;
+  forcePasswordChange: boolean;
+  roles: RoleSummary[];
+  permissions: string[];
+  branches: AccessScope[];
+  warehouses: AccessScope[];
+  systemMode: string;
+}
+
+export interface DashboardMetrics {
+  activeProducts: number;
+  lowStockProducts: number;
+  outOfStockProducts: number;
+  salesToday: number;
+  receivables: number;
+  payables: number;
+  draftDocuments: number;
+  serverDate: string;
+}
+
+export interface ReferenceOption {
+  id: string;
+  code: string;
+  name: string;
+  requiresImmediatePayment?: boolean;
+  requiresReference?: boolean;
+  allowsCustomerReceipt?: boolean;
+  allowsSupplierPayment?: boolean;
 }
 
 export interface Client {
@@ -154,6 +209,6 @@ export interface PurchaseInvoiceInput {
   supplierId: string;
   date: string;
   supplierInvoiceNumber: string;
-  paymentTermCode: 'DINHEIRO' | '30_DIAS';
+  paymentTermCode: string;
   items: PurchaseItem[];
 }

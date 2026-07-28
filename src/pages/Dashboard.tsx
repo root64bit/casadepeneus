@@ -1,5 +1,5 @@
 import React from 'react';
-import { Article, SaleInvoice, Client } from '../types';
+import { Article, SaleInvoice, Client, DashboardMetrics } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
 
 interface DashboardProps {
@@ -8,6 +8,8 @@ interface DashboardProps {
   clients: Client[];
   setActiveTab: (tab: string) => void;
   onOpenNewArticleModal: () => void;
+  metrics: DashboardMetrics | null;
+  permissions: string[];
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -15,48 +17,54 @@ export const Dashboard: React.FC<DashboardProps> = ({
   sales,
   clients,
   setActiveTab,
-  onOpenNewArticleModal
+  onOpenNewArticleModal,
+  metrics,
+  permissions,
 }) => {
   const lowStockArticles = articles.filter(a => a.stock <= a.minStock);
-  const totalSalesToday = sales.reduce((acc, s) => acc + s.totalAmount, 0);
-  const totalPendingDebt = clients.reduce((acc, c) => acc + c.pendingBalance, 0);
+  const totalSalesToday = metrics?.salesToday ?? 0;
+  const totalPendingDebt = metrics?.receivables ?? 0;
+  const canSell = permissions.includes('sales.create') && permissions.includes('sales.confirm');
+  const canEntry = permissions.includes('stock.direct_entry') || permissions.includes('stock.entry.confirm');
+  const canExit = permissions.includes('stock.direct_exit') || permissions.includes('stock.exit.confirm');
+  const canCreateProduct = permissions.includes('products.create');
 
   return (
     <div className="space-y-6">
       {/* Quick Action Tiles */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <button
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        {canSell && <button
           onClick={() => setActiveTab('sales')}
           className="flex flex-col items-center justify-center p-5 bg-[#001e40] text-white hover:bg-[#003366] transition-all rounded shadow-sm group text-center"
         >
           <span className="material-symbols-outlined text-4xl mb-2 group-hover:scale-110 transition-transform">sell</span>
           <span className="font-bold text-sm">Nova Venda</span>
           <span className="mt-1 text-[10px] bg-[#80f98b] text-[#001e40] font-extrabold px-1.5 py-0.5 rounded">Atalho F2</span>
-        </button>
+        </button>}
 
-        <button
+        {canEntry && <button
           onClick={() => setActiveTab('movements')}
           className="flex flex-col items-center justify-center p-5 bg-[#001e40] text-white hover:bg-[#003366] transition-all rounded shadow-sm group text-center"
         >
           <span className="material-symbols-outlined text-4xl mb-2 group-hover:scale-110 transition-transform">input</span>
           <span className="font-bold text-sm">Entrada Stock</span>
-        </button>
+        </button>}
 
-        <button
+        {canExit && <button
           onClick={() => setActiveTab('movements')}
           className="flex flex-col items-center justify-center p-5 bg-[#001e40] text-white hover:bg-[#003366] transition-all rounded shadow-sm group text-center"
         >
           <span className="material-symbols-outlined text-4xl mb-2 group-hover:scale-110 transition-transform">output</span>
           <span className="font-bold text-sm">Saída Stock</span>
-        </button>
+        </button>}
 
-        <button
+        {canCreateProduct && <button
           onClick={() => setActiveTab('inventory')}
           className="flex flex-col items-center justify-center p-5 bg-[#001e40] text-white hover:bg-[#003366] transition-all rounded shadow-sm group text-center"
         >
           <span className="material-symbols-outlined text-4xl mb-2 group-hover:scale-110 transition-transform">inventory_2</span>
           <span className="font-bold text-sm">Consultar Artigos</span>
-        </button>
+        </button>}
 
         <button
           onClick={() => setActiveTab('entities')}
@@ -99,6 +107,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f] font-mono">
+                {sales.length === 0 && <tr><td colSpan={4} className="p-6 text-center font-sans text-slate-500">Sem vendas para apresentar.</td></tr>}
                 {sales.map((sale) => (
                   <tr key={sale.id} className="hover:bg-[#f3f4f5] dark:hover:bg-[#282c2e] transition-colors">
                     <td className="p-2.5 font-bold text-[#003366] dark:text-[#a7c8ff]">{sale.docNumber}</td>
@@ -127,6 +136,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </button>
           </div>
           <ul className="divide-y divide-[#c3c6d1] dark:divide-[#43474f] text-xs">
+            {lowStockArticles.length === 0 && <li className="p-6 text-center text-slate-500">Sem alertas de stock.</li>}
             {lowStockArticles.map((article) => (
               <li key={article.id} className="p-3 flex items-center justify-between hover:bg-[#f3f4f5] dark:hover:bg-[#282c2e]">
                 <div className="flex items-center space-x-3">
@@ -159,6 +169,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </span>
           </div>
           <div className="divide-y divide-[#c3c6d1] dark:divide-[#43474f] text-xs">
+            {clients.filter(c => c.pendingBalance > 0).length === 0 && <p className="p-6 text-center text-slate-500">Sem cobranças pendentes.</p>}
             {clients.filter(c => c.pendingBalance > 0).map((client) => (
               <div key={client.id} className="p-3 flex justify-between items-center hover:bg-[#f3f4f5] dark:hover:bg-[#282c2e]">
                 <div>
@@ -183,6 +194,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </h3>
           </div>
           <div className="p-3 space-y-2.5 text-xs">
+            {sales.length === 0 && <p className="p-6 text-center text-slate-500">Sem documentos recentes.</p>}
             {sales.map((s) => (
               <div
                 key={s.id}

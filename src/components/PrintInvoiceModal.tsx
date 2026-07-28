@@ -60,12 +60,12 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
           </div>
 
           {/* Client Details */}
-          <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded text-xs border border-gray-200">
+          <div className="grid grid-cols-1 gap-4 bg-gray-50 p-4 rounded text-xs border border-gray-200 sm:grid-cols-2">
             <div>
               <span className="font-bold text-gray-500 block uppercase">Dados do Cliente:</span>
               <p className="font-bold text-sm text-gray-900">{invoice.clientName || 'Consumidor Final'}</p>
               <p className="text-gray-600">NUIT: {invoice.clientNuit || 'Não indicado'}</p>
-              <p className="text-gray-600">Endereço: {invoice.clientAddress || 'Maputo, Moçambique'}</p>
+              <p className="text-gray-600">Endereço: {invoice.clientAddress || 'Não indicado'}</p>
             </div>
             <div className="text-right">
               <span className="font-bold text-gray-500 block uppercase">Condições:</span>

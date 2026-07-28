@@ -4,12 +4,14 @@ interface AdministrationProps {
   systemMode: string;
   users: UserSummary[];
   permissions: string[];
+  onUpdateUser: (user: UserSummary, active: boolean) => Promise<void>;
 }
 
 export function Administration({
   systemMode,
   users,
   permissions,
+  onUpdateUser,
 }: AdministrationProps) {
   return (
     <div className="space-y-5">
@@ -40,13 +42,14 @@ export function Administration({
             Utilizadores, perfis e funções
           </h2>
         </header>
-        <table className="w-full text-left text-xs">
+        <div className="overflow-x-auto"><table className="min-w-[680px] w-full text-left text-xs">
           <thead className="uppercase text-[#737780]">
             <tr>
               <th className="p-3">Nome</th>
               <th className="p-3">Email</th>
               <th className="p-3">Funções</th>
               <th className="p-3">Estado</th>
+              <th className="p-3">Ação</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f]">
@@ -60,10 +63,12 @@ export function Administration({
                     {user.active ? 'ATIVO' : 'INATIVO'}
                   </span>
                 </td>
+                <td className="p-3"><button onClick={() => { if (window.confirm(`${user.active ? 'Desativar' : 'Ativar'} ${user.fullName}?`)) void onUpdateUser(user, !user.active); }} className="rounded border px-3 py-2 font-bold">{user.active ? 'Desativar' : 'Ativar'}</button></td>
               </tr>
             ))}
+            {users.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-500">Nenhum utilizador encontrado.</td></tr>}
           </tbody>
-        </table>
+        </table></div>
       </section>
 
       <section className="rounded border border-[#c3c6d1] bg-white p-5 dark:border-[#43474f] dark:bg-[#1f2325]">

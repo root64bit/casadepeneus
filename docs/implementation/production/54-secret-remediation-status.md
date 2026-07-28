@@ -9,6 +9,11 @@
 - Browser configuration no longer embeds a hard-coded project URL or key.
 - `DATABASE_URL`, database passwords, service-role keys, and tokens are
   explicitly prohibited from `VITE_*` variables.
+- The browser configuration now uses the Supabase publishable-key format.
+- Administrative scripts now use the Supabase secret-key format; neither value
+  was logged or committed.
+- `npm run audit:security` blocks tracked environment files and populated
+  privileged credentials.
 
 ## History finding
 
@@ -19,14 +24,16 @@ that appeared there as exposed.
 ## Required external completion before PILOT
 
 - Rotate the production database password in Supabase.
-- Rotate any service-role key, access token, or third-party credential found in
-  the historical file.
+- Disable the legacy anon/service-role pair after the newly deployed publishable
+  key is verified in production.
+- Rotate the Management API access token and any third-party credential found
+  in the historical file.
 - Update approved secret stores and CI/deployment settings.
 - Re-test database backup and deployment access with the rotated credentials.
 - Decide whether to rewrite Git history. If chosen, coordinate a protected
   force-push and require every clone to re-clone; credential rotation remains
   mandatory even after rewriting.
 
-The public Supabase anon key is intended for browser use but must still target
-the approved production project and remain protected by RLS. Secret rotation is
-not claimed complete until the external actions above are evidenced.
+The historical legacy service-role key remains a blocker until legacy API keys
+are disabled. Database-password and Management-token rotation are also external
+PILOT gates.

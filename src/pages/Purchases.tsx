@@ -5,6 +5,7 @@ import type {
   PurchaseInvoiceInput,
   PurchaseItem,
   Supplier,
+  ReferenceOption,
 } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
 
@@ -21,6 +22,7 @@ interface PurchasesProps {
     amount: number,
     reference: string,
   ) => Promise<void>;
+  paymentTerms: ReferenceOption[];
 }
 
 export const Purchases: React.FC<PurchasesProps> = ({
@@ -31,11 +33,12 @@ export const Purchases: React.FC<PurchasesProps> = ({
   canPay,
   onCreateInvoice,
   onPayInvoice,
+  paymentTerms,
 }) => {
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? '');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [supplierReference, setSupplierReference] = useState('');
-  const [term, setTerm] = useState<'DINHEIRO' | '30_DIAS'>('30_DIAS');
+  const [term, setTerm] = useState(paymentTerms.find((item) => !item.requiresImmediatePayment)?.code ?? paymentTerms[0]?.code ?? '');
   const [articleId, setArticleId] = useState(articles[0]?.id ?? '');
   const [quantity, setQuantity] = useState(1);
   const [unitCost, setUnitCost] = useState(articles[0]?.costPrice ?? 0);
@@ -142,12 +145,11 @@ export const Purchases: React.FC<PurchasesProps> = ({
               <input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="mt-1 w-full rounded border p-2 dark:bg-[#282c2e]" />
             </label>
             <label className="text-xs font-bold uppercase">Factura do fornecedor
-              <input value={supplierReference} onChange={(event) => setSupplierReference(event.target.value)} placeholder="TEST-FORN-001" className="mt-1 w-full rounded border p-2 font-mono dark:bg-[#282c2e]" />
+              <input value={supplierReference} onChange={(event) => setSupplierReference(event.target.value)} placeholder="Número da factura do fornecedor" className="mt-1 w-full rounded border p-2 font-mono dark:bg-[#282c2e]" />
             </label>
             <label className="text-xs font-bold uppercase">Condição
-              <select value={term} onChange={(event) => setTerm(event.target.value as 'DINHEIRO' | '30_DIAS')} className="mt-1 w-full rounded border p-2 dark:bg-[#282c2e]">
-                <option value="30_DIAS">Crédito 30 dias</option>
-                <option value="DINHEIRO">Pronto pagamento</option>
+              <select value={term} onChange={(event) => setTerm(event.target.value)} className="mt-1 w-full rounded border p-2 dark:bg-[#282c2e]">
+                {paymentTerms.map((item) => <option key={item.id} value={item.code}>{item.name}</option>)}
               </select>
             </label>
           </div>

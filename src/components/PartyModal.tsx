@@ -1,10 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { PartyInput } from '../lib/appData';
+import type { ReferenceOption } from '../types';
 
 interface PartyModalProps {
   type: 'customer' | 'supplier' | null;
   onClose: () => void;
   onSave: (type: 'customer' | 'supplier', input: PartyInput) => Promise<void>;
+  paymentTerms: ReferenceOption[];
 }
 
 const initialInput: PartyInput = {
@@ -14,23 +16,23 @@ const initialInput: PartyInput = {
   telephone: '',
   email: '',
   address: '',
-  city: 'Maputo',
+  city: '',
   contactPerson: '',
   creditLimit: 0,
   paymentTermCode: 'DINHEIRO',
 };
 
-export function PartyModal({ type, onClose, onSave }: PartyModalProps) {
+export function PartyModal({ type, onClose, onSave, paymentTerms }: PartyModalProps) {
   const [input, setInput] = useState(initialInput);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (type) {
-      setInput(initialInput);
+      setInput({ ...initialInput, paymentTermCode: paymentTerms[0]?.code ?? '' });
       setError('');
     }
-  }, [type]);
+  }, [type, paymentTerms]);
 
   if (!type) return null;
 
@@ -108,11 +110,7 @@ export function PartyModal({ type, onClose, onSave }: PartyModalProps) {
           <label>
             <span className="mb-1 block text-xs font-bold uppercase">Condição de pagamento</span>
             <select value={input.paymentTermCode} onChange={(e) => update('paymentTermCode', e.target.value)} className="w-full rounded border p-2">
-              <option value="DINHEIRO">A dinheiro</option>
-              <option value="7_DIAS">7 dias</option>
-              <option value="15_DIAS">15 dias</option>
-              <option value="30_DIAS">30 dias</option>
-              <option value="60_DIAS">60 dias</option>
+              {paymentTerms.map((item) => <option key={item.id} value={item.code}>{item.name}</option>)}
             </select>
           </label>
           <label>
