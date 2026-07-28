@@ -3,10 +3,11 @@ const { Client } = pkg;
 import dotenv from 'dotenv';
 dotenv.config();
 
-const connStr = process.env.DATABASE_URL || process.env.database_url || "postgres://postgres.bkbcgndzsfylwsinxwbb:casadepeneus@aws-0-eu-west-1.pooler.supabase.com:6543/postgres";
+const connStr = process.env.DATABASE_URL;
+if (!connStr) throw new Error("DATABASE_URL environment variable is required.");
 
 async function auditPreWP08() {
-  console.log("Connecting to production pooler for Pre-WP08 Audit...");
+  console.log("Connecting to production pooler via DATABASE_URL...");
   const client = new Client({
     connectionString: connStr,
     ssl: { rejectUnauthorized: false }
@@ -15,7 +16,6 @@ async function auditPreWP08() {
   try {
     await client.connect();
 
-    // 1. Audit Deployed Tables
     const resTables = await client.query(`
       SELECT table_schema, table_name 
       FROM information_schema.tables 
@@ -24,13 +24,8 @@ async function auditPreWP08() {
     `);
     console.log("=== Deployed Production Tables Count ===", resTables.rows.length);
 
-    // 2. Audit System Mode
     const resMode = await client.query("SELECT setting_key, setting_value FROM public.system_settings WHERE setting_key = 'SYSTEM_MODE';");
     console.log("System Mode:", resMode.rows[0]);
-
-    // 3. Check commercial document tables
-    const resDocs = await client.query("SELECT table_name FROM information_schema.tables WHERE table_name IN ('documents', 'document_lines', 'document_types', 'ledger_entries');");
-    console.log("Existing commercial document tables count:", resDocs.rows.length);
 
     await client.end();
   } catch (err) {

@@ -1,10 +1,13 @@
 import pkg from 'pg';
 const { Client } = pkg;
+import dotenv from 'dotenv';
+dotenv.config();
 
-const connStr = "postgres://postgres.bkbcgndzsfylwsinxwbb:casadepeneus@aws-0-eu-west-1.pooler.supabase.com:6543/postgres";
+const connStr = process.env.DATABASE_URL;
+if (!connStr) throw new Error("DATABASE_URL environment variable is required.");
 
 async function auditPreWP07() {
-  console.log("Connecting to production pooler for Pre-WP07 Audit...");
+  console.log("Connecting to production pooler via DATABASE_URL...");
   const client = new Client({
     connectionString: connStr,
     ssl: { rejectUnauthorized: false }
@@ -12,28 +15,11 @@ async function auditPreWP07() {
 
   try {
     await client.connect();
-    
-    // 1. Audit Tables in all schemas
-    const resTables = await client.query(`
-      SELECT table_schema, table_name 
-      FROM information_schema.tables 
-      WHERE table_schema IN ('public', 'private', 'migration', 'audit') 
-      ORDER BY table_schema, table_name;
-    `);
-    console.log("=== Deployed Production Tables ===");
-    console.table(resTables.rows);
-
-    // 2. Audit System Settings Mode
-    const resMode = await client.query("SELECT setting_key, setting_value FROM public.system_settings WHERE setting_key = 'SYSTEM_MODE';");
-    console.log("System Mode:", resMode.rows[0]);
-
-    // 3. Check if customer/supplier tables exist
-    const resCust = await client.query("SELECT table_name FROM information_schema.tables WHERE table_name IN ('customers', 'suppliers', 'payment_terms');");
-    console.log("Existing customer/supplier/payment_terms tables count:", resCust.rows.length);
-
+    const resTables = await client.query("SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';");
+    console.log("Public tables count:", resTables.rows[0].count);
     await client.end();
   } catch (err) {
-    console.error("ERROR running pre-WP07 audit:", err);
+    console.error("ERROR:", err);
     await client.end().catch(() => {});
   }
 }
