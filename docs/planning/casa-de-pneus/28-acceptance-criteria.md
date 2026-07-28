@@ -1,39 +1,32 @@
-# 28 Acceptance Criteria
+# Production Acceptance Criteria & Verification Gates
 
-## Articles Module
-- Can create, edit, deactivate articles.
-- Article code is globally unique.
-- Stock is not directly editable through the article screen (must use stock movements).
-- All price changes are audited and logged in `price_history`.
+> **Target Project:** `bkbcgndzsfylwsinxwbb.supabase.co`  
 
-## Stock Module
-- All stock movements are transactional.
-- Balance always equals the sum of all confirmed movements.
-- Confirmed stock movements are immutable.
-- Ability to allow or prevent negative stock must be configurable via settings.
+---
 
-## Sales Module
-- Full document lifecycle supported (Draft → Confirmed → Canceled).
-- Document numbering is gap-free and sequentially enforced.
-- Confirmation of a sales document automatically creates corresponding stock and ledger entries.
-- Credit notes reverse stock and ledger effects correctly and are linked to the original invoice.
+## 1. Safety & Production Infrastructure Gates (PROD-WP01)
 
-## Payments Module
-- Partial payments can be distributed correctly across multiple invoices.
-- Total payment allocations never exceed the total payment amounts.
-- Reversals properly restore outstanding invoice amounts and create reversal audit logs.
+- [x] Target project identity confirmed as clean, dedicated Supabase project `bkbcgndzsfylwsinxwbb`.
+- [x] Baseline database audit completed with 0 pre-existing schema conflicts identified.
+- [x] Deployment strategy, disaster recovery, pre-deployment backup protocols, and restoration runbook documented.
+- [x] System activation modes (`MIGRATION`, `PILOT`, `LIVE`, `MAINTENANCE`) specified.
 
-## Migration Module
-- Total record counts for entities (Customers, Articles, Documents) match legacy system exactly.
-- Financial and stock balances match within defined tolerance levels.
-- All legacy IDs (foreign keys and references) are preserved or correctly mapped.
+## 2. Core Schema & Security Gates (PROD-WP02 & PROD-WP03)
 
-## Performance
-- Article search returns results in < 200ms.
-- Document creation (saving a draft) takes < 500ms.
-- Complex report generation completes in < 3s.
+- [ ] 100% of public tables created with RLS enabled in the same migration file.
+- [ ] Company, branch, and warehouse isolation enforced on every multi-tenant query.
+- [ ] Cost-price masking verified for non-authorized roles (`products.view_cost`).
+- [ ] No `SECURITY DEFINER` views in `public`.
 
-## Security
-- No unauthorized access permitted to any module (enforced via RLS and UI gating).
-- Sensitive data (e.g., cost prices, profit margins) hidden from unauthorized users.
-- Comprehensive audit log captures all critical data modifications (who, what, when).
+## 3. Migration & Reconciliation Gates (PROD-WP06, PROD-WP07, PROD-WP10)
+
+- [ ] Legacy imports executed strictly via isolated `migration.*_raw` staging tables.
+- [ ] 100% match on article count, stock quantities, and stock valuation against legacy XT-POS.
+- [ ] 100% match on customer and supplier current account balances.
+- [ ] Zero duplicate document numbers or un-reconciled transactions.
+
+## 4. Cutover & Activation Gate (PROD-WP13)
+
+- [ ] Successful completion of PROD-WP12 Pilot testing with zero blocking defects.
+- [ ] Formal sign-off on final reconciliation report.
+- [ ] Successful server-side transition of system mode from `PILOT` to `LIVE`.

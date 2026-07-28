@@ -1,107 +1,53 @@
-# 25 Implementation Roadmap
+# Revised Implementation Roadmap (13 Production Work Packages)
 
-## 15-Phase Implementation Plan
+> **Fixed Target Project:** `bkbcgndzsfylwsinxwbb.supabase.co`  
+> **Key Revisions:** Removed empty staging requirement; target is production in pre-live mode (`MIGRATION` → `PILOT` → `LIVE`); domain-interleaved migration; continuous security & RLS testing in every package.
 
-### Phase 0 — Discovery & Preservation (1 week)
-- **Objective:** Secure legacy data
-- **Tasks:** Locate XT-POS data, full backup, disk image, identify DB format
-- **Deliverables:** Preservation report, data inventory
-- **Exit criteria:** Read-only archive confirmed
+---
 
-### Phase 1 — Architecture & Repository Foundation (1 week)
-- **Objective:** Project scaffold
-- **Tasks:** Next.js + TypeScript setup, Supabase project config, CI/CD pipeline, design system implementation from Stitch
-- **DB tables:** `companies`, `branches`, `warehouses`, `company_settings`, `application_settings`
-- **Deliverables:** Running dev environment, CI pipeline green
-- **Exit criteria:** `npm run build` passes, deploy to Vercel staging
+## Production Work Package Overview
 
-### Phase 2 — Authentication & Authorization (1 week)
-- **Objective:** Secure access
-- **Tasks:** Supabase Auth config, login page, user management, roles, permissions, RLS policies
-- **DB tables:** `user_profiles`, `roles`, `permissions`, `role_permissions`, `user_roles`, `branch_access`, `warehouse_access`, `login_events`
-- **Screens:** Utilizadores, Perfis e Permissões
-- **Exit criteria:** All 8 roles can login, permissions enforced, RLS active
+```mermaid
+graph TD
+    PROD01[PROD-WP01: Baseline & Safety Gate] --> PROD02[PROD-WP02: Core Schemas & Settings]
+    PROD02 --> PROD03[PROD-WP03: Auth, RBAC & RLS]
+    PROD03 --> PROD04[PROD-WP04: Articles & Pricing]
+    PROD04 --> PROD05[PROD-WP05: Stock Engine]
+    PROD05 --> PROD06[PROD-WP06: Legacy Article & Stock Import]
+    PROD06 --> PROD07[PROD-WP07: Customers, Suppliers & Legacy Import]
+    PROD07 --> PROD08[PROD-WP08: Sales & Purchase Documents]
+    PROD08 --> PROD09[PROD-WP09: Payments, Allocations & Ledger]
+    PROD09 --> PROD10[PROD-WP10: Legacy Historical Documents Import]
+    PROD10 --> PROD11[PROD-WP11: Reports & Audit]
+    PROD11 --> PROD12[PROD-WP12: Pilot Testing]
+    PROD12 --> PROD13[PROD-WP13: Final Cutover to LIVE]
+```
 
-### Phase 3 — Master Data & Articles (1 week)
-- **Objective:** Establish core product catalog
-- **Tasks:** Implement product management CRUD, pricing, categorization
-- **DB tables:** `products`, `product_families`, `product_categories`, `brands`, `units_of_measure`, `tax_codes`, `price_history`
-- **Screens:** Artigos e Stock, Criar/Editar Artigo
-- **APIs:** `/products` CRUD, search, barcode lookup
-- **Exit criteria:** Full article CRUD with audit, search <200ms
+### Detailed Summary
 
-### Phase 4 — Stock Engine (1-2 weeks)
-- **Objective:** Reliable inventory tracking
-- **Tasks:** Implement transactional stock movements and balance calculations
-- **DB tables:** `inventory_balances`, `stock_movements`, `stock_movement_reasons`, `inventory_counts`, `inventory_count_lines`, `stock_transfers`, `stock_transfer_lines`
-- **Screens:** Entrada de Stock, Saída de Stock, Extrato de Movimentos
-- **APIs:** Stock entry/exit/adjust/transfer
-- **Exit criteria:** Stock movements transactional, balance always consistent, idempotent
-
-### Phase 5 — Customers & Suppliers (1 week)
-- **Objective:** CRM and vendor management
-- **Tasks:** Implement contact and financial profiles for third-parties
-- **DB tables:** `customers`, `customer_addresses`, `customer_contacts`, `suppliers`, `supplier_addresses`, `supplier_contacts`, `supplier_bank_accounts`
-- **Screens:** Lista de Clientes, Criar/Editar Cliente, Detalhes Cliente, Lista de Fornecedores, Novo/Editar Fornecedor
-- **Exit criteria:** Full CRUD, credit limit validation
-
-### Phase 6 — Sales Documents (2 weeks)
-- **Objective:** Core revenue generation flow
-- **Tasks:** Quote to Invoice lifecycle, PDF generation, fiscal compliance
-- **DB tables:** `document_types`, `documents`, `document_lines`, `document_status_history`, `document_links`, `fiscal_periods`, `document_sequences`
-- **Screens:** Nova Venda, Guia de Remessa, Factura, Nota de Crédito, Nota de Débito
-- **APIs:** Document lifecycle (draft→confirm→cancel)
-- **Exit criteria:** Full document lifecycle with stock + ledger effects
-
-### Phase 7 — Supplier Documents & Purchases (1-2 weeks)
-- **Objective:** Core expense and procurement flow
-- **Tasks:** Supplier invoices, delivery notes, and debit/credit notes
-- **Screens:** Guia de Remessa Fornecedor, Registo Factura Fornecedor, Aviso Débito, Aviso Crédito
-- **APIs:** Supplier document lifecycle
-- **Exit criteria:** Purchase flow complete, duplicate invoice detection
-
-### Phase 8 — Current Accounts & Payments (2 weeks)
-- **Objective:** Financial tracking and settlements
-- **Tasks:** Ledger management, receipts, payments, and partial allocations
-- **DB tables:** `payment_methods`, `payments`, `payment_method_entries`, `payment_allocations`, `payment_reversals`, `ledger_accounts`, `ledger_entries`, `ledger_entry_links`
-- **Screens:** Conta Corrente Cliente, Conta Corrente Fornecedor, Recebimento, Pagamento a Fornecedor, Distribuição Parcial, Recibo
-- **Exit criteria:** Full payment lifecycle, partial payments, reversals, correct balances
-
-### Phase 9 — Reports & Printing (1-2 weeks)
-- **Objective:** Business intelligence and operational outputs
-- **Tasks:** Implement all required reports and optimize printing
-- **Screens:** Relatório Stock, Relatório Vendas, Contas a Receber e Pagar, Pesquisa Documentos
-- **Reports:** All 17 report types
-- **Exit criteria:** All reports generate correctly, PDF export works
-
-### Phase 10 — Legacy Migration Tooling (2-3 weeks)
-- **Objective:** Data transition
-- **Tasks:** ETL scripts from XT-POS PRO v3.50 to Supabase
-- **DB tables:** All `migration_*` tables
-- **Screen:** Auditoria, Backup e Migração
-- **APIs:** Migration batch lifecycle
-- **Exit criteria:** Can import test data, reconciliation report matches
-
-### Phase 11 — Security Hardening (1 week)
-- **Objective:** Protect system and data
-- **Tasks:** RLS policy review, penetration testing, rate limiting, security headers
-- **Exit criteria:** Security checklist complete
-
-### Phase 12 — Testing & Reconciliation (1-2 weeks)
-- **Objective:** Ensure data integrity and system stability
-- **Tasks:** Full test suite execution, migration dry-run with real data
-- **Exit criteria:** All tests pass, reconciliation within tolerance
-
-### Phase 13 — User Acceptance Testing (1 week)
-- **Objective:** Client validation
-- **Tasks:** Training, user testing, feedback incorporation
-- **Exit criteria:** User sign-off
-
-### Phase 14 — Production Rollout (3-5 days)
-- **Objective:** Go live
-- **Tasks:** Final migration, cutoff, go-live
-- **Exit criteria:** System live, legacy read-only
-
-### Phase 15 — Post-Launch Support (ongoing)
-- **Objective:** Maintenance and evolution
-- **Tasks:** Bug fixes, performance tuning, feature requests
+1. **PROD-WP01: Production Baseline & Safety Foundation** (Mode: `MIGRATION`)
+   - Audit target `bkbcgndzsfylwsinxwbb`, verify clean database, establish backup protocols & evidence structures.
+2. **PROD-WP02: Core Schema & Company Configuration** (Mode: `MIGRATION`)
+   - Schemas: `public`, `private`, `migration`, `audit`. Core tables: `companies`, `branches`, `warehouses`, `fiscal_periods`, `company_settings`.
+3. **PROD-WP03: Authentication, RBAC & RLS Foundation** (Mode: `MIGRATION`)
+   - Supabase Auth profiles, 8 RBAC roles, ~70 permissions, RLS policies on all tables, helper security functions.
+4. **PROD-WP04: Articles & Reference Data** (Mode: `MIGRATION`)
+   - Product catalogue (`products`, `product_families`, `product_categories`, `brands`, `units_of_measure`, `tax_codes` Moz IVA 16%, `price_history`).
+5. **PROD-WP05: Stock Engine & Balance Posting** (Mode: `MIGRATION`)
+   - Inventory balances, stock movements, reasons, inventory counts, transfers, transactional RPCs.
+6. **PROD-WP06: Legacy Article & Opening Stock Migration** (Mode: `MIGRATION`)
+   - Staging import in `migration.products_raw` and `migration.stock_movements_raw`, transformation, reconciliation.
+7. **PROD-WP07: Customers, Suppliers & Legacy Contact Migration** (Mode: `MIGRATION`)
+   - Customer and supplier entities, addresses, contacts, bank accounts; import legacy XT-POS contacts.
+8. **PROD-WP08: Commercial Documents (Sales & Purchases)** (Mode: `MIGRATION`)
+   - Document types, documents, lines, status history, links, gap-free sequences (`document_sequences`).
+9. **PROD-WP09: Payments, Allocations & Current Accounts** (Mode: `MIGRATION`)
+   - Payment methods, payments, method entries, allocations, reversals, ledger accounts & entries.
+10. **PROD-WP10: Historical Document & Payment Migration** (Mode: `MIGRATION`)
+    - Import legacy XT-POS invoices, credit notes, receipts, balances; transform, reconcile.
+11. **PROD-WP11: Reports, Printing & Operational Monitoring** (Mode: `MIGRATION`)
+    - Report views, daily cash report, stock valuation, margin analysis with cost-price masking, PDF export.
+12. **PROD-WP12: Pilot Deployment & Acceptance Testing** (Mode: `PILOT`)
+    - Onboard pilot staff, run pre-live testing, verify multi-user permission isolation & audit logs.
+13. **PROD-WP13: Final Delta Cutover & System Activation** (Mode: `LIVE`)
+    - Freeze XT-POS, run final delta import, 100% reconciliation pass, activate mode `LIVE`.
