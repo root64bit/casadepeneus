@@ -12,6 +12,10 @@
 - The browser configuration now uses the Supabase publishable-key format.
 - Administrative scripts now use the Supabase secret-key format; neither value
   was logged or committed.
+- Sites version 2 was verified to contain one publishable value and zero secret
+  or legacy JWT API-key values.
+- Legacy anon/service-role API keys were disabled on 2026-07-28. Both historical
+  keys now return HTTP 401; publishable-key login still passes.
 - `npm run audit:security` blocks tracked environment files and populated
   privileged credentials.
 
@@ -24,8 +28,6 @@ that appeared there as exposed.
 ## Required external completion before PILOT
 
 - Rotate the production database password in Supabase.
-- Disable the legacy anon/service-role pair after the newly deployed publishable
-  key is verified in production.
 - Rotate the Management API access token and any third-party credential found
   in the historical file.
 - Update approved secret stores and CI/deployment settings.
@@ -34,6 +36,5 @@ that appeared there as exposed.
   force-push and require every clone to re-clone; credential rotation remains
   mandatory even after rewriting.
 
-The historical legacy service-role key remains a blocker until legacy API keys
-are disabled. Database-password and Management-token rotation are also external
-PILOT gates.
+The historical service-role exposure is remediated by legacy-key disablement.
+Database-password and Management-token rotation remain external PILOT gates.
