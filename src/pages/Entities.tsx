@@ -5,9 +5,20 @@ import { formatMZN } from '../stitch/stitchConfig';
 interface EntitiesProps {
   clients: Client[];
   suppliers: Supplier[];
+  onNewCustomer: () => void;
+  onNewSupplier: () => void;
+  canCreateCustomer: boolean;
+  canCreateSupplier: boolean;
 }
 
-export const Entities: React.FC<EntitiesProps> = ({ clients, suppliers }) => {
+export const Entities: React.FC<EntitiesProps> = ({
+  clients,
+  suppliers,
+  onNewCustomer,
+  onNewSupplier,
+  canCreateCustomer,
+  canCreateSupplier,
+}) => {
   const totalPending = clients.reduce((acc, c) => acc + c.pendingBalance, 0);
 
   return (
@@ -22,6 +33,13 @@ export const Entities: React.FC<EntitiesProps> = ({ clients, suppliers }) => {
           <span className="text-xs font-bold font-mono text-[#ba1a1a]">
             Dívidas Pendentes: {formatMZN(totalPending)}
           </span>
+          {canCreateCustomer && <button
+            type="button"
+            onClick={onNewCustomer}
+            className="rounded bg-[#006e25] px-3 py-1.5 text-xs font-black uppercase text-white"
+          >
+            + Novo cliente
+          </button>}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
@@ -76,6 +94,13 @@ export const Entities: React.FC<EntitiesProps> = ({ clients, suppliers }) => {
             <span className="material-symbols-outlined mr-2">local_shipping</span>
             Fornecedores ({suppliers.length})
           </h3>
+          {canCreateSupplier && <button
+            type="button"
+            onClick={onNewSupplier}
+            className="rounded bg-[#003366] px-3 py-1.5 text-xs font-black uppercase text-white"
+          >
+            + Novo fornecedor
+          </button>}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">

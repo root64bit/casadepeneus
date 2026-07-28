@@ -1,53 +1,75 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StockMovement, Article } from '../types';
 
 interface StockMovementsProps {
   movements: StockMovement[];
   articles: Article[];
-  onAddMovement: (mov: StockMovement) => void;
+  onAddMovement: (mov: StockMovement) => Promise<void>;
+  canPostEntry: boolean;
+  canPostExit: boolean;
 }
 
 export const StockMovements: React.FC<StockMovementsProps> = ({
   movements,
   articles,
-  onAddMovement
+  onAddMovement,
+  canPostEntry,
+  canPostExit,
 }) => {
   const [type, setType] = useState<'entrada' | 'saida'>('entrada');
   const [docRef, setDocRef] = useState(`G-E/${Math.floor(100 + Math.random() * 900)}`);
   const [articleId, setArticleId] = useState(articles[0]?.id || '');
   const [quantity, setQuantity] = useState(10);
   const [entityName, setEntityName] = useState('Continental SA');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!canPostEntry && canPostExit) setType('saida');
+  }, [canPostEntry, canPostExit]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const art = articles.find(a => a.id === articleId);
     if (!art) return;
 
-    onAddMovement({
-      id: `mov-${Date.now()}`,
-      type,
-      docRef,
-      date: new Date().toISOString().split('T')[0],
-      articleCode: art.code,
-      articleDescription: art.description,
-      quantity,
-      entityName,
-      operator: 'Operador Balcão'
-    });
-
-    alert(`Movimento de ${type.toUpperCase()} registado com sucesso!`);
+    setSaving(true);
+    setError('');
+    try {
+      await onAddMovement({
+        id: `mov-${Date.now()}`,
+        type,
+        docRef,
+        date: new Date().toISOString().split('T')[0],
+        articleCode: art.code,
+        articleDescription: art.description,
+        quantity,
+        entityName,
+        operator: 'Operador Balcão'
+      });
+      alert(`Movimento de ${type.toUpperCase()} registado com sucesso!`);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Falha ao registar movimento.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="space-y-6">
       {/* Form to Register Stock Movement */}
-      <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-5 rounded shadow-sm">
+      {(canPostEntry || canPostExit) && <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-5 rounded shadow-sm">
         <h3 className="font-bold text-[#001e40] dark:text-[#a7c8ff] text-sm flex items-center mb-4">
           <span className="material-symbols-outlined mr-2">swap_horiz</span>
           Registar Nova Entrada / Saída de Stock
         </h3>
 
         <form onSubmit={handleSubmit} className="grid grid-cols-12 gap-4 text-xs">
+          {error && (
+            <p role="alert" className="col-span-12 rounded bg-red-50 p-3 font-bold text-red-700">
+              {error}
+            </p>
+          )}
           <div className="col-span-12 md:col-span-2">
             <label className="block font-bold text-[#737780] uppercase mb-1">Tipo de Operação</label>
             <select
@@ -55,8 +77,8 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
               onChange={(e) => setType(e.target.value as any)}
               className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white rounded p-2 text-sm focus-ring font-bold"
             >
-              <option value="entrada">ENTRADA (Fornecedor)</option>
-              <option value="saida">SAÍDA (Ajuste / Cliente)</option>
+              {canPostEntry && <option value="entrada">ENTRADA (Fornecedor)</option>}
+              {canPostExit && <option value="saida">SAÍDA (Ajuste / Cliente)</option>}
             </select>
           </div>
 
@@ -101,13 +123,14 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
           <div className="col-span-12 md:col-span-2 flex items-end">
             <button
               type="submit"
-              className="w-full py-2.5 bg-[#003366] text-white font-bold text-xs uppercase rounded hover:brightness-110 shadow"
+              disabled={saving || !articleId || quantity <= 0}
+              className="w-full py-2.5 bg-[#003366] text-white font-bold text-xs uppercase rounded hover:brightness-110 shadow disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Registar
+              {saving ? 'A registar…' : 'Registar'}
             </button>
           </div>
         </form>
-      </section>
+      </section>}
 
       {/* Movement Logs History Table */}
       <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded overflow-hidden shadow-sm">

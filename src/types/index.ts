@@ -27,6 +27,7 @@ export interface SaleItem {
 
 export interface SaleInvoice {
   id: string;
+  clientId?: string;
   docNumber: string;
   date: string;
   clientName: string;
@@ -75,4 +76,84 @@ export interface Supplier {
   phone: string;
   contactPerson: string;
   totalPurchases: number;
+}
+
+export interface CompanyProfile {
+  name: string;
+  taxNumber: string;
+  address: string;
+  city: string;
+  country: string;
+  phone: string;
+  email: string;
+  currency: string;
+}
+
+export interface DocumentRecord {
+  id: string;
+  displayNumber: string;
+  date: string;
+  dueDate: string;
+  typeCode: string;
+  typeName: string;
+  partyType: 'CUSTOMER' | 'SUPPLIER';
+  partyId: string;
+  partyName: string;
+  status: string;
+  netTotal: number;
+  taxTotal: number;
+  grandTotal: number;
+  paidAmount: number;
+  outstandingAmount: number;
+}
+
+export interface PaymentRecord {
+  id: string;
+  displayNumber: string;
+  date: string;
+  direction: 'CUSTOMER_RECEIPT' | 'SUPPLIER_PAYMENT';
+  partyName: string;
+  totalAmount: number;
+  allocatedAmount: number;
+  unappliedAmount: number;
+  status: string;
+}
+
+export interface LedgerRecord {
+  id: string;
+  date: string;
+  partyType: 'CUSTOMER' | 'SUPPLIER';
+  partyName: string;
+  entryType: string;
+  debitAmount: number;
+  creditAmount: number;
+  outstandingAmount: number;
+  status: string;
+}
+
+export interface UserSummary {
+  id: string;
+  fullName: string;
+  email: string;
+  active: boolean;
+  roles: string[];
+}
+
+export interface PurchaseItem {
+  articleId: string;
+  code: string;
+  description: string;
+  quantity: number;
+  unitCost: number;
+  discountPercent: number;
+  taxPercent: number;
+  total: number;
+}
+
+export interface PurchaseInvoiceInput {
+  supplierId: string;
+  date: string;
+  supplierInvoiceNumber: string;
+  paymentTermCode: 'DINHEIRO' | '30_DIAS';
+  items: PurchaseItem[];
 }

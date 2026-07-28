@@ -7,13 +7,17 @@ interface InventoryProps {
   globalSearch: string;
   onOpenNewArticleModal: () => void;
   setActiveTab: (tab: string) => void;
+  canViewCost: boolean;
+  canCreate: boolean;
 }
 
 export const Inventory: React.FC<InventoryProps> = ({
   articles,
   globalSearch,
   onOpenNewArticleModal,
-  setActiveTab
+  setActiveTab,
+  canViewCost,
+  canCreate,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('todos');
   const [localSearch, setLocalSearch] = useState<string>('');
@@ -77,13 +81,13 @@ export const Inventory: React.FC<InventoryProps> = ({
 
           {/* Action Buttons */}
           <div className="flex items-center space-x-2">
-            <button
+            {canCreate && <button
               onClick={onOpenNewArticleModal}
               className="flex items-center px-4 py-2 bg-[#006e25] text-white font-bold rounded text-xs uppercase hover:brightness-110 shadow-sm"
             >
               <span className="material-symbols-outlined mr-1.5 text-base">add_circle</span>
               Novo Artigo (F3)
-            </button>
+            </button>}
             <button
               onClick={() => window.print()}
               className="flex items-center px-3 py-2 bg-[#e7e8e9] dark:bg-[#282c2e] text-[#191c1d] dark:text-white font-bold rounded text-xs uppercase hover:bg-[#c3c6d1]"
@@ -113,8 +117,8 @@ export const Inventory: React.FC<InventoryProps> = ({
                 <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-center">Un.</th>
                 <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">Stock Mín.</th>
                 <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">Existência</th>
-                <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">P. Custo</th>
-                <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">% Margem</th>
+                {canViewCost && <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">P. Custo</th>}
+                {canViewCost && <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">% Margem</th>}
                 <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">P. Venda</th>
                 <th className="px-3 py-3 text-right">P. c/ IVA (16%)</th>
               </tr>
@@ -153,12 +157,12 @@ export const Inventory: React.FC<InventoryProps> = ({
                         {art.stock}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">
+                    {canViewCost && <td className="px-3 py-2.5 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">
                       {art.costPrice.toFixed(2)}
-                    </td>
-                    <td className="px-3 py-2.5 border-r border-[#c3c6d1] dark:border-[#43474f] text-right text-gray-500">
+                    </td>}
+                    {canViewCost && <td className="px-3 py-2.5 border-r border-[#c3c6d1] dark:border-[#43474f] text-right text-gray-500">
                       {art.profitMargin}%
-                    </td>
+                    </td>}
                     <td className="px-3 py-2.5 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">
                       {art.sellPrice.toFixed(2)}
                     </td>
@@ -175,10 +179,10 @@ export const Inventory: React.FC<InventoryProps> = ({
 
       {/* Summary Stats (Bento Style Grid) */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-[#1f2325] p-4 border border-[#c3c6d1] dark:border-[#43474f] rounded">
+        {canViewCost && <div className="bg-white dark:bg-[#1f2325] p-4 border border-[#c3c6d1] dark:border-[#43474f] rounded">
           <p className="text-xs font-bold text-[#737780] dark:text-[#c3c6d1] uppercase mb-1">Total de Artigos</p>
           <p className="text-2xl font-extrabold text-[#001e40] dark:text-[#a7c8ff] font-mono">{totalArticlesCount}</p>
-        </div>
+        </div>}
 
         <div className="bg-white dark:bg-[#1f2325] p-4 border border-[#c3c6d1] dark:border-[#43474f] rounded">
           <p className="text-xs font-bold text-[#737780] dark:text-[#c3c6d1] uppercase mb-1">Valor Custo (Stock Total)</p>

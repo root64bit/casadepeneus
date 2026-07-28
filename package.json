@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "node scripts/clean_sites_build.js && tsc && vite build && node scripts/prepare_sites_build.js",
     "preview": "vite preview"
   },
   "dependencies": {

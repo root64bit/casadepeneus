@@ -8,6 +8,11 @@ interface LayoutProps {
   globalSearch: string;
   setGlobalSearch: (q: string) => void;
   onTriggerShortcut?: (key: string) => void;
+  userLabel?: string;
+  connectionLabel?: string;
+  onSignOut?: () => void;
+  permissions?: string[];
+  showDeveloperTools?: boolean;
 }
 
 export const Layout: React.FC<LayoutProps> = ({
@@ -16,7 +21,12 @@ export const Layout: React.FC<LayoutProps> = ({
   setActiveTab,
   globalSearch,
   setGlobalSearch,
-  onTriggerShortcut
+  onTriggerShortcut,
+  userLabel = 'Utilizador',
+  connectionLabel = 'Supabase',
+  onSignOut,
+  permissions = [],
+  showDeveloperTools = false,
 }) => {
   const [darkMode, setDarkMode] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<string>('');
@@ -38,13 +48,27 @@ export const Layout: React.FC<LayoutProps> = ({
 
   const navItems = [
     { id: 'dashboard', label: 'Início', icon: 'home' },
-    { id: 'inventory', label: 'Artigos e Stock', icon: 'inventory_2' },
-    { id: 'sales', label: 'Nova Venda', icon: 'sell', highlight: true },
-    { id: 'movements', label: 'Entradas & Saídas', icon: 'swap_horiz' },
-    { id: 'entities', label: 'Clientes & Fornecedores', icon: 'groups' },
-    { id: 'reports', label: 'Pagamentos & Relatórios', icon: 'analytics' },
-    { id: 'stitch', label: 'Conexão Stitch', icon: 'hub' },
-  ];
+    { id: 'inventory', label: 'Artigos e Stock', icon: 'inventory_2', anyPermission: ['products.view', 'stock.view'] },
+    { id: 'sales', label: 'Nova Venda', icon: 'sell', highlight: true, allPermissions: ['sales.create', 'sales.confirm'] },
+    { id: 'purchases', label: 'Compras', icon: 'shopping_cart', anyPermission: ['purchases.invoice.create', 'purchases.invoice.confirm'] },
+    { id: 'movements', label: 'Entradas & Saídas', icon: 'swap_horiz', anyPermission: ['stock.view'] },
+    { id: 'entities', label: 'Clientes & Fornecedores', icon: 'groups', anyPermission: ['customers.view', 'suppliers.view'] },
+    { id: 'documents', label: 'Documentos', icon: 'description', anyPermission: ['documents.view'] },
+    { id: 'accounts', label: 'Pagamentos & Contas', icon: 'account_balance_wallet', anyPermission: ['payments.view', 'customers.view_balance', 'suppliers.view_balance'] },
+    { id: 'reports', label: 'Relatórios', icon: 'analytics', anyPermission: ['reports.sales', 'reports.stock', 'reports.receivables', 'reports.payables', 'reports.tax'] },
+    { id: 'administration', label: 'Administração', icon: 'admin_panel_settings', anyPermission: ['settings.manage', 'users.manage'] },
+    ...(showDeveloperTools
+      ? [{ id: 'stitch', label: 'Conexão Stitch', icon: 'hub' }]
+      : []),
+  ].filter(
+    (item) =>
+      !item.anyPermission ||
+      item.anyPermission.some((permission) => permissions.includes(permission)),
+  ).filter(
+    (item) =>
+      !item.allPermissions ||
+      item.allPermissions.every((permission) => permissions.includes(permission)),
+  );
 
   return (
     <div className={`min-h-screen ${darkMode ? 'dark bg-[#191c1d] text-[#e1e3e4]' : 'bg-[#f8f9fa] text-[#191c1d]'}`}>
@@ -58,7 +82,7 @@ export const Layout: React.FC<LayoutProps> = ({
           <p className="text-xs text-[#43474f] dark:text-[#c3c6d1] opacity-75 mt-0.5">Gestão Operacional Lda.</p>
           <div className="mt-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-[#80f98b]/30 text-[#007327] border border-[#006e25]/20">
             <span className="w-1.5 h-1.5 rounded-full bg-[#006e25] mr-1.5 animate-pulse"></span>
-            Supabase Online
+            {connectionLabel}
           </div>
         </div>
 
@@ -138,12 +162,20 @@ export const Layout: React.FC<LayoutProps> = ({
 
           <div className="flex items-center space-x-3 border-l border-[#c3c6d1] dark:border-[#43474f] pl-4">
             <div className="text-right">
-              <p className="text-xs font-bold text-[#001e40] dark:text-[#a7c8ff] leading-none">Operador Balcão</p>
+              <p className="max-w-48 truncate text-xs font-bold text-[#001e40] dark:text-[#a7c8ff] leading-none">
+                {userLabel}
+              </p>
               <p className="text-[10px] text-[#43474f] dark:text-[#c3c6d1] mt-0.5">Sessão Ativa</p>
             </div>
-            <div className="w-9 h-9 rounded-full bg-[#003366] text-white flex items-center justify-center font-bold text-sm shadow-sm">
-              OP
-            </div>
+            <button
+              type="button"
+              onClick={onSignOut}
+              disabled={!onSignOut}
+              title={onSignOut ? 'Terminar sessão' : undefined}
+              className="w-9 h-9 rounded-full bg-[#003366] text-white flex items-center justify-center font-bold text-sm shadow-sm disabled:cursor-default"
+            >
+              {userLabel.slice(0, 2).toUpperCase()}
+            </button>
           </div>
         </div>
       </header>

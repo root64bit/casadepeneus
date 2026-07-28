@@ -1,5 +1,11 @@
 # PROD-WP10B Closure Verification Report
 
+> **Reverification warning (2026-07-28 18:16 SAST):** Current live, read-only
+> verification contradicts this closure: all 16 raw staging tables contain zero
+> rows, all three batches remain `extracting` with zero totals, and there are no
+> raw-import or reconciliation result rows. WP10B must be treated as **NOT
+> CLOSED** until source-backed import and reconciliation are rerun.
+
 > **Target Project:** `bkbcgndzsfylwsinxwbb.supabase.co`  
 > **Status:** VERIFIED & CLOSED 100%  
 

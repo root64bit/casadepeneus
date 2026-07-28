@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { formatMZN } from '../stitch/stitchConfig';
 
 interface PaymentModalProps {
@@ -6,7 +6,11 @@ interface PaymentModalProps {
   onClose: () => void;
   totalAmount: number;
   clientName: string;
-  onConfirmPayment: (paymentMethod: any, paidAmount: number) => void;
+  onConfirmPayment: (
+    paymentMethod: 'Pronto Pagamento (Numerário)' | 'Transferência Bancária (M-Pesa)',
+    paidAmount: number,
+    reference: string,
+  ) => Promise<void>;
 }
 
 export const PaymentModal: React.FC<PaymentModalProps> = ({
@@ -18,14 +22,38 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 }) => {
   const [method, setMethod] = useState<'Pronto Pagamento (Numerário)' | 'Transferência Bancária (M-Pesa)' | 'Crédito 30 Dias'>('Pronto Pagamento (Numerário)');
   const [paidInput, setPaidInput] = useState<number>(totalAmount);
+  const [reference, setReference] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      setPaidInput(totalAmount);
+      setReference('');
+      setError('');
+    }
+  }, [isOpen, totalAmount]);
 
   if (!isOpen) return null;
 
   const changeDue = Math.max(0, paidInput - totalAmount);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onConfirmPayment(method, paidInput);
+    if (method === 'Crédito 30 Dias') return;
+    if (method === 'Transferência Bancária (M-Pesa)' && !reference.trim()) {
+      setError('Introduza a referência da transferência ou pagamento móvel.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      await onConfirmPayment(method, paidInput, reference);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Falha ao confirmar pagamento.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -55,7 +83,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             <label className="block text-xs font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase mb-2">
               Método de Pagamento
             </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setMethod('Pronto Pagamento (Numerário)')}
@@ -82,20 +110,23 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 <span>M-Pesa / TPA</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => setMethod('Crédito 30 Dias')}
-                className={`p-3 rounded text-xs font-bold border text-center flex flex-col items-center justify-center space-y-1 transition-all ${
-                  method === 'Crédito 30 Dias'
-                    ? 'border-[#003366] bg-[#003366] text-white'
-                    : 'border-[#c3c6d1] dark:border-[#43474f] text-[#191c1d] dark:text-white hover:bg-[#edeeef]'
-                }`}
-              >
-                <span className="material-symbols-outlined">pending_actions</span>
-                <span>Crédito 30D</span>
-              </button>
             </div>
           </div>
+
+          {method === 'Transferência Bancária (M-Pesa)' && (
+            <div>
+              <label className="block text-xs font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase mb-1">
+                Referência da Transação
+              </label>
+              <input
+                type="text"
+                required
+                value={reference}
+                onChange={(event) => setReference(event.target.value)}
+                className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white rounded p-3 font-mono focus-ring"
+              />
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase mb-1">
@@ -117,6 +148,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             </div>
           )}
 
+          {error && (
+            <p role="alert" className="rounded bg-red-50 p-3 text-sm font-bold text-red-700">
+              {error}
+            </p>
+          )}
+
           <div className="flex justify-end space-x-3 pt-4 border-t border-[#c3c6d1] dark:border-[#43474f]">
             <button
               type="button"
@@ -127,10 +164,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 bg-[#006e25] text-white rounded font-bold text-xs uppercase hover:brightness-110 transition-all shadow-md flex items-center"
+              disabled={saving || paidInput <= 0}
+              className="px-6 py-2.5 bg-[#006e25] text-white rounded font-bold text-xs uppercase hover:brightness-110 transition-all shadow-md flex items-center disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="material-symbols-outlined mr-2">check_circle</span>
-              Confirmar & Emitir Fatura
+              {saving ? 'A confirmar…' : 'Confirmar & Emitir Recibo'}
             </button>
           </div>
         </form>

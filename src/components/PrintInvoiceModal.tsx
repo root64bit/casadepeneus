@@ -1,14 +1,15 @@
 import React from 'react';
-import { SaleInvoice } from '../types';
+import { CompanyProfile, SaleInvoice } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
 
 interface PrintInvoiceModalProps {
   isOpen: boolean;
   onClose: () => void;
   invoice: SaleInvoice | null;
+  company: CompanyProfile;
 }
 
-export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, onClose, invoice }) => {
+export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, onClose, invoice, company }) => {
   if (!isOpen || !invoice) return null;
 
   return (
@@ -37,10 +38,17 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
         <div className="p-8 font-sans space-y-6 max-h-[80vh] overflow-y-auto print:max-h-none print:p-0">
           <div className="flex justify-between items-start border-b-2 border-[#003366] pb-4">
             <div>
-              <h1 className="text-2xl font-extrabold text-[#001e40] uppercase tracking-wide">Casa de Pneus, Lda.</h1>
+              <h1 className="text-2xl font-extrabold text-[#001e40] uppercase tracking-wide">{company.name}</h1>
               <p className="text-xs text-gray-600 font-medium">Venda, Montagem e Calibragem de Pneus</p>
-              <p className="text-xs text-gray-500">Av. 24 de Julho Nº 3400, Maputo • NUIT: 400123999</p>
-              <p className="text-xs text-gray-500">Tel: +258 21 300 400 • Email: vendas@casadepneus.co.mz</p>
+              <p className="text-xs text-gray-500">
+                {[company.address, company.city, company.country].filter(Boolean).join(', ')}
+                {company.taxNumber ? ` • NUIT: ${company.taxNumber}` : ''}
+              </p>
+              <p className="text-xs text-gray-500">
+                {[company.phone && `Tel: ${company.phone}`, company.email && `Email: ${company.email}`]
+                  .filter(Boolean)
+                  .join(' • ')}
+              </p>
             </div>
             <div className="text-right">
               <span className="inline-block bg-[#001e40] text-white font-bold px-3 py-1 text-sm rounded">
@@ -56,7 +64,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
             <div>
               <span className="font-bold text-gray-500 block uppercase">Dados do Cliente:</span>
               <p className="font-bold text-sm text-gray-900">{invoice.clientName || 'Consumidor Final'}</p>
-              <p className="text-gray-600">NUIT: {invoice.clientNuit || '499999999'}</p>
+              <p className="text-gray-600">NUIT: {invoice.clientNuit || 'Não indicado'}</p>
               <p className="text-gray-600">Endereço: {invoice.clientAddress || 'Maputo, Moçambique'}</p>
             </div>
             <div className="text-right">
@@ -119,7 +127,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
 
           <div className="border-t border-dashed border-gray-300 pt-4 text-center text-[10px] text-gray-500">
             <p>Obrigado pela sua preferência! Os artigos têm garantia de fábrica contra defeitos de fabricação.</p>
-            <p className="font-bold text-gray-700 mt-1">Processado por Computador • Casa de Pneus, Lda.</p>
+            <p className="font-bold text-gray-700 mt-1">Processado por Computador • {company.name}</p>
           </div>
         </div>
       </div>

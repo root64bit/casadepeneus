@@ -102,7 +102,7 @@ export const StitchConnection: React.FC = () => {
               <div className="p-4 bg-[#f3f4f5] dark:bg-[#282c2e] rounded border border-[#c3c6d1] dark:border-[#43474f]">
                 <label className="text-xs font-bold text-[#737780] uppercase block mb-1">Supabase Project URL</label>
                 <p className="font-mono text-xs text-[#003366] dark:text-[#a7c8ff] select-all break-all">
-                  {import.meta.env.VITE_SUPABASE_URL || 'https://oskgvlwdncqsnoycerud.supabase.co'}
+                  {import.meta.env.VITE_SUPABASE_URL || 'Supabase não configurado'}
                 </p>
               </div>
               <div className="p-4 bg-[#80f98b]/10 rounded border border-[#006e25]/20">

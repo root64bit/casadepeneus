@@ -4,7 +4,7 @@ import { Article } from '../types';
 interface NewArticleModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (article: Omit<Article, 'id'>) => void;
+  onSave: (article: Omit<Article, 'id'>) => Promise<void>;
 }
 
 export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClose, onSave }) => {
@@ -17,35 +17,44 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
   const [minStock, setMinStock] = useState<number>(5);
   const [costPrice, setCostPrice] = useState<number>(1000);
   const [profitMargin, setProfitMargin] = useState<number>(25);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   if (!isOpen) return null;
 
   const calculatedSellPrice = costPrice * (1 + profitMargin / 100);
   const calculatedSellPriceWithIva = calculatedSellPrice * 1.16;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!code || !description) {
       alert('Por favor preencha o código e a descrição do artigo.');
       return;
     }
 
-    onSave({
-      code: code.toUpperCase(),
-      description,
-      category,
-      brand,
-      size,
-      unit: category === 'servicos' ? 'SER' : 'UN',
-      stock: Number(stock),
-      minStock: Number(minStock),
-      costPrice: Number(costPrice),
-      profitMargin: Number(profitMargin),
-      sellPrice: Math.round(calculatedSellPrice * 100) / 100,
-      sellPriceWithIva: Math.round(calculatedSellPriceWithIva * 100) / 100
-    });
-
-    onClose();
+    setSaving(true);
+    setError('');
+    try {
+      await onSave({
+        code: code.toUpperCase(),
+        description,
+        category,
+        brand,
+        size,
+        unit: category === 'servicos' ? 'SER' : 'UN',
+        stock: Number(stock),
+        minStock: Number(minStock),
+        costPrice: Number(costPrice),
+        profitMargin: Number(profitMargin),
+        sellPrice: Math.round(calculatedSellPrice * 100) / 100,
+        sellPriceWithIva: Math.round(calculatedSellPriceWithIva * 100) / 100
+      });
+      onClose();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Falha ao guardar artigo.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -62,6 +71,11 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && (
+            <p role="alert" className="rounded bg-red-50 p-3 text-sm font-bold text-red-700">
+              {error}
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase mb-1">
@@ -199,9 +213,10 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
             </button>
             <button
               type="submit"
-              className="px-6 py-2 bg-[#006e25] text-white rounded font-bold text-xs uppercase hover:brightness-110 transition-all shadow"
+              disabled={saving}
+              className="px-6 py-2 bg-[#006e25] text-white rounded font-bold text-xs uppercase hover:brightness-110 transition-all shadow disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Guardar Artigo (F2)
+              {saving ? 'A guardar…' : 'Guardar Artigo (F2)'}
             </button>
           </div>
         </form>

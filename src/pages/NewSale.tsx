@@ -5,39 +5,33 @@ import { formatMZN } from '../stitch/stitchConfig';
 interface NewSaleProps {
   articles: Article[];
   clients: Client[];
-  onCompleteSale: (sale: SaleInvoice) => void;
-  onOpenPaymentModal: (amount: number, clientName: string) => void;
+  onCompleteSale: (sale: SaleInvoice) => Promise<SaleInvoice>;
   onOpenPrintModal: (sale: SaleInvoice) => void;
+  canReceivePayment: boolean;
 }
 
 export const NewSale: React.FC<NewSaleProps> = ({
   articles,
   clients,
   onCompleteSale,
-  onOpenPaymentModal,
-  onOpenPrintModal
+  onOpenPrintModal,
+  canReceivePayment,
 }) => {
   const [docNumber] = useState(`VD 24/${Math.floor(1000 + Math.random() * 9000)}`);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [selectedClientName, setSelectedClientName] = useState('Consumidor Final');
-  const [clientNuit, setClientNuit] = useState('499999999');
-  const [clientAddress, setClientAddress] = useState('Maputo, Moçambique');
-  const [paymentMethod, setPaymentMethod] = useState<'Pronto Pagamento (Numerário)' | 'Transferência Bancária (M-Pesa)' | 'Crédito 30 Dias'>('Pronto Pagamento (Numerário)');
+  const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id ?? '');
+  const [selectedClientName, setSelectedClientName] = useState(clients[0]?.name ?? '');
+  const [clientNuit, setClientNuit] = useState(clients[0]?.nuit ?? '');
+  const [clientAddress, setClientAddress] = useState(clients[0]?.address ?? '');
+  const [paymentMethod, setPaymentMethod] = useState<'Pronto Pagamento (Numerário)' | 'Transferência Bancária (M-Pesa)' | 'Crédito 30 Dias'>(
+    canReceivePayment ? 'Pronto Pagamento (Numerário)' : 'Crédito 30 Dias',
+  );
   const [sellerName] = useState('Operador Balcão');
 
   // Active items in the POS cart
-  const [items, setItems] = useState<SaleItem[]>([
-    {
-      articleId: articles[0]?.id || 'art-1',
-      code: articles[0]?.code || 'PNE-2055516-M',
-      description: articles[0]?.description || 'Pneu Michelin Primacy 4 205/55 R16 91V',
-      quantity: 4,
-      unitPrice: articles[0]?.sellPrice || 5250,
-      discountPercent: 5,
-      ivaPercent: 16,
-      total: 23940.00
-    }
-  ]);
+  const [items, setItems] = useState<SaleItem[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   // State for new item selector row
   const [selectedArticleId, setSelectedArticleId] = useState<string>(articles[0]?.id || '');
@@ -45,13 +39,15 @@ export const NewSale: React.FC<NewSaleProps> = ({
   const [inputDiscount, setInputDiscount] = useState<number>(0);
 
   const handleSelectClient = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const found = clients.find(c => c.name === e.target.value);
+    const found = clients.find(c => c.id === e.target.value);
     if (found) {
+      setSelectedClientId(found.id);
       setSelectedClientName(found.name);
       setClientNuit(found.nuit);
       setClientAddress(found.address);
     } else {
-      setSelectedClientName(e.target.value);
+      setSelectedClientId('');
+      setSelectedClientName('');
     }
   };
 
@@ -90,14 +86,19 @@ export const NewSale: React.FC<NewSaleProps> = ({
   const ivaTotal = totalAfterDiscount * 0.16;
   const totalFinalAmount = totalAfterDiscount + ivaTotal;
 
-  const handleSaveAndConfirm = () => {
+  const handleSaveAndConfirm = async () => {
     if (items.length === 0) {
       alert('Adicione pelo menos 1 item à venda.');
+      return;
+    }
+    if (!selectedClientId) {
+      setSaveError('Selecione um cliente válido.');
       return;
     }
 
     const newSale: SaleInvoice = {
       id: `sale-${Date.now()}`,
+      clientId: selectedClientId,
       docNumber,
       date,
       clientName: selectedClientName,
@@ -116,8 +117,19 @@ export const NewSale: React.FC<NewSaleProps> = ({
       time: new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })
     };
 
-    onCompleteSale(newSale);
-    onOpenPrintModal(newSale);
+    setSaving(true);
+    setSaveError('');
+    try {
+      const savedSale = await onCompleteSale(newSale);
+      if (savedSale.paymentMethod === 'Crédito 30 Dias') {
+        onOpenPrintModal(savedSale);
+      }
+      setItems([]);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Falha ao guardar a fatura.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -149,12 +161,12 @@ export const NewSale: React.FC<NewSaleProps> = ({
           <div className="col-span-12 md:col-span-4">
             <label className="block font-bold text-[#737780] uppercase mb-1">Selecionar Cliente Registado</label>
             <select
+              value={selectedClientId}
               onChange={handleSelectClient}
               className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring"
             >
-              <option value="Consumidor Final">Consumidor Final (Venda Rápida)</option>
               {clients.map(c => (
-                <option key={c.id} value={c.name}>{c.name} (NUIT: {c.nuit})</option>
+                <option key={c.id} value={c.id}>{c.name} (NUIT: {c.nuit})</option>
               ))}
             </select>
           </div>
@@ -166,10 +178,13 @@ export const NewSale: React.FC<NewSaleProps> = ({
               onChange={(e) => setPaymentMethod(e.target.value as any)}
               className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring font-bold text-[#003366] dark:text-[#a7c8ff]"
             >
-              <option value="Pronto Pagamento (Numerário)">Pronto Pagamento (Numerário)</option>
-              <option value="Transferência Bancária (M-Pesa)">Transferência Bancária (M-Pesa / TPA)</option>
+              {canReceivePayment && <option value="Pronto Pagamento (Numerário)">Pronto Pagamento (Numerário)</option>}
+              {canReceivePayment && <option value="Transferência Bancária (M-Pesa)">Transferência Bancária (M-Pesa / TPA)</option>}
               <option value="Crédito 30 Dias">Crédito 30 Dias</option>
             </select>
+            {!canReceivePayment && (
+              <p className="mt-1 text-[10px] text-[#737780]">Recebimentos exigem perfil de caixa.</p>
+            )}
           </div>
 
           {/* Row 2 */}
@@ -353,20 +368,18 @@ export const NewSale: React.FC<NewSaleProps> = ({
 
           {/* Checkout Trigger Actions */}
           <div className="pt-4 space-y-2 font-sans">
-            <button
-              onClick={() => onOpenPaymentModal(totalFinalAmount, selectedClientName)}
-              className="w-full py-3 bg-[#003366] text-white font-bold text-xs uppercase rounded hover:brightness-110 shadow flex items-center justify-center space-x-2"
-            >
-              <span className="material-symbols-outlined">payments</span>
-              <span>Receber Pagamento (Modal TPA / M-Pesa)</span>
-            </button>
-
+            {saveError && (
+              <p role="alert" className="rounded bg-red-50 p-2 text-xs font-bold text-red-700">
+                {saveError}
+              </p>
+            )}
             <button
               onClick={handleSaveAndConfirm}
-              className="w-full py-3 bg-[#006e25] text-white font-bold text-xs uppercase rounded hover:brightness-110 shadow-md flex items-center justify-center space-x-2"
+              disabled={saving || items.length === 0 || !selectedClientId}
+              className="w-full py-3 bg-[#006e25] text-white font-bold text-xs uppercase rounded hover:brightness-110 shadow-md flex items-center justify-center space-x-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="material-symbols-outlined">check_circle</span>
-              <span>Confirmar & Guardar Fatura (F2)</span>
+              <span>{saving ? 'A guardar…' : 'Confirmar & Guardar Fatura (F2)'}</span>
             </button>
           </div>
         </div>
