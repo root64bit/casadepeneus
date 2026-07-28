@@ -1,0 +1,95 @@
+:root {
+  --color-primary: #001e40;
+  --color-primary-container: #003366;
+  --color-on-primary: #ffffff;
+  --color-secondary: #006e25;
+  --color-secondary-container: #80f98b;
+  --color-on-secondary-container: #007327;
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+  --color-background: #f8f9fa;
+  --color-surface: #f8f9fa;
+  --color-surface-container-low: #f3f4f5;
+  --color-surface-container: #edeeef;
+  --color-surface-container-high: #e7e8e9;
+  --color-surface-container-highest: #e1e3e4;
+  --color-on-surface: #191c1d;
+  --color-on-surface-variant: #43474f;
+  --color-outline: #737780;
+  --color-outline-variant: #c3c6d1;
+}
+
+.dark {
+  --color-background: #191c1d;
+  --color-surface: #1f2325;
+  --color-surface-container-low: #282c2e;
+  --color-surface-container: #2e3336;
+  --color-surface-container-high: #383d41;
+  --color-surface-container-highest: #43494e;
+  --color-on-surface: #e1e3e4;
+  --color-on-surface-variant: #c3c6d1;
+  --color-outline: #8d9199;
+  --color-outline-variant: #43474f;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--color-background);
+  color: var(--color-on-surface);
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Material Symbols Outlined Configuration */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  vertical-align: middle;
+  display: inline-block;
+  user-select: none;
+}
+
+.material-symbols-outlined.fill-current {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Tabular numbers for clean currency alignment */
+.font-data-mono {
+  font-family: 'Inter', sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-outline-variant);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-outline);
+}
+
+/* Focus rings */
+.focus-ring:focus {
+  outline: 2px solid #003366;
+  outline-offset: 1px;
+}
+
+/* Pulse animation for critical stock warning */
+@keyframes warning-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; transform: scale(0.998); }
+}
+
+.animate-stock-warning {
+  animation: warning-pulse 2.5s infinite ease-in-out;
+}
