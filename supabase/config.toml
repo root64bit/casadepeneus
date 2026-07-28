@@ -1,0 +1,25 @@
+# Supabase configuration for Casa de Pneus
+project_id = "bkbcgndzsfylwsinxwbb"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "private", "migration", "audit"]
+extra_search_path = ["public", "extensions"]
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["https://casadepeneus.vercel.app"]
+jwt_expiry = 28800
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
