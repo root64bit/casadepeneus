@@ -38,7 +38,7 @@ CREATE POLICY "system_settings_select_policy" ON public.system_settings
 -- Initial System Mode Seed
 INSERT INTO public.system_settings (setting_key, setting_value, description)
 VALUES ('SYSTEM_MODE', 'MIGRATION', 'Current operational mode: MIGRATION, PILOT, LIVE, MAINTENANCE')
-ON CONFLICT (setting_key) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- 3. COMPANIES
 CREATE TABLE IF NOT EXISTS public.companies (
@@ -77,7 +77,7 @@ VALUES (
     'geral@casadepeneus.co.mz',
     'MZN'
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- 4. BRANCHES
 CREATE TABLE IF NOT EXISTS public.branches (
@@ -109,7 +109,7 @@ VALUES (
     'SED',
     'Av. de Moçambique, Maputo'
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- 5. WAREHOUSES
 CREATE TABLE IF NOT EXISTS public.warehouses (
@@ -135,14 +135,14 @@ CREATE POLICY "warehouses_select_policy" ON public.warehouses
 -- Seed Main Warehouse
 INSERT INTO public.warehouses (id, company_id, branch_id, name, code, is_default)
 VALUES (
-    'w0000000-0000-0000-0000-000000000001',
+    'c0000000-0000-0000-0000-000000000001',
     'a0000000-0000-0000-0000-000000000001',
     'b0000000-0000-0000-0000-000000000001',
     'Armazém Principal',
     'ARM01',
     true
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- 6. COMPANY SETTINGS
 CREATE TABLE IF NOT EXISTS public.company_settings (
@@ -196,7 +196,7 @@ VALUES (
     '2026-12-31',
     'open'
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- 8. DOCUMENT SEQUENCES
 CREATE TABLE IF NOT EXISTS public.document_sequences (
@@ -225,7 +225,7 @@ INSERT INTO public.document_sequences (company_id, document_type, series, curren
 VALUES 
     ('a0000000-0000-0000-0000-000000000001', 'FT', 'A', 0, 'f2026000-0000-0000-0000-000000002026', 'FT A/'),
     ('a0000000-0000-0000-0000-000000000001', 'VD', 'A', 0, 'f2026000-0000-0000-0000-000000002026', 'VD A/'),
-    ('a0000000-0000-0000-0000-000000002026', 'GR', 'A', 0, 'f2026000-0000-0000-0000-000000002026', 'GR A/'),
+    ('a0000000-0000-0000-0000-000000000001', 'GR', 'A', 0, 'f2026000-0000-0000-0000-000000002026', 'GR A/'),
     ('a0000000-0000-0000-0000-000000000001', 'NC', 'A', 0, 'f2026000-0000-0000-0000-000000002026', 'NC A/'),
     ('a0000000-0000-0000-0000-000000000001', 'ND', 'A', 0, 'f2026000-0000-0000-0000-000000002026', 'ND A/'),
     ('a0000000-0000-0000-0000-000000000001', 'REC', 'A', 0, 'f2026000-0000-0000-0000-000000002026', 'REC A/')

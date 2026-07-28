@@ -3,6 +3,11 @@ logs
 *.log
 npm-debug.log*
 
+# Secrets & Environment variables
+.env
+.env.*
+*.env
+
 # Node modules
 node_modules/
 dist/
