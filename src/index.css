@@ -1,38 +1,116 @@
-:root {
+@import "tailwindcss";
+
+/* ============================================================
+   STITCH DESIGN SYSTEM — Casa de Pneus, Lda.
+   Project: 786368460448211335
+   Style: Modernized Utilitarianism
+   ============================================================ */
+
+@theme {
+  /* ── Primary (Corporate Blue) ── */
   --color-primary: #001e40;
   --color-primary-container: #003366;
   --color-on-primary: #ffffff;
+  --color-on-primary-container: #799dd6;
+  --color-primary-fixed: #d5e3ff;
+  --color-primary-fixed-dim: #a7c8ff;
+  --color-on-primary-fixed: #001b3c;
+  --color-on-primary-fixed-variant: #1f477b;
+  --color-inverse-primary: #a7c8ff;
+
+  /* ── Secondary (Success Green — Guardar / Confirmar) ── */
   --color-secondary: #006e25;
   --color-secondary-container: #80f98b;
+  --color-on-secondary: #ffffff;
   --color-on-secondary-container: #007327;
+  --color-secondary-fixed: #83fc8e;
+  --color-secondary-fixed-dim: #66df75;
+  --color-on-secondary-fixed: #002106;
+  --color-on-secondary-fixed-variant: #00531a;
+
+  /* ── Tertiary (Deep Red Accent) ── */
+  --color-tertiary: #450009;
+  --color-tertiary-container: #6d0014;
+  --color-on-tertiary: #ffffff;
+  --color-on-tertiary-container: #ff6b70;
+  --color-tertiary-fixed: #ffdad9;
+  --color-tertiary-fixed-dim: #ffb3b2;
+  --color-on-tertiary-fixed: #410008;
+  --color-on-tertiary-fixed-variant: #92001f;
+
+  /* ── Error (Cancelar / Stock Crítico) ── */
   --color-error: #ba1a1a;
   --color-error-container: #ffdad6;
+  --color-on-error: #ffffff;
   --color-on-error-container: #93000a;
+
+  /* ── Surface / Background ── */
   --color-background: #f8f9fa;
+  --color-on-background: #191c1d;
   --color-surface: #f8f9fa;
+  --color-surface-bright: #f8f9fa;
+  --color-surface-dim: #d9dadb;
+  --color-surface-container-lowest: #ffffff;
   --color-surface-container-low: #f3f4f5;
   --color-surface-container: #edeeef;
   --color-surface-container-high: #e7e8e9;
   --color-surface-container-highest: #e1e3e4;
+  --color-surface-variant: #e1e3e4;
+  --color-surface-tint: #3a5f94;
   --color-on-surface: #191c1d;
   --color-on-surface-variant: #43474f;
+  --color-inverse-surface: #2e3132;
+  --color-inverse-on-surface: #f0f1f2;
+
+  /* ── Outline ── */
   --color-outline: #737780;
   --color-outline-variant: #c3c6d1;
+
+  /* ── Spacing (4px baseline grid) ── */
+  --spacing-unit: 4px;
+  --spacing-gutter: 16px;
+  --spacing-margin: 24px;
+  --spacing-container-max: 1440px;
+
+  /* ── Border Radius (Soft 4px) ── */
+  --radius-sm: 0.125rem;
+  --radius-DEFAULT: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+
+  /* ── Typography (Inter) ── */
+  --font-inter: 'Inter', sans-serif;
+
+  --text-headline-lg: 24px;
+  --text-headline-lg--line-height: 32px;
+  --text-headline-lg--font-weight: 700;
+  --text-headline-lg--letter-spacing: -0.02em;
+
+  --text-headline-md: 20px;
+  --text-headline-md--line-height: 28px;
+  --text-headline-md--font-weight: 600;
+
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 24px;
+  --text-body-lg--font-weight: 400;
+
+  --text-body-md: 14px;
+  --text-body-md--line-height: 20px;
+  --text-body-md--font-weight: 400;
+
+  --text-label-md: 12px;
+  --text-label-md--line-height: 16px;
+  --text-label-md--font-weight: 600;
+  --text-label-md--letter-spacing: 0.05em;
+
+  --text-data-mono: 14px;
+  --text-data-mono--line-height: 20px;
+  --text-data-mono--font-weight: 500;
+  --text-data-mono--letter-spacing: -0.01em;
 }
 
-.dark {
-  --color-background: #191c1d;
-  --color-surface: #1f2325;
-  --color-surface-container-low: #282c2e;
-  --color-surface-container: #2e3336;
-  --color-surface-container-high: #383d41;
-  --color-surface-container-highest: #43494e;
-  --color-on-surface: #e1e3e4;
-  --color-on-surface-variant: #c3c6d1;
-  --color-outline: #8d9199;
-  --color-outline-variant: #43474f;
-}
-
+/* ── Base Styles ── */
 body {
   font-family: 'Inter', sans-serif;
   background-color: var(--color-background);
@@ -41,9 +119,10 @@ body {
   padding: 0;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Material Symbols Outlined Configuration */
+/* ── Material Symbols Icon Configuration ── */
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
   vertical-align: middle;
@@ -55,14 +134,14 @@ body {
   font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
-/* Tabular numbers for clean currency alignment */
+/* ── Tabular Nums for MZN Currency Alignment ── */
 .font-data-mono {
   font-family: 'Inter', sans-serif;
   font-variant-numeric: tabular-nums;
   font-weight: 500;
 }
 
-/* Custom Scrollbars */
+/* ── Custom Scrollbar (Modernized Utilitarian) ── */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -78,13 +157,13 @@ body {
   background: var(--color-outline);
 }
 
-/* Focus rings */
+/* ── Focus Rings (2px Primary Blue — Keyboard Navigation) ── */
 .focus-ring:focus {
-  outline: 2px solid #003366;
+  outline: 2px solid var(--color-primary-container);
   outline-offset: 1px;
 }
 
-/* Pulse animation for critical stock warning */
+/* ── Stock Warning Pulse Animation ── */
 @keyframes warning-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.85; transform: scale(0.998); }
@@ -92,4 +171,44 @@ body {
 
 .animate-stock-warning {
   animation: warning-pulse 2.5s infinite ease-in-out;
+}
+
+/* ── Dark Mode Overrides ── */
+.dark body,
+.dark {
+  --color-background: #191c1d;
+  --color-surface: #1f2325;
+  --color-surface-container-lowest: #141618;
+  --color-surface-container-low: #1a1e20;
+  --color-surface-container: #1f2325;
+  --color-surface-container-high: #282c2e;
+  --color-surface-container-highest: #333739;
+  --color-on-surface: #e1e3e4;
+  --color-on-surface-variant: #c3c6d1;
+  --color-outline: #8d9199;
+  --color-outline-variant: #43474f;
+}
+
+/* ── Number Input Spinner Removal ── */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* ── Print Styles ── */
+@media print {
+  .no-print,
+  nav,
+  footer,
+  header {
+    display: none !important;
+  }
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
 }
