@@ -93,6 +93,7 @@ function App() {
   const [productCategories, setProductCategories] = useState<ReferenceOption[]>([]);
   const [brands, setBrands] = useState<ReferenceOption[]>([]);
   const [units, setUnits] = useState<ReferenceOption[]>([]);
+  const [taxCodes, setTaxCodes] = useState<ReferenceOption[]>([]);
 
   // Modals
   const [isNewArticleModalOpen, setNewArticleModalOpen] = useState(false);
@@ -131,6 +132,7 @@ function App() {
       setProductCategories(data.productCategories);
       setBrands(data.brands);
       setUnits(data.units);
+      setTaxCodes(data.taxCodes);
     } catch (error) {
       const message = error instanceof Error ? error.message : String((error as { message?: string })?.message ?? '');
       if (message.includes('USER_INACTIVE')) {
@@ -496,6 +498,7 @@ function App() {
         categories={productCategories}
         brands={brands}
         units={units}
+        taxCodes={taxCodes}
       />
       <PaymentModal
         isOpen={isPaymentModalOpen}

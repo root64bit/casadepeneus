@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Article, SaleInvoice, SaleItem, Client, ReferenceOption } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
+import { ArticleSearchSelect } from '../components/ArticleSearchSelect';
 
 interface NewSaleProps {
   articles: Article[];
@@ -66,7 +67,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
 
     const basePrice = art.sellPrice;
     const discountedPrice = basePrice * (1 - inputDiscount / 100);
-    const itemTotalWithIva = discountedPrice * inputQty * 1.16;
+    const itemTotalWithIva = discountedPrice * inputQty * (1 + art.taxRate / 100);
 
     const newItem: SaleItem = {
       articleId: art.id,
@@ -75,7 +76,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
       quantity: inputQty,
       unitPrice: art.sellPrice,
       discountPercent: inputDiscount,
-      ivaPercent: 16,
+      ivaPercent: art.taxRate,
       total: Math.round(itemTotalWithIva * 100) / 100
     };
 
@@ -92,7 +93,10 @@ export const NewSale: React.FC<NewSaleProps> = ({
   const subtotalBruto = items.reduce((acc, item) => acc + (item.unitPrice * item.quantity), 0);
   const descontoTotal = items.reduce((acc, item) => acc + ((item.unitPrice * item.quantity) * (item.discountPercent / 100)), 0);
   const totalAfterDiscount = subtotalBruto - descontoTotal;
-  const ivaTotal = totalAfterDiscount * 0.16;
+  const ivaTotal = items.reduce((acc, item) => {
+    const lineNet = (item.unitPrice * item.quantity) * (1 - item.discountPercent / 100);
+    return acc + (lineNet * item.ivaPercent / 100);
+  }, 0);
   const totalFinalAmount = totalAfterDiscount + ivaTotal;
 
   const handleSaveAndConfirm = async () => {
@@ -265,17 +269,13 @@ export const NewSale: React.FC<NewSaleProps> = ({
               {/* Interactive Row to Add Items */}
               <tr className="bg-[#f8f9fa] dark:bg-[#282c2e]">
                 <td className="p-2" colSpan={2}>
-                  <select
-                    value={selectedArticleId}
-                    onChange={(e) => setSelectedArticleId(e.target.value)}
-                    className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-2 text-xs font-sans focus-ring font-bold text-[#003366]"
-                  >
-                    {articles.map(a => (
-                      <option key={a.id} value={a.id}>
-                        [{a.code}] {a.description} - {a.sellPrice.toFixed(2)} MZN (Stock: {a.stock})
-                      </option>
-                    ))}
-                  </select>
+                  <ArticleSearchSelect
+                    articles={articles}
+                    selectedArticleId={selectedArticleId}
+                    onSelect={setSelectedArticleId}
+                    renderLabel={(a) => `[${a.code}] ${a.description} - ${a.sellPrice.toFixed(2)} MZN (Stock: ${a.stock})`}
+                    placeholder="Pesquisar artigo por código ou descrição…"
+                  />
                 </td>
                 <td className="p-2">
                   <input
@@ -299,10 +299,10 @@ export const NewSale: React.FC<NewSaleProps> = ({
                     className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-2 text-center text-xs text-red-600"
                   />
                 </td>
-                <td className="p-2 text-center text-gray-500 font-bold">16%</td>
+                <td className="p-2 text-center text-gray-500 font-bold">{articles.find(a => a.id === selectedArticleId)?.taxRate ?? 16}%</td>
                 <td className="p-2 text-right font-extrabold text-[#006e25]">
                   {(
-                    ((articles.find(a => a.id === selectedArticleId)?.sellPrice || 0) * (1 - inputDiscount / 100)) * inputQty * 1.16
+                    ((articles.find(a => a.id === selectedArticleId)?.sellPrice || 0) * (1 - inputDiscount / 100)) * inputQty * (1 + (articles.find(a => a.id === selectedArticleId)?.taxRate ?? 16) / 100)
                   ).toFixed(2)}
                 </td>
                 <td className="p-2 text-center">
@@ -368,7 +368,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
           </div>
 
           <div className="flex justify-between items-center text-xs text-[#737780] dark:text-[#c3c6d1] pb-3 border-b border-[#c3c6d1] dark:border-[#43474f]">
-            <span>IVA (16% Moçambique):</span>
+            <span>IVA:</span>
             <span className="font-bold">{formatMZN(ivaTotal)}</span>
           </div>
 

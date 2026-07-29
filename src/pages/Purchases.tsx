@@ -8,6 +8,7 @@ import type {
   ReferenceOption,
 } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
+import { ArticleSearchSelect } from '../components/ArticleSearchSelect';
 
 interface PurchasesProps {
   articles: Article[];
@@ -71,8 +72,8 @@ export const Purchases: React.FC<PurchasesProps> = ({
         quantity,
         unitCost,
         discountPercent: 0,
-        taxPercent: 16,
-        total: Math.round(net * 1.16 * 100) / 100,
+        taxPercent: article.taxRate,
+        total: Math.round(net * (1 + article.taxRate / 100) * 100) / 100,
       },
     ]);
     setQuantity(1);
@@ -156,9 +157,14 @@ export const Purchases: React.FC<PurchasesProps> = ({
 
           <div className="grid items-end gap-3 md:grid-cols-[1fr_120px_160px_auto]">
             <label className="text-xs font-bold uppercase">Artigo
-              <select value={articleId} onChange={(event) => selectArticle(event.target.value)} className="mt-1 w-full rounded border p-2 dark:bg-[#282c2e]">
-                {articles.map((article) => <option key={article.id} value={article.id}>{article.code} — {article.description}</option>)}
-              </select>
+              <ArticleSearchSelect
+                articles={articles}
+                selectedArticleId={articleId}
+                onSelect={selectArticle}
+                renderLabel={(a) => `${a.code} — ${a.description}`}
+                placeholder="Pesquisar artigo…"
+                className="mt-1"
+              />
             </label>
             <label className="text-xs font-bold uppercase">Quantidade
               <input type="number" min="0.001" step="0.001" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} className="mt-1 w-full rounded border p-2 text-right dark:bg-[#282c2e]" />

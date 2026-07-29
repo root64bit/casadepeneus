@@ -8,9 +8,10 @@ interface NewArticleModalProps {
   categories: ReferenceOption[];
   brands: ReferenceOption[];
   units: ReferenceOption[];
+  taxCodes: ReferenceOption[];
 }
 
-export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClose, onSave, categories, brands, units }) => {
+export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClose, onSave, categories, brands, units, taxCodes }) => {
   const [code, setCode] = useState('');
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -20,6 +21,7 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
   const [minStock, setMinStock] = useState<number>(0);
   const [costPrice, setCostPrice] = useState<number>(0);
   const [profitMargin, setProfitMargin] = useState<number>(0);
+  const [taxCodeId, setTaxCodeId] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -28,12 +30,19 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
     setCategoryId(categories[0]?.id ?? '');
     setBrandId('');
     setUnitId(units[0]?.id ?? '');
-  }, [isOpen, categories, units]);
+    setTaxCodeId(taxCodes[0]?.id ?? '');
+  }, [isOpen, categories, units, taxCodes]);
 
   if (!isOpen) return null;
 
+  const selectedTaxRate = (() => {
+    const selectedCode = taxCodes.find((t) => t.id === taxCodeId);
+    if (!selectedCode) return 16;
+    const match = selectedCode.name.match(/(\d+(?:\.\d+)?)%/);
+    return match ? Number(match[1]) : 16;
+  })();
   const calculatedSellPrice = costPrice * (1 + profitMargin / 100);
-  const calculatedSellPriceWithIva = calculatedSellPrice * 1.16;
+  const calculatedSellPriceWithIva = calculatedSellPrice * (1 + selectedTaxRate / 100);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,7 +71,9 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
         costPrice: Number(costPrice),
         profitMargin: Number(profitMargin),
         sellPrice: Math.round(calculatedSellPrice * 100) / 100,
-        sellPriceWithIva: Math.round(calculatedSellPriceWithIva * 100) / 100
+        sellPriceWithIva: Math.round(calculatedSellPriceWithIva * 100) / 100,
+        taxCodeId: taxCodeId || undefined,
+        taxRate: selectedTaxRate,
       });
       onClose();
     } catch (saveError) {
@@ -155,8 +166,14 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 bg-[#f3f4f5] dark:bg-[#282c2e] p-3 rounded border border-[#c3c6d1] dark:border-[#43474f] sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 bg-[#f3f4f5] dark:bg-[#282c2e] p-3 rounded border border-[#c3c6d1] dark:border-[#43474f] sm:grid-cols-2 lg:grid-cols-5">
             <div><label className="block text-[11px] font-bold text-[#43474f] dark:text-[#c3c6d1] mb-1">Unidade</label><select required value={unitId} onChange={(event) => setUnitId(event.target.value)} className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-sm">{units.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
+            <div>
+              <label className="block text-[11px] font-bold text-[#43474f] dark:text-[#c3c6d1] mb-1">Taxa IVA</label>
+              <select value={taxCodeId} onChange={(e) => setTaxCodeId(e.target.value)} className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-sm">
+                {taxCodes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </div>
             <div>
               <label className="block text-[11px] font-bold text-[#43474f] dark:text-[#c3c6d1] mb-1">Stock Mínimo</label>
               <input
@@ -195,7 +212,7 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
               <strong className="text-[#001e40] dark:text-white">{calculatedSellPrice.toFixed(2)} MZN</strong>
             </div>
             <div className="text-right">
-              <span className="text-xs text-[#43474f] block">Preço Final (c/ IVA 16%):</span>
+              <span className="text-xs text-[#43474f] block">Preço Final (c/ IVA {selectedTaxRate}%):</span>
               <strong className="text-[#006e25] text-base">{calculatedSellPriceWithIva.toFixed(2)} MZN</strong>
             </div>
           </div>

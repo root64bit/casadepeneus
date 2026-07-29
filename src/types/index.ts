@@ -9,6 +9,8 @@ export interface Article {
   profitMargin: number; // e.g., 25 for 25%
   sellPrice: number;
   sellPriceWithIva: number;
+  taxCodeId?: string;
+  taxRate: number; // e.g., 16 for 16%, 0 for exempt
   category: 'pneus' | 'camaras' | 'servicos' | 'acessorios';
   brand?: string;
   size?: string;

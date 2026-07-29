@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { AccessScope, Article, StockMovement } from '../types';
+import { ArticleSearchSelect } from '../components/ArticleSearchSelect';
 
 interface StockMovementsProps {
   movements: StockMovement[];
@@ -70,7 +71,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
           <form onSubmit={submit} className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 xl:grid-cols-4">
             <label className="font-bold">Operação<select value={type} onChange={(event) => setType(event.target.value as 'entrada' | 'saida')} className="mt-1 w-full rounded border p-3 dark:bg-slate-800">{canPostEntry && <option value="entrada">Entrada direta</option>}{canPostExit && <option value="saida">Saída direta</option>}</select></label>
             <label className="font-bold">Armazém<select required value={warehouseId} onChange={(event) => setWarehouseId(event.target.value)} className="mt-1 w-full rounded border p-3 dark:bg-slate-800"><option value="">Selecione</option>{warehouses.map((item) => <option key={item.id} value={item.id}>{item.code} — {item.name}</option>)}</select></label>
-            <label className="font-bold sm:col-span-2">Artigo<select required value={articleId} onChange={(event) => setArticleId(event.target.value)} className="mt-1 w-full rounded border p-3 dark:bg-slate-800"><option value="">Selecione</option>{articles.map((item) => <option key={item.id} value={item.id}>[{item.code}] {item.description} · Stock {item.stock}</option>)}</select></label>
+            <label className="font-bold sm:col-span-2">Artigo<ArticleSearchSelect articles={articles} selectedArticleId={articleId} onSelect={setArticleId} className="mt-1" /></label>
             <label className="font-bold">Quantidade<input required type="number" min="0.001" step="0.001" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} className="mt-1 w-full rounded border p-3 dark:bg-slate-800" /></label>
             <label className="font-bold">Motivo<input required maxLength={200} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Motivo operacional" className="mt-1 w-full rounded border p-3 dark:bg-slate-800" /></label>
             <label className="font-bold">Referência opcional<input maxLength={100} value={reference} onChange={(event) => setReference(event.target.value)} className="mt-1 w-full rounded border p-3 dark:bg-slate-800" /></label>

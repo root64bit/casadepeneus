@@ -115,7 +115,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
                 <span>-{formatMZN(invoice.descontoTotal)}</span>
               </div>
               <div className="flex justify-between text-gray-600">
-                <span>IVA (16%):</span>
+                <span>IVA:</span>
                 <span>{formatMZN(invoice.ivaTotal)}</span>
               </div>
               <div className="flex justify-between font-bold text-sm text-[#001e40] pt-2 border-t border-gray-300">

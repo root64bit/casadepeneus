@@ -36,6 +36,7 @@ export interface AppData {
   productCategories: ReferenceOption[];
   brands: ReferenceOption[];
   units: ReferenceOption[];
+  taxCodes: ReferenceOption[];
 }
 
 export async function createArticle(article: Omit<Article, 'id'>): Promise<void> {
@@ -54,6 +55,7 @@ export async function createArticle(article: Omit<Article, 'id'>): Promise<void>
       category_id: article.categoryId,
       brand_id: article.brandId,
       unit_id: article.unitId,
+      tax_code_id: article.taxCodeId,
     },
   });
   if (error) throw error;
@@ -289,7 +291,7 @@ export async function loadAppData(): Promise<AppData> {
     throw companyIdResult.error ?? new Error('Empresa do utilizador não definida.');
   }
 
-  const [contextResult, metricsResult, permissionsResult, modeResult, companyResult, productsResult, balancesResult, customersResult, suppliersResult, documentsResult, movementsResult, paymentsResult, ledgerResult, usersResult, paymentTermsResult, paymentMethodsResult, categoriesResult, brandsResult, unitsResult] =
+  const [contextResult, metricsResult, permissionsResult, modeResult, companyResult, productsResult, balancesResult, customersResult, suppliersResult, documentsResult, movementsResult, paymentsResult, ledgerResult, usersResult, paymentTermsResult, paymentMethodsResult, categoriesResult, brandsResult, unitsResult, taxCodesResult] =
     await Promise.all([
       client.rpc('get_current_user_context'),
       client.rpc('get_dashboard_metrics'),
@@ -306,7 +308,7 @@ export async function loadAppData(): Promise<AppData> {
         .single(),
       client
         .from('products')
-        .select('id,code,description,min_stock,avg_cost,profit_pct,sale_price_excl,sale_price_incl,product_categories(name),brands(name),units_of_measure(abbreviation)')
+        .select('id,code,description,min_stock,avg_cost,profit_pct,sale_price_excl,sale_price_incl,tax_code_id,tax_codes(id,code,description,rate),product_categories(name),brands(name),units_of_measure(abbreviation)')
         .eq('is_active', true)
         .order('code')
         .limit(500),
@@ -363,6 +365,7 @@ export async function loadAppData(): Promise<AppData> {
       client.from('product_categories').select('id,code,name').order('name').limit(250),
       client.from('brands').select('id,name').order('name').limit(250),
       client.from('units_of_measure').select('id,name,abbreviation').order('name').limit(100),
+      client.from('tax_codes').select('id,code,description,rate').eq('is_active', true).order('rate', { ascending: false }).limit(50),
     ]);
 
   const failed = [
@@ -385,6 +388,7 @@ export async function loadAppData(): Promise<AppData> {
     categoriesResult,
     brandsResult,
     unitsResult,
+    taxCodesResult,
   ].find((result) => result.error);
   if (failed?.error) throw failed.error;
   if (!companyResult.data) throw new Error('Dados da empresa não encontrados.');
@@ -436,20 +440,25 @@ export async function loadAppData(): Promise<AppData> {
     );
   }
 
-  const articles: Article[] = (productsResult.data ?? []).map((row: Row) => ({
-    id: row.id,
-    code: row.code,
-    description: row.description,
-    unit: relation(row.units_of_measure)?.abbreviation ?? 'UN',
-    minStock: numberValue(row.min_stock),
-    stock: stockByProduct.get(row.id) ?? 0,
-    costPrice: numberValue(row.avg_cost),
-    profitMargin: numberValue(row.profit_pct),
-    sellPrice: numberValue(row.sale_price_excl),
-    sellPriceWithIva: numberValue(row.sale_price_incl),
-    category: categoryValue(relation(row.product_categories)?.name),
-    brand: relation(row.brands)?.name ?? undefined,
-  }));
+  const articles: Article[] = (productsResult.data ?? []).map((row: Row) => {
+    const taxCode = relation(row.tax_codes);
+    return {
+      id: row.id,
+      code: row.code,
+      description: row.description,
+      unit: relation(row.units_of_measure)?.abbreviation ?? 'UN',
+      minStock: numberValue(row.min_stock),
+      stock: stockByProduct.get(row.id) ?? 0,
+      costPrice: numberValue(row.avg_cost),
+      profitMargin: numberValue(row.profit_pct),
+      sellPrice: numberValue(row.sale_price_excl),
+      sellPriceWithIva: numberValue(row.sale_price_incl),
+      taxCodeId: row.tax_code_id ?? undefined,
+      taxRate: numberValue(taxCode?.rate ?? 16),
+      category: categoryValue(relation(row.product_categories)?.name),
+      brand: relation(row.brands)?.name ?? undefined,
+    };
+  });
 
   const clients: Client[] = (customersResult.data ?? []).map((row: Row) => {
     const addresses = (row.customer_addresses ?? []) as Row[];
@@ -617,6 +626,9 @@ export async function loadAppData(): Promise<AppData> {
   const units: ReferenceOption[] = (unitsResult.data ?? []).map((row: Row) => ({
     id: row.id, code: row.abbreviation, name: `${row.name} (${row.abbreviation})`,
   }));
+  const taxCodes: ReferenceOption[] = (taxCodesResult.data ?? []).map((row: Row) => ({
+    id: row.id, code: row.code, name: `${row.description} (${numberValue(row.rate)}%)`,
+  }));
 
   return {
     company,
@@ -638,5 +650,6 @@ export async function loadAppData(): Promise<AppData> {
     productCategories,
     brands,
     units,
+    taxCodes,
   };
 }

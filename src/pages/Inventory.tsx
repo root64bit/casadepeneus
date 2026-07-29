@@ -120,7 +120,7 @@ export const Inventory: React.FC<InventoryProps> = ({
                 {canViewCost && <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">P. Custo</th>}
                 {canViewCost && <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">% Margem</th>}
                 <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">P. Venda</th>
-                <th className="px-3 py-3 text-right">P. c/ IVA (16%)</th>
+                <th className="px-3 py-3 text-right">P. c/ IVA</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f]">
