@@ -47,6 +47,13 @@ export const NewSale: React.FC<NewSaleProps> = ({
   const [selectedArticleId, setSelectedArticleId] = useState<string>(articles[0]?.id || '');
   const [inputQty, setInputQty] = useState<number>(1);
   const [inputDiscount, setInputDiscount] = useState<number>(0);
+  const [inputIva, setInputIva] = useState<number>(articles[0]?.taxRate ?? 16);
+
+  const handleArticleSelect = (id: string) => {
+    setSelectedArticleId(id);
+    const art = articles.find((a) => a.id === id);
+    if (art) setInputIva(art.taxRate ?? 16);
+  };
 
   const handleSelectClient = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const found = clients.find(c => c.id === e.target.value);
@@ -67,7 +74,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
 
     const basePrice = art.sellPrice;
     const discountedPrice = basePrice * (1 - inputDiscount / 100);
-    const itemTotalWithIva = discountedPrice * inputQty * (1 + art.taxRate / 100);
+    const itemTotalWithIva = discountedPrice * inputQty * (1 + inputIva / 100);
 
     const newItem: SaleItem = {
       articleId: art.id,
@@ -76,7 +83,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
       quantity: inputQty,
       unitPrice: art.sellPrice,
       discountPercent: inputDiscount,
-      ivaPercent: art.taxRate,
+      ivaPercent: inputIva,
       total: Math.round(itemTotalWithIva * 100) / 100
     };
 
@@ -272,7 +279,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
                   <ArticleSearchSelect
                     articles={articles}
                     selectedArticleId={selectedArticleId}
-                    onSelect={setSelectedArticleId}
+                    onSelect={handleArticleSelect}
                     renderLabel={(a) => `[${a.code}] ${a.description} - ${a.sellPrice.toFixed(2)} MZN (Stock: ${a.stock})`}
                     placeholder="Pesquisar artigo por código ou descrição…"
                   />
@@ -299,10 +306,20 @@ export const NewSale: React.FC<NewSaleProps> = ({
                     className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-2 text-center text-xs text-red-600"
                   />
                 </td>
-                <td className="p-2 text-center text-gray-500 font-bold">{articles.find(a => a.id === selectedArticleId)?.taxRate ?? 16}%</td>
+                <td className="p-2">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={inputIva}
+                    onChange={(e) => setInputIva(Number(e.target.value))}
+                    className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-2 text-center text-xs font-bold text-[#003366]"
+                  />
+                </td>
                 <td className="p-2 text-right font-extrabold text-[#006e25]">
                   {(
-                    ((articles.find(a => a.id === selectedArticleId)?.sellPrice || 0) * (1 - inputDiscount / 100)) * inputQty * (1 + (articles.find(a => a.id === selectedArticleId)?.taxRate ?? 16) / 100)
+                    ((articles.find(a => a.id === selectedArticleId)?.sellPrice || 0) * (1 - inputDiscount / 100)) * inputQty * (1 + inputIva / 100)
                   ).toFixed(2)}
                 </td>
                 <td className="p-2 text-center">

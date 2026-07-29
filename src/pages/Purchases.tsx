@@ -43,6 +43,7 @@ export const Purchases: React.FC<PurchasesProps> = ({
   const [articleId, setArticleId] = useState(articles[0]?.id ?? '');
   const [quantity, setQuantity] = useState(1);
   const [unitCost, setUnitCost] = useState(articles[0]?.costPrice ?? 0);
+  const [purchaseTaxRate, setPurchaseTaxRate] = useState<number>(articles[0]?.taxRate ?? 16);
   const [items, setItems] = useState<PurchaseItem[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -56,7 +57,9 @@ export const Purchases: React.FC<PurchasesProps> = ({
 
   const selectArticle = (id: string) => {
     setArticleId(id);
-    setUnitCost(articles.find((article) => article.id === id)?.costPrice ?? 0);
+    const target = articles.find((article) => article.id === id);
+    setUnitCost(target?.costPrice ?? 0);
+    setPurchaseTaxRate(target?.taxRate ?? 16);
   };
 
   const addItem = () => {
@@ -72,8 +75,8 @@ export const Purchases: React.FC<PurchasesProps> = ({
         quantity,
         unitCost,
         discountPercent: 0,
-        taxPercent: article.taxRate,
-        total: Math.round(net * (1 + article.taxRate / 100) * 100) / 100,
+        taxPercent: purchaseTaxRate,
+        total: Math.round(net * (1 + purchaseTaxRate / 100) * 100) / 100,
       },
     ]);
     setQuantity(1);
@@ -155,7 +158,7 @@ export const Purchases: React.FC<PurchasesProps> = ({
             </label>
           </div>
 
-          <div className="grid items-end gap-3 md:grid-cols-[1fr_120px_160px_auto]">
+          <div className="grid items-end gap-3 md:grid-cols-[1fr_100px_140px_100px_auto]">
             <label className="text-xs font-bold uppercase">Artigo
               <ArticleSearchSelect
                 articles={articles}
@@ -171,6 +174,9 @@ export const Purchases: React.FC<PurchasesProps> = ({
             </label>
             <label className="text-xs font-bold uppercase">Custo sem IVA
               <input type="number" min="0" step="0.01" value={unitCost} onChange={(event) => setUnitCost(Number(event.target.value))} className="mt-1 w-full rounded border p-2 text-right dark:bg-[#282c2e]" />
+            </label>
+            <label className="text-xs font-bold uppercase">IVA %
+              <input type="number" min="0" max="100" step="0.01" value={purchaseTaxRate} onChange={(event) => setPurchaseTaxRate(Number(event.target.value))} className="mt-1 w-full rounded border p-2 text-center font-bold dark:bg-[#282c2e]" />
             </label>
             <button type="button" onClick={addItem} className="rounded bg-[#003366] px-4 py-2 text-xs font-bold uppercase text-white">Adicionar</button>
           </div>
