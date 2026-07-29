@@ -15,7 +15,9 @@ export interface Article {
   brand?: string;
   size?: string;
   categoryId?: string;
+  categoryName?: string;
   brandId?: string;
+  brandName?: string;
   unitId?: string;
 }
 

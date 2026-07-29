@@ -1,7 +1,7 @@
 BEGIN;
 
--- Update create_operational_product_v2 to accept an optional tax_code_id from the frontend.
--- If not provided, falls back to the highest-rate active tax code (existing behaviour).
+-- Update create_operational_product_v2 to accept optional tax_code_id, category_name, and brand_name from the frontend.
+-- Automatically inserts new product_category or brand if custom text is provided by user.
 CREATE OR REPLACE FUNCTION public.create_operational_product_v2(p_product JSONB)
 RETURNS UUID
 LANGUAGE plpgsql
@@ -15,6 +15,9 @@ DECLARE
   v_brand_id UUID;
   v_unit_id UUID;
   v_tax_code_id UUID;
+  v_category_name TEXT;
+  v_brand_name TEXT;
+  v_family_id UUID;
 BEGIN
   PERFORM public.require_operational_mode();
   IF auth.uid() IS NULL OR NOT public.has_permission('products.create') THEN
@@ -25,13 +28,42 @@ BEGIN
   v_brand_id := NULLIF(p_product->>'brand_id', '')::UUID;
   v_unit_id := NULLIF(p_product->>'unit_id', '')::UUID;
   v_tax_code_id := NULLIF(p_product->>'tax_code_id', '')::UUID;
+  v_category_name := NULLIF(TRIM(p_product->>'category_name'), '');
+  v_brand_name := NULLIF(TRIM(p_product->>'brand_name'), '');
 
-  IF v_category_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM public.product_categories WHERE id = v_category_id AND company_id = v_company_id
-  ) THEN RAISE EXCEPTION 'INVALID_PRODUCT_CATEGORY'; END IF;
-  IF v_brand_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM public.brands WHERE id = v_brand_id AND company_id = v_company_id
-  ) THEN RAISE EXCEPTION 'INVALID_PRODUCT_BRAND'; END IF;
+  -- Handle Category by Name if ID is missing or if name is passed
+  IF v_category_id IS NULL AND v_category_name IS NOT NULL THEN
+    SELECT id INTO v_category_id FROM public.product_categories
+    WHERE company_id = v_company_id AND LOWER(name) = LOWER(v_category_name)
+    LIMIT 1;
+
+    IF v_category_id IS NULL THEN
+      SELECT id INTO v_family_id FROM public.product_families
+      WHERE company_id = v_company_id ORDER BY created_at LIMIT 1;
+
+      INSERT INTO public.product_categories (company_id, family_id, code, name)
+      VALUES (
+        v_company_id,
+        COALESCE(v_family_id, '1f000000-0000-0000-0000-000000000001'::UUID),
+        UPPER(SUBSTRING(REGEXP_REPLACE(v_category_name, '[^a-zA-Z0-9]', '', 'g') FROM 1 FOR 8)) || '_' || FLOOR(RANDOM() * 10000)::TEXT,
+        v_category_name
+      ) RETURNING id INTO v_category_id;
+    END IF;
+  END IF;
+
+  -- Handle Brand by Name if ID is missing or if name is passed
+  IF v_brand_id IS NULL AND v_brand_name IS NOT NULL THEN
+    SELECT id INTO v_brand_id FROM public.brands
+    WHERE company_id = v_company_id AND LOWER(name) = LOWER(v_brand_name)
+    LIMIT 1;
+
+    IF v_brand_id IS NULL THEN
+      INSERT INTO public.brands (company_id, name)
+      VALUES (v_company_id, v_brand_name)
+      RETURNING id INTO v_brand_id;
+    END IF;
+  END IF;
+
   IF v_unit_id IS NULL OR NOT EXISTS (
     SELECT 1 FROM public.units_of_measure WHERE id = v_unit_id AND company_id = v_company_id
   ) THEN RAISE EXCEPTION 'INVALID_UNIT_OF_MEASURE'; END IF;

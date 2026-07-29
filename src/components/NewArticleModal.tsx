@@ -15,7 +15,11 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
   const [code, setCode] = useState('');
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const [customCategoryName, setCustomCategoryName] = useState('');
   const [brandId, setBrandId] = useState('');
+  const [isCustomBrand, setIsCustomBrand] = useState(false);
+  const [customBrandName, setCustomBrandName] = useState('');
   const [unitId, setUnitId] = useState('');
   const [size, setSize] = useState('');
   const [minStock, setMinStock] = useState<number>(0);
@@ -29,7 +33,11 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
   useEffect(() => {
     if (!isOpen) return;
     setCategoryId(categories[0]?.id ?? '');
+    setIsCustomCategory(false);
+    setCustomCategoryName('');
     setBrandId('');
+    setIsCustomBrand(false);
+    setCustomBrandName('');
     setUnitId(units[0]?.id ?? '');
     setTaxCodeId(taxCodes[0]?.id ?? '');
     const firstRateMatch = taxCodes[0]?.name.match(/(\d+(?:\.\d+)?)%/);
@@ -47,20 +55,29 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
       alert('Por favor preencha o código e a descrição do artigo.');
       return;
     }
+    if (isCustomCategory && !customCategoryName.trim()) {
+      alert('Por favor introduza o nome da nova categoria.');
+      return;
+    }
 
     setSaving(true);
     setError('');
     try {
       const selectedCategory = categories.find((item) => item.id === categoryId);
-      const normalizedCategory = selectedCategory?.name.toLowerCase() ?? '';
+      const catName = isCustomCategory ? customCategoryName.trim() : (selectedCategory?.name ?? '');
+      const normalizedCategory = catName.toLowerCase();
+      const brName = isCustomBrand ? customBrandName.trim() : (brands.find((item) => item.id === brandId)?.name ?? '');
+
       await onSave({
         code: code.toUpperCase(),
         description,
         category: normalizedCategory.includes('câmara') ? 'camaras' : normalizedCategory.includes('servi') ? 'servicos' : normalizedCategory.includes('acess') ? 'acessorios' : 'pneus',
-        categoryId,
-        brandId: brandId || undefined,
+        categoryId: isCustomCategory ? undefined : categoryId,
+        categoryName: isCustomCategory ? customCategoryName.trim() : undefined,
+        brandId: isCustomBrand ? undefined : (brandId || undefined),
+        brandName: isCustomBrand ? customBrandName.trim() : undefined,
         unitId,
-        brand: brands.find((item) => item.id === brandId)?.name,
+        brand: brName || undefined,
         size,
         unit: units.find((item) => item.id === unitId)?.code ?? '',
         stock: 0,
@@ -115,16 +132,43 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase mb-1">
-                Categoria
-              </label>
-              <select
-                value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
-                className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white rounded p-2 text-sm focus-ring"
-              >
-                {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
+              <div className="flex justify-between items-center mb-1">
+                <label className="block text-xs font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase">
+                  Categoria *
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsCustomCategory(!isCustomCategory)}
+                  className="text-[11px] text-[#003366] dark:text-[#a7c8ff] font-bold hover:underline"
+                >
+                  {isCustomCategory ? '✔ Selecionar Existente' : '✏ Nova Categoria'}
+                </button>
+              </div>
+              {isCustomCategory ? (
+                <input
+                  type="text"
+                  required
+                  value={customCategoryName}
+                  onChange={(e) => setCustomCategoryName(e.target.value)}
+                  placeholder="Escreva a nova categoria (ex: Baterias, Jantes, Óleos...)"
+                  className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white rounded p-2 text-sm focus-ring font-bold"
+                />
+              ) : (
+                <select
+                  value={categoryId}
+                  onChange={(e) => {
+                    if (e.target.value === '__NEW__') {
+                      setIsCustomCategory(true);
+                    } else {
+                      setCategoryId(e.target.value);
+                    }
+                  }}
+                  className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white rounded p-2 text-sm focus-ring"
+                >
+                  {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  <option value="__NEW__">➕ Escrever nova categoria...</option>
+                </select>
+              )}
             </div>
           </div>
 
@@ -144,10 +188,43 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="block text-xs font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase mb-1">
-                Marca / Fabricante
-              </label>
-              <select value={brandId} onChange={(event) => setBrandId(event.target.value)} className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white rounded p-2 text-sm focus-ring"><option value="">Sem marca</option>{brands.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+              <div className="flex justify-between items-center mb-1">
+                <label className="block text-xs font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase">
+                  Marca / Fabricante
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsCustomBrand(!isCustomBrand)}
+                  className="text-[11px] text-[#003366] dark:text-[#a7c8ff] font-bold hover:underline"
+                >
+                  {isCustomBrand ? '✔ Selecionar Existente' : '✏ Nova Marca'}
+                </button>
+              </div>
+              {isCustomBrand ? (
+                <input
+                  type="text"
+                  value={customBrandName}
+                  onChange={(e) => setCustomBrandName(e.target.value)}
+                  placeholder="Escreva a nova marca (ex: Continental, Maxxis, Castrol...)"
+                  className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white rounded p-2 text-sm focus-ring font-bold"
+                />
+              ) : (
+                <select
+                  value={brandId}
+                  onChange={(event) => {
+                    if (event.target.value === '__NEW__') {
+                      setIsCustomBrand(true);
+                    } else {
+                      setBrandId(event.target.value);
+                    }
+                  }}
+                  className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white rounded p-2 text-sm focus-ring"
+                >
+                  <option value="">Sem marca</option>
+                  {brands.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  <option value="__NEW__">➕ Escrever nova marca...</option>
+                </select>
+              )}
             </div>
             <div>
               <label className="block text-xs font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase mb-1">
