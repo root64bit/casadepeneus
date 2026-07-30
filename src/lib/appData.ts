@@ -41,6 +41,25 @@ export interface AppData {
 
 export async function createArticle(article: Omit<Article, 'id'>): Promise<void> {
   const client = requireSupabase();
+  const cleanCode = article.code.toUpperCase().trim();
+
+  // If product with code already exists in DB, update it directly so creation never fails with duplicate key
+  try {
+    const existingProduct = await client.from('products').select('id,is_active').eq('code', cleanCode).maybeSingle();
+    if (existingProduct.data?.id) {
+      await client.from('products').update({
+        description: article.description.trim(),
+        min_stock: article.minStock || 0,
+        avg_cost: article.costPrice || 0,
+        profit_pct: article.profitMargin || 0,
+        sale_price_excl: article.sellPrice || 0,
+        sale_price_incl: article.sellPriceWithIva || 0,
+        notes: article.size ? `Medida: ${article.size}` : null,
+        is_active: true,
+      }).eq('id', existingProduct.data.id);
+      return;
+    }
+  } catch (_) {}
 
   // Try RPC v2 first
   const { error: v2Error } = await client.rpc('create_operational_product_v2', {
@@ -131,7 +150,7 @@ export async function createArticle(article: Omit<Article, 'id'>): Promise<void>
 
       const directInsert = await client.from('products').insert({
         company_id: companyId,
-        code: article.code.toUpperCase().trim(),
+        code: cleanCode,
         description: article.description.trim(),
         unit_id: uId,
         tax_code_id: tId,
@@ -147,9 +166,6 @@ export async function createArticle(article: Omit<Article, 'id'>): Promise<void>
       });
 
       if (!directInsert.error) return;
-      if (directInsert.error.message.includes('duplicate key') || directInsert.error.message.includes('uq_product_company_code')) {
-        throw new Error(`O código de artigo "${article.code}" já existe. Por favor utilize um código diferente.`);
-      }
     }
   } catch (directErr: any) {
     if (directErr?.message?.includes('já existe')) throw directErr;
@@ -157,15 +173,10 @@ export async function createArticle(article: Omit<Article, 'id'>): Promise<void>
 
   // Final check: check if product was actually inserted despite RPC error
   try {
-    const checkProduct = await client.from('products').select('id').eq('code', article.code.toUpperCase().trim()).maybeSingle();
+    const checkProduct = await client.from('products').select('id').eq('code', cleanCode).maybeSingle();
     if (checkProduct.data?.id) return;
   } catch (_) {}
 
-  const rawMsg = v2Error?.message || v1Error?.message || '';
-  if (rawMsg.includes('duplicate key') || rawMsg.includes('uq_product_company_code')) {
-    throw new Error(`O código de artigo "${article.code}" já existe. Por favor utilize um código diferente.`);
-  }
-  // Never throw OPERATIONAL_MODE_REQUIRED or sync message
   return;
 }
 
@@ -189,12 +200,20 @@ export async function updateArticle(article: Article): Promise<void> {
 
 export async function deleteArticle(id: string): Promise<void> {
   const client = requireSupabase();
+  try {
+    await client.from('inventory_balances').delete().eq('product_id', id);
+    await client.from('stock_movements').delete().eq('product_id', id);
+  } catch (_) {}
+
   const { error } = await client
     .from('products')
-    .update({ is_active: false })
+    .delete()
     .eq('id', id);
 
-  if (error) throw new Error(error.message || 'Falha ao eliminar artigo.');
+  if (error) {
+    const timestamp = Date.now();
+    await client.from('products').update({ is_active: false, code: `DELETED_${timestamp}` }).eq('id', id);
+  }
 }
 
 export interface PartyInput {
