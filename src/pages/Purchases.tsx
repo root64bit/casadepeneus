@@ -109,23 +109,17 @@ export const Purchases: React.FC<PurchasesProps> = ({
   };
 
   const payInvoice = async (document: DocumentRecord) => {
-    const inputAmount = window.prompt(
-      `Pagar Fatura ${document.displayNumber} (Pendente: ${document.outstandingAmount.toFixed(2)} MZN).\nIntroduza o valor a pagar (Pagamento Parcial ou Total):`,
-      document.outstandingAmount.toFixed(2),
-    );
-    if (!inputAmount) return;
-    const amountToPay = Math.min(Number(inputAmount) || 0, document.outstandingAmount);
+    const amountToPay = document.outstandingAmount;
     if (amountToPay <= 0) return;
 
-    const reference = window.prompt('Referência do pagamento / transferência (opcional):', '') ?? '';
     setPayingId(document.id);
     setError('');
     try {
       await onPayInvoice(
         document,
-        reference.trim() ? 'BANK_TRANSFER' : 'CASH',
+        'CASH',
         amountToPay,
-        reference,
+        '',
       );
     } catch (paymentError) {
       setError(paymentError instanceof Error ? paymentError.message : 'Falha ao pagar a factura.');
