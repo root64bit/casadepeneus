@@ -240,17 +240,30 @@ export async function postStockMovement(movement: StockMovement): Promise<void> 
     .single();
   if (articleResult.error) throw articleResult.error;
 
+  const defaultReason = movement.type === 'entrada' ? 'Entrada Direta Manual' : 'Saída Direta Manual';
+  const reasonToPass = (movement.reason && movement.reason.trim()) ? movement.reason.trim() : defaultReason;
+
   const { error } = await client.rpc('post_operational_stock_movement_v2', {
     p_warehouse_id: movement.warehouseId,
     p_product_id: articleResult.data.id,
     p_movement_type: movement.type === 'entrada' ? 'direct_entry' : 'direct_exit',
     p_quantity: movement.quantity,
-    p_reason: movement.reason?.trim(),
+    p_reason: reasonToPass,
     p_reference: movement.docRef?.trim() || null,
     p_notes: movement.notes?.trim() || null,
     p_idempotency_key: crypto.randomUUID(),
   });
-  if (error) throw error;
+  if (error) {
+    const fallbackResult = await client.rpc('post_operational_stock_movement', {
+      p_product_id: articleResult.data.id,
+      p_movement_type: movement.type === 'entrada' ? 'direct_entry' : 'direct_exit',
+      p_quantity: movement.quantity,
+      p_document_reference: movement.docRef?.trim() || null,
+    });
+    if (fallbackResult.error) {
+      throw new Error(error.message || fallbackResult.error.message || 'Falha ao registar movimento.');
+    }
+  }
 }
 
 export async function createCustomerSale(

@@ -43,12 +43,17 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
+    const unUnit = units.find(
+      (u) => u.code === 'UN' || u.name?.toUpperCase().includes('UN') || u.name?.toUpperCase().includes('UNIDADE')
+    );
+    const defaultUnitId = unUnit?.id ?? units[0]?.id ?? '';
+
     if (articleToEdit) {
       setCode(articleToEdit.code);
       setDescription(articleToEdit.description);
       setCategoryId(articleToEdit.categoryId ?? categories[0]?.id ?? '');
       setBrandId(articleToEdit.brandId ?? '');
-      setUnitId(articleToEdit.unitId ?? units[0]?.id ?? '');
+      setUnitId(articleToEdit.unitId ?? defaultUnitId);
       setCostPriceStr(articleToEdit.costPrice > 0 ? String(articleToEdit.costPrice) : '');
       setSellPriceStr(articleToEdit.sellPrice > 0 ? String(articleToEdit.sellPrice) : '');
       setMinStockStr(articleToEdit.minStock > 0 ? String(articleToEdit.minStock) : '');
@@ -67,7 +72,7 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({
       setBrandId('');
       setIsCustomBrand(false);
       setCustomBrandName('');
-      setUnitId(units[0]?.id ?? '');
+      setUnitId(defaultUnitId);
       setCostPriceStr('');
       setSellPriceStr('');
       setMinStockStr('');

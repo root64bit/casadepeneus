@@ -380,7 +380,7 @@ export const Layout: React.FC<LayoutProps> = ({
         </button>
       </header>
 
-      <main className="min-h-screen px-3 pb-6 pt-20 sm:px-5 lg:ml-[240px] lg:p-6 lg:pt-20">
+      <main className="min-h-screen px-3 pb-20 pt-20 sm:px-5 lg:ml-[240px] lg:p-6 lg:pb-20 lg:pt-20">
         {children}
       </main>
 
