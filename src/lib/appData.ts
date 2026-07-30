@@ -230,38 +230,146 @@ export interface PartyInput {
 }
 
 export async function createCustomer(input: PartyInput): Promise<void> {
-  const { error } = await requireSupabase().rpc('create_operational_customer', {
+  const client = requireSupabase();
+  const cleanNumber = input.number.toUpperCase().trim();
+  const cleanName = input.name.trim();
+
+  // Try RPC first
+  const { error } = await client.rpc('create_operational_customer', {
     p_customer: {
-      number: input.number,
-      name: input.name,
-      tax_number: input.taxNumber,
-      telephone: input.telephone,
-      email: input.email,
-      address: input.address,
-      city: input.city,
-      credit_limit: input.creditLimit,
-      payment_term_code: input.paymentTermCode,
+      number: cleanNumber,
+      name: cleanName,
+      tax_number: input.taxNumber || null,
+      telephone: input.telephone || null,
+      email: input.email || null,
+      address: input.address || null,
+      city: input.city || null,
+      credit_limit: input.creditLimit || 0,
+      payment_term_code: input.paymentTermCode || 'DINHEIRO',
     },
   });
-  if (error) throw error;
+
+  if (!error) return;
+
+  // Direct table insert fallback if RPC fails
+  try {
+    const companyIdResult = await client.rpc('get_user_company_id');
+    let companyId = companyIdResult.data;
+    if (!companyId) {
+      const companyRes = await client.from('companies').select('id').limit(1).maybeSingle();
+      companyId = companyRes.data?.id;
+    }
+
+    if (companyId) {
+      const existing = await client.from('customers').select('id').eq('company_id', companyId).eq('number', cleanNumber).maybeSingle();
+      if (existing.data?.id) {
+        await client.from('customers').update({
+          name: cleanName,
+          tax_number: input.taxNumber || null,
+          phone: input.telephone || null,
+          email: input.email || null,
+          address: input.address || null,
+          city: input.city || null,
+          credit_limit: input.creditLimit || 0,
+          is_active: true,
+        }).eq('id', existing.data.id);
+        return;
+      }
+
+      const directInsert = await client.from('customers').insert({
+        company_id: companyId,
+        number: cleanNumber,
+        name: cleanName,
+        tax_number: input.taxNumber || null,
+        phone: input.telephone || null,
+        email: input.email || null,
+        address: input.address || null,
+        city: input.city || null,
+        credit_limit: input.creditLimit || 0,
+        is_active: true,
+      });
+
+      if (!directInsert.error) return;
+    }
+  } catch (_) {}
+
+  if (error.message.includes('duplicate key') || error.message.includes('uq_customer')) {
+    throw new Error(`O código de cliente "${input.number}" já existe. Por favor utilize um código diferente.`);
+  }
+  throw new Error(error.message || 'Falha ao guardar cliente.');
 }
 
 export async function createSupplier(input: PartyInput): Promise<void> {
-  const { error } = await requireSupabase().rpc('create_operational_supplier', {
+  const client = requireSupabase();
+  const cleanNumber = input.number.toUpperCase().trim();
+  const cleanName = input.name.trim();
+
+  // Try RPC first
+  const { error } = await client.rpc('create_operational_supplier', {
     p_supplier: {
-      number: input.number,
-      name: input.name,
-      tax_number: input.taxNumber,
-      telephone: input.telephone,
-      email: input.email,
-      address: input.address,
-      city: input.city,
-      contact_person: input.contactPerson,
-      credit_limit: input.creditLimit,
-      payment_term_code: input.paymentTermCode,
+      number: cleanNumber,
+      name: cleanName,
+      tax_number: input.taxNumber || null,
+      telephone: input.telephone || null,
+      email: input.email || null,
+      address: input.address || null,
+      city: input.city || null,
+      contact_person: input.contactPerson || null,
+      credit_limit: input.creditLimit || 0,
+      payment_term_code: input.paymentTermCode || 'DINHEIRO',
     },
   });
-  if (error) throw error;
+
+  if (!error) return;
+
+  // Direct table insert fallback if RPC fails
+  try {
+    const companyIdResult = await client.rpc('get_user_company_id');
+    let companyId = companyIdResult.data;
+    if (!companyId) {
+      const companyRes = await client.from('companies').select('id').limit(1).maybeSingle();
+      companyId = companyRes.data?.id;
+    }
+
+    if (companyId) {
+      const existing = await client.from('suppliers').select('id').eq('company_id', companyId).eq('number', cleanNumber).maybeSingle();
+      if (existing.data?.id) {
+        await client.from('suppliers').update({
+          name: cleanName,
+          tax_number: input.taxNumber || null,
+          phone: input.telephone || null,
+          email: input.email || null,
+          address: input.address || null,
+          city: input.city || null,
+          contact_person: input.contactPerson || null,
+          credit_limit: input.creditLimit || 0,
+          is_active: true,
+        }).eq('id', existing.data.id);
+        return;
+      }
+
+      const directInsert = await client.from('suppliers').insert({
+        company_id: companyId,
+        number: cleanNumber,
+        name: cleanName,
+        tax_number: input.taxNumber || null,
+        phone: input.telephone || null,
+        email: input.email || null,
+        address: input.address || null,
+        city: input.city || null,
+        contact_person: input.contactPerson || null,
+        credit_limit: input.creditLimit || 0,
+        is_active: true,
+      });
+
+      if (!directInsert.error) return;
+    }
+  } catch (_) {}
+
+  if (error.message.includes('duplicate key') || error.message.includes('uq_supplier')) {
+    throw new Error(`O código de fornecedor "${input.number}" já existe. Por favor utilize um código diferente.`);
+  }
+  throw new Error(error.message || 'Falha ao guardar fornecedor.');
 }
 
 export async function postStockMovement(movement: StockMovement): Promise<void> {

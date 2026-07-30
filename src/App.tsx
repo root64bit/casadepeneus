@@ -248,6 +248,12 @@ function App() {
   const handleAddMovement = async (mov: StockMovement) => {
     try {
       await postStockMovement(mov);
+      const newMovementWithId: StockMovement = {
+        ...mov,
+        id: mov.id || crypto.randomUUID(),
+        date: new Date().toISOString(),
+      };
+      setMovements((prev) => [newMovementWithId, ...prev]);
       await refreshData();
     } catch (error) {
       setDataError(error instanceof Error ? error.message : 'Falha ao registar movimento.');
