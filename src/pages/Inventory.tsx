@@ -32,17 +32,6 @@ export const Inventory: React.FC<InventoryProps> = ({
   const [codeTo, setCodeTo] = useState<string>('');
   const [ledgerArticle, setLedgerArticle] = useState<Article | null>(null);
 
-  React.useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'F3' && canCreate) {
-        e.preventDefault();
-        onOpenNewArticleModal();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [canCreate, onOpenNewArticleModal]);
-
   const searchTerm = (globalSearch || localSearch).toLowerCase();
 
   const categoryPills = React.useMemo(() => {
@@ -74,6 +63,26 @@ export const Inventory: React.FC<InventoryProps> = ({
 
     return matchesCategory && matchesSearch && matchesCodeRange;
   });
+
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F2' && canCreate) {
+        e.preventDefault();
+        onOpenNewArticleModal();
+      } else if (e.key === 'F3' && filteredArticles.length > 0 && onEditArticle) {
+        e.preventDefault();
+        onEditArticle(filteredArticles[0]);
+      } else if (e.key === 'F4' && filteredArticles.length > 0) {
+        e.preventDefault();
+        setLedgerArticle(filteredArticles[0]);
+      } else if (e.key === 'F9') {
+        e.preventDefault();
+        window.print();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [canCreate, onOpenNewArticleModal, filteredArticles, onEditArticle]);
 
   const totalArticlesCount = filteredArticles.length;
   const totalCostValue = filteredArticles.reduce((acc, a) => acc + (a.costPrice * a.stock), 0);
@@ -310,6 +319,34 @@ export const Inventory: React.FC<InventoryProps> = ({
           if (found) setLedgerArticle(found);
         }}
       />
+
+      {/* Dynamic XT-POS PRO Bottom Status Bar (Screen 3) */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#0000aa] text-white border-t-2 border-yellow-400 px-6 py-2 text-xs font-mono font-bold flex items-center justify-between shadow-2xl">
+        <div className="flex items-center space-x-6 text-yellow-300">
+          <span>ESC=Sair</span>
+          <span>TAB=Ord</span>
+          <span>Barra=Filtro</span>
+          <button onClick={onOpenNewArticleModal} className="bg-yellow-400 text-black px-1 rounded font-bold hover:brightness-110">
+            F2=Introduzir
+          </button>
+          {filteredArticles.length > 0 && onEditArticle && (
+            <button onClick={() => onEditArticle(filteredArticles[0])} className="bg-yellow-400 text-black px-1 rounded font-bold hover:brightness-110">
+              F3=Alterar
+            </button>
+          )}
+          {filteredArticles.length > 0 && (
+            <button onClick={() => setLedgerArticle(filteredArticles[0])} className="bg-yellow-400 text-black px-1 rounded font-bold hover:brightness-110">
+              F4=Consultar
+            </button>
+          )}
+          <button onClick={() => window.print()} className="bg-yellow-400 text-black px-1 rounded font-bold hover:brightness-110">
+            F9=Imp
+          </button>
+        </div>
+        <div className="text-white text-[11px]">
+          Ficheiro de Artigos: <span className="text-yellow-300 font-bold">{filteredArticles.length} Registo(s)</span>
+        </div>
+      </div>
     </div>
   );
 };

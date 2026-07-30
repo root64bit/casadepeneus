@@ -202,14 +202,14 @@ export const Purchases: React.FC<PurchasesProps> = ({
           {error && <p role="alert" className="rounded bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
           <div className="flex items-center justify-end gap-4">
             <strong className="font-mono text-xl">{formatMZN(total)}</strong>
-            <button disabled={saving || items.length === 0} onClick={() => void saveInvoice()} className="rounded bg-[#006e25] px-5 py-3 text-xs font-bold uppercase text-white disabled:opacity-50">{saving ? 'A confirmar…' : 'Confirmar factura'}</button>
+            <button disabled={saving || items.length === 0} onClick={() => void saveInvoice()} className="rounded bg-[#006e25] px-5 py-3 text-xs font-bold uppercase text-white disabled:opacity-50">{saving ? 'A confirmar…' : 'Gravar Fatura (F2)'}</button>
           </div>
         </section>
       )}
 
       {!canCreate && <p className="rounded border bg-white p-4 text-sm">O seu perfil permite consultar compras, mas não criar ou confirmar facturas.</p>}
 
-      <section className="overflow-hidden rounded-lg border border-[#c3c6d1] bg-white dark:border-[#43474f] dark:bg-[#1f2325]">
+      <section className="overflow-hidden rounded-lg border border-[#c3c6d1] bg-white dark:border-[#43474f] dark:bg-[#1f2325] pb-16">
         <h3 className="border-b p-4 font-bold">Documentos de fornecedor</h3>
         <table className="w-full text-sm">
           <thead className="bg-[#f3f4f5] text-xs uppercase dark:bg-[#282c2e]"><tr><th className="p-3 text-left">Documento</th><th className="p-3 text-left">Fornecedor</th><th className="p-3 text-left">Estado</th><th className="p-3 text-right">Total</th><th className="p-3 text-right">Pendente</th><th /></tr></thead>
@@ -217,6 +217,27 @@ export const Purchases: React.FC<PurchasesProps> = ({
         </table>
         {supplierDocuments.length === 0 && <p className="p-6 text-center text-sm text-[#737780]">Sem documentos de fornecedor.</p>}
       </section>
+
+      {/* Dynamic XT-POS PRO Bottom Status Bar (Screen 2 & 4) */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#0000aa] text-white border-t-2 border-yellow-400 px-6 py-2 text-xs font-mono font-bold flex items-center justify-between shadow-2xl">
+        <div className="flex items-center space-x-6 text-yellow-300">
+          <span>ESC=Sair</span>
+          <span>TAB=Tabelas</span>
+          <button disabled={saving || items.length === 0} onClick={() => void saveInvoice()} className="bg-yellow-400 text-black px-1 rounded font-bold hover:brightness-110 disabled:opacity-50">
+            F2=Gravar
+          </button>
+          <span>F3=Ajustar</span>
+          <button onClick={() => setItems([])} className="bg-yellow-400 text-black px-1 rounded font-bold hover:brightness-110">
+            F5=Novo
+          </button>
+          <button onClick={() => window.print()} className="bg-yellow-400 text-black px-1 rounded font-bold hover:brightness-110">
+            F9=Imp
+          </button>
+        </div>
+        <div className="text-white text-[11px]">
+          Fatura de Fornecedor | Itens: <b>{items.length}</b> | Total: <b>{formatMZN(total)}</b>
+        </div>
+      </div>
     </div>
   );
 };

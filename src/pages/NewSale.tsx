@@ -96,45 +96,62 @@ export const NewSale: React.FC<NewSaleProps> = ({
     setItems(items.filter((_, i) => i !== index));
   };
 
+  // 3-Phase POS Workflow: HEADER -> LINES -> FOOTER
+  const [posPhase, setPosPhase] = useState<'HEADER' | 'LINES' | 'FOOTER'>('HEADER');
+  const [generalDiscount, setGeneralDiscount] = useState<number>(0);
+  const [notes, setNotes] = useState<string>('');
+
   // Calculations
   const subtotalBruto = items.reduce((acc, item) => acc + (item.unitPrice * item.quantity), 0);
-  const descontoTotal = items.reduce((acc, item) => acc + ((item.unitPrice * item.quantity) * (item.discountPercent / 100)), 0);
-  const totalAfterDiscount = subtotalBruto - descontoTotal;
+  const descontoLinhas = items.reduce((acc, item) => acc + ((item.unitPrice * item.quantity) * (item.discountPercent / 100)), 0);
+  const totalAfterLineDiscount = subtotalBruto - descontoLinhas;
+  const descontoGeralValor = totalAfterLineDiscount * (generalDiscount / 100);
+  const subtotalLiquido = totalAfterLineDiscount - descontoGeralValor;
+
   const ivaTotal = items.reduce((acc, item) => {
-    const lineNet = (item.unitPrice * item.quantity) * (1 - item.discountPercent / 100);
+    const lineNet = (item.unitPrice * item.quantity) * (1 - item.discountPercent / 100) * (1 - generalDiscount / 100);
     return acc + (lineNet * item.ivaPercent / 100);
   }, 0);
-  const totalFinalAmount = totalAfterDiscount + ivaTotal;
+
+  const totalFinalAmount = subtotalLiquido + ivaTotal;
 
   // Account Balance calculation
   const selectedClient = clients.find((c) => c.id === selectedClientId);
   const previousBalance = selectedClient?.pendingBalance ?? 0;
   const newAccumulatedBalance = previousBalance + totalFinalAmount;
 
-  // Keyboard Shortcuts: F2 (Total / Gravar), F9 (Gravar / Imprimir), ESC (Retificar)
-  const [f2Step, setF2Step] = useState(false);
-
+  // Keyboard Shortcuts based on current phase
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F2') {
         e.preventDefault();
-        if (!f2Step) {
-          setF2Step(true);
-        } else {
+        if (posPhase === 'HEADER') {
+          if (!selectedClientId && clients.length > 0) {
+            setSelectedClientId(clients[0].id);
+            setSelectedClientName(clients[0].name);
+          }
+          setPosPhase('LINES');
+        } else if (posPhase === 'LINES') {
+          setPosPhase('FOOTER');
+        } else if (posPhase === 'FOOTER') {
           void handleSaveAndConfirm();
-          setF2Step(false);
         }
       } else if (e.key === 'F9') {
         e.preventDefault();
         void handleSaveAndConfirm(true);
+      } else if (e.key === 'F5' && posPhase === 'FOOTER') {
+        e.preventDefault();
+        setItems([]);
+        setPosPhase('HEADER');
       } else if (e.key === 'Escape') {
         e.preventDefault();
-        setF2Step(false);
+        if (posPhase === 'FOOTER') setPosPhase('LINES');
+        else if (posPhase === 'LINES') setPosPhase('HEADER');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [f2Step, items, selectedClientId, totalFinalAmount]);
+  }, [posPhase, items, selectedClientId, totalFinalAmount, clients]);
 
   const handleClientCodeChange = (codeStr: string) => {
     const found = clients.find((c) => c.number === codeStr.trim() || c.id === codeStr.trim());
@@ -144,7 +161,6 @@ export const NewSale: React.FC<NewSaleProps> = ({
       setClientNuit(found.nuit);
       setClientAddress(found.address);
     } else {
-      // Default to Cliente Pontual
       const pontual = clients.find((c) => c.name.toLowerCase().includes('pontual')) || {
         id: 'client-pontual',
         name: 'Cliente Pontual',
@@ -187,7 +203,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
       sellerName,
       items,
       subtotalBruto,
-      descontoTotal,
+      descontoTotal: descontoLinhas + descontoGeralValor,
       ivaTotal,
       totalAmount: Math.round(totalFinalAmount * 100) / 100,
       paidAmount: paymentSelection.startsWith('TERM:') && paymentSelection.slice(5) !== immediateTerm?.code ? 0 : Math.round(totalFinalAmount * 100) / 100,
@@ -204,7 +220,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
         onOpenPrintModal(savedSale);
       }
       setItems([]);
-      setF2Step(false);
+      setPosPhase('HEADER');
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'Falha ao guardar a fatura.');
     } finally {
@@ -213,249 +229,411 @@ export const NewSale: React.FC<NewSaleProps> = ({
   };
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Header Info Form */}
-      <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-4 rounded shadow-sm">
-        <div className="grid grid-cols-12 gap-3 text-xs">
-          {/* Row 1 */}
-          <div className="col-span-12 md:col-span-2">
-            <label className="block font-bold text-[#737780] uppercase mb-1">Nº Documento</label>
-            <input
-              type="text"
-              readOnly
-              value={docNumber}
-              className="w-full bg-[#f3f4f5] dark:bg-[#282c2e] dark:text-white font-mono font-bold border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm"
-            />
-          </div>
+    <div className="space-y-6 pb-20 font-mono">
+      {/* Workflow Phase Indicator Tabs */}
+      <div className="flex items-center space-x-2 bg-[#001e40] text-white p-2 rounded shadow text-xs uppercase font-bold">
+        <button
+          type="button"
+          onClick={() => setPosPhase('HEADER')}
+          className={`px-4 py-2 rounded transition-all flex items-center space-x-1 ${
+            posPhase === 'HEADER' ? 'bg-[#006e25] text-white font-extrabold shadow' : 'bg-[#0000aa]/40 text-white/70 hover:text-white'
+          }`}
+        >
+          <span>1. Cabeçalho (Cliente)</span>
+        </button>
 
-          <div className="col-span-12 md:col-span-2">
-            <label className="block font-bold text-[#737780] uppercase mb-1">Data Emissão</label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring"
-            />
-          </div>
+        <span className="material-symbols-outlined text-sm">chevron_right</span>
 
-          <div className="col-span-12 md:col-span-2">
-            <label className="block font-bold text-[#737780] uppercase mb-1">Código Cliente</label>
-            <input
-              type="text"
-              placeholder="Ex: 5"
-              onChange={(e) => handleClientCodeChange(e.target.value)}
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring font-bold"
-            />
-          </div>
+        <button
+          type="button"
+          onClick={() => setPosPhase('LINES')}
+          className={`px-4 py-2 rounded transition-all flex items-center space-x-1 ${
+            posPhase === 'LINES' ? 'bg-[#006e25] text-white font-extrabold shadow' : 'bg-[#0000aa]/40 text-white/70 hover:text-white'
+          }`}
+        >
+          <span>2. Linhas de Artigos ({items.length})</span>
+        </button>
 
-          <div className="col-span-12 md:col-span-3">
-            <label className="block font-bold text-[#737780] uppercase mb-1">Nome do Cliente *</label>
-            <input
-              type="text"
-              value={selectedClientName}
-              onChange={(e) => setSelectedClientName(e.target.value)}
-              placeholder="Nome do Cliente"
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-bold border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring"
-            />
-          </div>
+        <span className="material-symbols-outlined text-sm">chevron_right</span>
 
-          <div className="col-span-12 md:col-span-3">
-            <label className="block font-bold text-[#737780] uppercase mb-1">Condição de Pagamento</label>
-            <select
-              value={paymentSelection}
-              onChange={(e) => setPaymentSelection(e.target.value)}
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring font-bold text-[#003366] dark:text-[#a7c8ff]"
-            >
-              {canReceivePayment && paymentMethods.filter((item) => item.allowsCustomerReceipt).map((item) => <option key={item.id} value={`METHOD:${item.code}`}>{item.name}</option>)}
-              {paymentTerms.map((item) => <option key={item.id} value={`TERM:${item.code}`}>{item.name}</option>)}
-            </select>
-          </div>
+        <button
+          type="button"
+          onClick={() => setPosPhase('FOOTER')}
+          className={`px-4 py-2 rounded transition-all flex items-center space-x-1 ${
+            posPhase === 'FOOTER' ? 'bg-[#006e25] text-white font-extrabold shadow' : 'bg-[#0000aa]/40 text-white/70 hover:text-white'
+          }`}
+        >
+          <span>3. Rodapé & Totais ({formatMZN(totalFinalAmount)})</span>
+        </button>
+      </div>
 
-          {/* Account Balance Summary Banner */}
-          {selectedClientId && (
-            <div className="col-span-12 bg-[#003366]/10 p-2.5 rounded border border-[#003366]/20 flex items-center justify-between text-xs font-mono">
-              <div>
-                <span className="font-bold text-[#001e40] dark:text-white">Cliente: {selectedClientName}</span>
-                {previousBalance > 0 && (
-                  <span className="ml-3 text-red-600 font-bold">
-                    Saldo Pendente Anterior: {formatMZN(previousBalance)}
+      {/* FASE 1: CABEÇALHO */}
+      {(posPhase === 'HEADER' || posPhase === 'LINES' || posPhase === 'FOOTER') && (
+        <section className={`bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-4 rounded shadow-sm transition-all ${
+          posPhase !== 'HEADER' ? 'opacity-80' : ''
+        }`}>
+          <div className="flex items-center justify-between border-b pb-2 mb-3">
+            <h3 className="font-bold text-xs uppercase text-[#003366] dark:text-[#a7c8ff]">
+              [ Factura a Cliente - Cabeçalho ]
+            </h3>
+            {posPhase !== 'HEADER' && (
+              <button onClick={() => setPosPhase('HEADER')} className="text-xs text-[#006e25] font-bold hover:underline">
+                ✏ Alterar Cabeçalho
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-12 gap-3 text-xs">
+            <div className="col-span-12 md:col-span-2">
+              <label className="block font-bold text-[#737780] uppercase mb-1">Nº Documento</label>
+              <input
+                type="text"
+                readOnly
+                value={docNumber}
+                className="w-full bg-[#f3f4f5] dark:bg-[#282c2e] dark:text-white font-mono font-bold border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm"
+              />
+            </div>
+
+            <div className="col-span-12 md:col-span-2">
+              <label className="block font-bold text-[#737780] uppercase mb-1">Data Emissão</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring"
+              />
+            </div>
+
+            <div className="col-span-12 md:col-span-2">
+              <label className="block font-bold text-[#737780] uppercase mb-1">Código Cliente</label>
+              <input
+                type="text"
+                placeholder="Ex: 5"
+                onChange={(e) => handleClientCodeChange(e.target.value)}
+                className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring font-bold"
+              />
+            </div>
+
+            <div className="col-span-12 md:col-span-3">
+              <label className="block font-bold text-[#737780] uppercase mb-1">Nome do Cliente *</label>
+              <input
+                type="text"
+                value={selectedClientName}
+                onChange={(e) => setSelectedClientName(e.target.value)}
+                placeholder="Nome do Cliente"
+                className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-bold border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring"
+              />
+            </div>
+
+            <div className="col-span-12 md:col-span-3">
+              <label className="block font-bold text-[#737780] uppercase mb-1">Condição de Pagamento</label>
+              <select
+                value={paymentSelection}
+                onChange={(e) => setPaymentSelection(e.target.value)}
+                className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring font-bold text-[#003366] dark:text-[#a7c8ff]"
+              >
+                {canReceivePayment && paymentMethods.filter((item) => item.allowsCustomerReceipt).map((item) => <option key={item.id} value={`METHOD:${item.code}`}>{item.name}</option>)}
+                {paymentTerms.map((item) => <option key={item.id} value={`TERM:${item.code}`}>{item.name}</option>)}
+              </select>
+            </div>
+
+            {/* Account Balance Summary Banner */}
+            {selectedClientId && (
+              <div className="col-span-12 bg-[#003366]/10 p-2.5 rounded border border-[#003366]/20 flex items-center justify-between text-xs font-mono">
+                <div>
+                  <span className="font-bold text-[#001e40] dark:text-white">Cliente: {selectedClientName}</span>
+                  {previousBalance > 0 && (
+                    <span className="ml-3 text-red-600 font-bold">
+                      Saldo Pendente Anterior: {formatMZN(previousBalance)}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center space-x-4">
+                  <span>Esta Venda: <b>{formatMZN(totalFinalAmount)}</b></span>
+                  <span className="text-[#006e25] font-extrabold text-sm">
+                    Novo Saldo Acumulado: {formatMZN(newAccumulatedBalance)}
                   </span>
-                )}
+                </div>
               </div>
-              <div className="flex items-center space-x-4">
-                <span>Esta Venda: <b>{formatMZN(totalFinalAmount)}</b></span>
-                <span className="text-[#006e25] font-extrabold text-sm">
-                  Novo Saldo Acumulado: {formatMZN(newAccumulatedBalance)}
-                </span>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* FASE 2: LINHAS DE ARTIGOS */}
+      {(posPhase === 'LINES' || posPhase === 'FOOTER') && (
+        <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded overflow-hidden shadow-sm">
+          <div className="bg-[#001e40] text-white px-4 py-2 text-xs font-bold uppercase flex justify-between items-center">
+            <span>[ Linhas da Fatura / Guia ]</span>
+            <span>Linhas inseridas: {items.length}</span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-[#e7e8e9] dark:bg-[#282c2e] text-[#43474f] dark:text-[#c3c6d1] font-bold uppercase border-b border-[#c3c6d1]">
+                <tr>
+                  <th className="p-3 w-44">Código Artigo</th>
+                  <th className="p-3">Descrição do Item / Pneu</th>
+                  <th className="p-3 w-20 text-center">Quant.</th>
+                  <th className="p-3 w-32 text-right">Preço</th>
+                  <th className="p-3 w-20 text-center">Ds %</th>
+                  <th className="p-3 w-20 text-center">Iv</th>
+                  <th className="p-3 w-36 text-right">Iliquido c/ IVA</th>
+                  <th className="p-3 w-12 text-center">Ação</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f] font-mono">
+                {/* Quick Insertion Bar matching Screen 11 & 13 */}
+                {posPhase === 'LINES' && (
+                  <tr className="bg-[#0000aa]/10 dark:bg-[#282c2e] border-b-2 border-[#003366]">
+                    <td className="p-2" colSpan={2}>
+                      <ArticleSearchSelect
+                        articles={articles}
+                        selectedArticleId={selectedArticleId}
+                        onSelect={handleArticleSelect}
+                        renderLabel={(a) => `[${a.code}] ${a.description} - ${a.sellPrice.toFixed(2)} MZN (Existência: ${a.stock})`}
+                        placeholder="Pesquisar artigo por código ou descrição…"
+                      />
+                    </td>
+                    <td className="p-2">
+                      <div className="flex flex-col items-center">
+                        <input
+                          type="number"
+                          min="1"
+                          value={inputQty}
+                          onChange={(e) => setInputQty(Number(e.target.value))}
+                          className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-center text-xs font-bold bg-yellow-100 text-black"
+                        />
+                        <span className="text-[10px] font-bold text-[#006e25] mt-0.5 whitespace-nowrap">
+                          Existência: {articles.find(a => a.id === selectedArticleId)?.stock ?? 0}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="p-2 text-right font-bold text-gray-700 dark:text-white">
+                      {articles.find(a => a.id === selectedArticleId)?.sellPrice.toFixed(2)}
+                    </td>
+                    <td className="p-2">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={inputDiscount}
+                        onChange={(e) => setInputDiscount(Number(e.target.value))}
+                        className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-2 text-center text-xs text-red-600"
+                      />
+                    </td>
+                    <td className="p-2">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={inputIva}
+                        onChange={(e) => setInputIva(Number(e.target.value))}
+                        className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-2 text-center text-xs font-bold text-[#003366]"
+                      />
+                    </td>
+                    <td className="p-2 text-right font-extrabold text-[#006e25]">
+                      {(
+                        ((articles.find(a => a.id === selectedArticleId)?.sellPrice || 0) * (1 - inputDiscount / 100)) * inputQty * (1 + inputIva / 100)
+                      ).toFixed(2)}
+                    </td>
+                    <td className="p-2 text-center">
+                      <button
+                        onClick={handleAddItem}
+                        className="p-1 bg-[#006e25] text-white rounded hover:brightness-110 flex items-center justify-center mx-auto"
+                        title="Adicionar Item"
+                      >
+                        <span className="material-symbols-outlined text-lg">add_circle</span>
+                      </button>
+                    </td>
+                  </tr>
+                )}
+
+                {/* Added Line Items */}
+                {items.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="p-8 text-center text-gray-500 italic">
+                      Nenhum item adicionado. Introduza os artigos na barra de inserção rápida acima.
+                    </td>
+                  </tr>
+                ) : (
+                  items.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-[#f3f4f5] dark:hover:bg-[#282c2e]">
+                      <td className="p-3 font-bold text-[#003366] dark:text-[#a7c8ff]">{item.code}</td>
+                      <td className="p-3 font-sans font-medium text-[#191c1d] dark:text-white">{item.description}</td>
+                      <td className="p-3 text-center font-bold text-base text-[#001e40] dark:text-white">{item.quantity}</td>
+                      <td className="p-3 text-right">{item.unitPrice.toFixed(2)}</td>
+                      <td className="p-3 text-center text-red-600 font-bold">{item.discountPercent}%</td>
+                      <td className="p-3 text-center text-gray-500">{item.ivaPercent}%</td>
+                      <td className="p-3 text-right font-extrabold text-[#006e25] text-sm">{item.total.toFixed(2)} MZN</td>
+                      <td className="p-3 text-center">
+                        <button
+                          onClick={() => handleRemoveItem(idx)}
+                          className="text-[#ba1a1a] hover:opacity-80 p-1"
+                          title="Remover linha"
+                        >
+                          <span className="material-symbols-outlined text-lg">delete</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* FASE 3: RODAPÉ & TOTAIS (Matching Screens 9 & 14) */}
+      {(posPhase === 'FOOTER' || posPhase === 'LINES') && (
+        <section className="bg-[#000080] text-yellow-300 border-2 border-yellow-400 p-5 rounded shadow-2xl space-y-4">
+          <div className="border-b border-yellow-400/40 pb-2 flex justify-between items-center text-white">
+            <h3 className="font-extrabold text-sm uppercase">
+              [ Factura a Cliente — Rodapé e Totais ]
+            </h3>
+            <span className="text-xs font-bold text-yellow-300">
+              Cliente: {selectedClientName}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-12 gap-4 text-xs">
+            {/* Left Box: Desconto Geral & Observações */}
+            <div className="col-span-12 md:col-span-6 space-y-3 bg-[#0000aa] p-3 rounded border border-yellow-400/30">
+              <div className="flex items-center space-x-2">
+                <label className="font-bold uppercase text-white">% Desconto Geral:</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={generalDiscount}
+                  onChange={(e) => setGeneralDiscount(Number(e.target.value))}
+                  className="w-20 bg-yellow-100 text-black border border-yellow-400 rounded p-1 text-center font-bold"
+                />
+                <span className="font-bold text-white">Valor: {formatMZN(descontoGeralValor)}</span>
+              </div>
+
+              <div>
+                <label className="block font-bold uppercase text-white mb-1">Observações / Garantias:</label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Observações da fatura ou termos de garantia dos pneus..."
+                  className="w-full h-20 bg-[#000055] border border-yellow-400/40 rounded p-2 text-xs text-yellow-200 focus:outline-none"
+                ></textarea>
               </div>
             </div>
-          )}
-        </div>
-      </section>
 
-      {/* POS Table Section */}
-      <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-[#001e40] text-white font-bold uppercase">
-              <tr>
-                <th className="p-3 w-44">Código Artigo</th>
-                <th className="p-3">Descrição do Item / Pneu</th>
-                <th className="p-3 w-20 text-center">Qtd</th>
-                <th className="p-3 w-32 text-right">Preço Unit.</th>
-                <th className="p-3 w-20 text-center">Desc %</th>
-                <th className="p-3 w-20 text-center">IVA</th>
-                <th className="p-3 w-36 text-right">Total c/ IVA</th>
-                <th className="p-3 w-12 text-center">Ação</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f] font-mono">
-              {/* Interactive Row to Add Items (XT-POS PRO Quick Bar) */}
-              <tr className="bg-[#0000aa]/10 dark:bg-[#282c2e] border-b-2 border-[#003366]">
-                <td className="p-2" colSpan={2}>
-                  <ArticleSearchSelect
-                    articles={articles}
-                    selectedArticleId={selectedArticleId}
-                    onSelect={handleArticleSelect}
-                    renderLabel={(a) => `[${a.code}] ${a.description} - ${a.sellPrice.toFixed(2)} MZN (Existência: ${a.stock})`}
-                    placeholder="Pesquisar artigo por código ou descrição…"
-                  />
-                </td>
-                <td className="p-2">
-                  <div className="flex flex-col items-center">
-                    <input
-                      type="number"
-                      min="1"
-                      value={inputQty}
-                      onChange={(e) => setInputQty(Number(e.target.value))}
-                      className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-center text-xs font-bold bg-yellow-100 text-black"
-                    />
-                    <span className="text-[10px] font-bold text-[#006e25] mt-0.5 whitespace-nowrap">
-                      Existência: {articles.find(a => a.id === selectedArticleId)?.stock ?? 0}
-                    </span>
-                  </div>
-                </td>
-                <td className="p-2 text-right font-bold text-gray-700 dark:text-white">
-                  {articles.find(a => a.id === selectedArticleId)?.sellPrice.toFixed(2)}
-                </td>
-                <td className="p-2">
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={inputDiscount}
-                    onChange={(e) => setInputDiscount(Number(e.target.value))}
-                    className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-2 text-center text-xs text-red-600"
-                  />
-                </td>
-                <td className="p-2">
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    value={inputIva}
-                    onChange={(e) => setInputIva(Number(e.target.value))}
-                    className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-2 text-center text-xs font-bold text-[#003366]"
-                  />
-                </td>
-                <td className="p-2 text-right font-extrabold text-[#006e25]">
-                  {(
-                    ((articles.find(a => a.id === selectedArticleId)?.sellPrice || 0) * (1 - inputDiscount / 100)) * inputQty * (1 + inputIva / 100)
-                  ).toFixed(2)}
-                </td>
-                <td className="p-2 text-center">
-                  <button
-                    onClick={handleAddItem}
-                    className="p-1 bg-[#006e25] text-white rounded hover:brightness-110 flex items-center justify-center mx-auto"
-                    title="Adicionar Item à Fatura"
-                  >
-                    <span className="material-symbols-outlined text-lg">add_circle</span>
-                  </button>
-                </td>
-              </tr>
+            {/* Right Box: Totais Discriminados por Código IVA & Resumo Total */}
+            <div className="col-span-12 md:col-span-6 grid grid-cols-2 gap-3">
+              {/* Discriminação IVA */}
+              <div className="border border-yellow-400 p-2 bg-[#0000aa] text-[11px] font-mono space-y-1">
+                <div className="border-b border-yellow-400/50 font-bold flex justify-between text-white uppercase text-[10px]">
+                  <span>CD</span>
+                  <span>VALOR BASE IVA</span>
+                  <span>VALOR TOTAL</span>
+                </div>
+                <div className="flex justify-between font-bold">
+                  <span>1</span>
+                  <span>{subtotalLiquido.toFixed(2)}</span>
+                  <span>{ivaTotal.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-yellow-400/60">
+                  <span>0</span>
+                  <span>0.00</span>
+                  <span>0.00</span>
+                </div>
+              </div>
 
-              {/* Added Line Items */}
-              {items.map((item, idx) => (
-                <tr key={idx} className="hover:bg-[#f3f4f5] dark:hover:bg-[#282c2e]">
-                  <td className="p-3 font-bold text-[#003366] dark:text-[#a7c8ff]">{item.code}</td>
-                  <td className="p-3 font-sans font-medium text-[#191c1d] dark:text-white">{item.description}</td>
-                  <td className="p-3 text-center font-bold text-base text-[#001e40] dark:text-white">{item.quantity}</td>
-                  <td className="p-3 text-right">{item.unitPrice.toFixed(2)}</td>
-                  <td className="p-3 text-center text-red-600 font-bold">{item.discountPercent}%</td>
-                  <td className="p-3 text-center text-gray-500">{item.ivaPercent}%</td>
-                  <td className="p-3 text-right font-extrabold text-[#006e25] text-sm">{item.total.toFixed(2)} MZN</td>
-                  <td className="p-3 text-center">
-                    <button
-                      onClick={() => handleRemoveItem(idx)}
-                      className="text-[#ba1a1a] hover:opacity-80 p-1"
-                      title="Remover linha"
-                    >
-                      <span className="material-symbols-outlined text-lg">delete</span>
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* Totals & Summary Bento */}
-      <div className="grid grid-cols-12 gap-6 items-start">
-        <div className="col-span-12 lg:col-span-7">
-          <div className="p-4 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded shadow-sm">
-            <h3 className="text-xs font-bold text-[#003366] dark:text-[#a7c8ff] uppercase mb-2">
-              Observações / Notas da Garantia
-            </h3>
-            <textarea
-              placeholder="Escreva detalhes da garantia dos pneus (ex: 50.000 km ou 12 meses contra defeitos de fabricação)..."
-              className="w-full h-24 border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white rounded p-2 text-xs focus-ring"
-            ></textarea>
-          </div>
-        </div>
-
-        <div className="col-span-12 lg:col-span-5 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded p-5 shadow-sm space-y-3 font-mono">
-          <div className="flex justify-between items-center text-xs text-[#737780] dark:text-[#c3c6d1]">
-            <span>Subtotal Bruto:</span>
-            <span className="font-bold text-[#191c1d] dark:text-white">{formatMZN(subtotalBruto)}</span>
+              {/* Quadro de Totais */}
+              <div className="border-2 border-yellow-400 p-3 bg-[#0000aa] text-xs font-mono space-y-1.5 flex flex-col justify-between">
+                <div className="flex justify-between">
+                  <span className="text-white font-bold">ILIQUIDO:</span>
+                  <span>{formatMZN(subtotalBruto)}</span>
+                </div>
+                <div className="flex justify-between text-red-300">
+                  <span>DESCONTOS:</span>
+                  <span>-{formatMZN(descontoLinhas + descontoGeralValor)}</span>
+                </div>
+                <div className="flex justify-between text-white">
+                  <span>IVA:</span>
+                  <span>{formatMZN(ivaTotal)}</span>
+                </div>
+                <div className="pt-2 border-t-2 border-yellow-400 flex justify-between items-center text-sm font-black text-white">
+                  <span>TOTAL:</span>
+                  <span className="text-xl text-yellow-300 font-extrabold">{formatMZN(totalFinalAmount)}</span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="flex justify-between items-center text-xs text-[#ba1a1a]">
-            <span>Desconto Total:</span>
-            <span className="font-bold">-{formatMZN(descontoTotal)}</span>
-          </div>
-
-          <div className="flex justify-between items-center text-xs text-[#737780] dark:text-[#c3c6d1] pb-3 border-b border-[#c3c6d1] dark:border-[#43474f]">
-            <span>IVA:</span>
-            <span className="font-bold">{formatMZN(ivaTotal)}</span>
-          </div>
-
-          <div className="flex justify-between items-center pt-2">
-            <span className="text-base font-extrabold text-[#001e40] dark:text-[#a7c8ff] uppercase font-sans">
-              TOTAL FINAL:
-            </span>
-            <span className="text-2xl font-black text-[#001e40] dark:text-[#a7c8ff]">
-              {formatMZN(totalFinalAmount)}
-            </span>
-          </div>
-
-          {/* Checkout Trigger Actions */}
-          <div className="pt-4 space-y-2 font-sans">
+          {/* Action Buttons */}
+          <div className="flex justify-between items-center pt-2 border-t border-yellow-400/40">
             {saveError && (
-              <p role="alert" className="rounded bg-red-50 p-2 text-xs font-bold text-red-700">
+              <p role="alert" className="rounded bg-red-900 p-2 text-xs font-bold text-red-100">
                 {saveError}
               </p>
             )}
-            <button
-              onClick={() => void handleSaveAndConfirm()}
-              disabled={saving || items.length === 0 || !selectedClientId}
-              className="w-full py-3 bg-[#006e25] text-white font-bold text-xs uppercase rounded hover:brightness-110 shadow-md flex items-center justify-center space-x-2 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined">check_circle</span>
-              <span>{saving ? 'A guardar…' : 'Confirmar & Guardar Fatura (F2)'}</span>
-            </button>
+            <div className="flex items-center space-x-3 ml-auto">
+              <button
+                type="button"
+                onClick={() => { setItems([]); setPosPhase('HEADER'); }}
+                className="px-4 py-2 bg-red-700 text-white rounded font-bold text-xs uppercase hover:bg-red-800"
+              >
+                Novo Documento (F5)
+              </button>
+              <button
+                type="button"
+                disabled={saving || items.length === 0}
+                onClick={() => void handleSaveAndConfirm(true)}
+                className="px-4 py-2 bg-blue-700 text-white rounded font-bold text-xs uppercase hover:bg-blue-800 disabled:opacity-50"
+              >
+                Gravar & Imprimir (F9)
+              </button>
+              <button
+                type="button"
+                disabled={saving || items.length === 0}
+                onClick={() => void handleSaveAndConfirm(false)}
+                className="px-6 py-2 bg-[#006e25] text-white rounded font-black text-xs uppercase hover:brightness-110 shadow-lg disabled:opacity-50"
+              >
+                {saving ? 'A gravar…' : 'Gravar Fatura (F2)'}
+              </button>
+            </div>
           </div>
+        </section>
+      )}
+
+      {/* Dynamic XT-POS PRO Bottom Status Bar */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#0000aa] text-white border-t-2 border-yellow-400 px-6 py-2 text-xs font-mono font-bold flex items-center justify-between shadow-2xl">
+        <div className="flex items-center space-x-6 text-yellow-300">
+          {posPhase === 'HEADER' && (
+            <>
+              <span>ESC=Sair</span>
+              <span>TAB=Tabelas</span>
+              <span className="bg-yellow-400 text-black px-1 rounded">F2=Ult/Cont</span>
+              <span>F9=2ªvia</span>
+              <span>PgUp/Dn=Prox/Ant</span>
+            </>
+          )}
+          {posPhase === 'LINES' && (
+            <>
+              <span>ESC=Sair</span>
+              <span>TAB=Tabelas</span>
+              <span className="bg-yellow-400 text-black px-1 rounded">F2=Continuar</span>
+              <span>Ctrl-Del/Ins=Linhas</span>
+            </>
+          )}
+          {posPhase === 'FOOTER' && (
+            <>
+              <span>ESC=Sair</span>
+              <span className="bg-yellow-400 text-black px-1 rounded">F2=Gravar</span>
+              <span>F3=Ajustar</span>
+              <span>F5=Novo</span>
+              <span>F9=Imp</span>
+            </>
+          )}
+        </div>
+        <div className="text-white text-[11px]">
+          Fase Ativa: <span className="text-yellow-300 uppercase">{posPhase}</span> | Cliente: <b>{selectedClientName || 'Nenhum'}</b>
         </div>
       </div>
     </div>
