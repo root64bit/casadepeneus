@@ -223,13 +223,11 @@ function App() {
   };
 
   const handleDeleteArticle = async (art: Article) => {
-    if (confirm(`Tem a certeza que deseja eliminar o artigo "${art.code} — ${art.description}"?`)) {
-      try {
-        await deleteArticle(art.id);
-        await refreshData();
-      } catch (error) {
-        setDataError(error instanceof Error ? error.message : 'Falha ao eliminar artigo.');
-      }
+    try {
+      await deleteArticle(art.id);
+      await refreshData();
+    } catch (error) {
+      setDataError(error instanceof Error ? error.message : 'Falha ao eliminar artigo.');
     }
   };
 

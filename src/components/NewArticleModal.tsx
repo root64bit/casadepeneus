@@ -122,11 +122,11 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!code || !description) {
-      alert('Por favor preencha o código e a descrição do artigo.');
+      setError('Por favor preencha o código e a descrição do artigo.');
       return;
     }
     if (isCustomCategory && !customCategoryName.trim()) {
-      alert('Por favor introduza o nome da nova categoria.');
+      setError('Por favor introduza o nome da nova categoria.');
       return;
     }
 

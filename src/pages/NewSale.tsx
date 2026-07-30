@@ -185,7 +185,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
 
   const handleSaveAndConfirm = async (shouldPrint: boolean = false) => {
     if (items.length === 0) {
-      alert('Adicione pelo menos 1 item à venda.');
+      setSaveError('Adicione pelo menos 1 item à venda.');
       return;
     }
     if (!selectedClientId) {

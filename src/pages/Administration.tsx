@@ -63,7 +63,7 @@ export function Administration({
                     {user.active ? 'ATIVO' : 'INATIVO'}
                   </span>
                 </td>
-                <td className="p-3"><button onClick={() => { if (window.confirm(`${user.active ? 'Desativar' : 'Ativar'} ${user.fullName}?`)) void onUpdateUser(user, !user.active); }} className="rounded border px-3 py-2 font-bold">{user.active ? 'Desativar' : 'Ativar'}</button></td>
+                <td className="p-3"><button onClick={() => { void onUpdateUser(user, !user.active); }} className="rounded border px-3 py-2 font-bold">{user.active ? 'Desativar' : 'Ativar'}</button></td>
               </tr>
             ))}
             {users.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-500">Nenhum utilizador encontrado.</td></tr>}

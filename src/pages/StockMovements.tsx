@@ -54,8 +54,6 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
       setError('A saída excede o stock disponível.');
       return;
     }
-    const confirmed = window.confirm(`Confirmar ${type} de ${quantity} unidade(s) de ${article.code}? Stock previsto: ${expectedStock}.`);
-    if (!confirmed) return;
     setSaving(true);
     setError('');
     setSuccess('');
