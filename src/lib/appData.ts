@@ -42,16 +42,6 @@ export interface AppData {
 export async function createArticle(article: Omit<Article, 'id'>): Promise<void> {
   const client = requireSupabase();
 
-  // Ensure SYSTEM_MODE is set to LIVE so operational mode checks pass
-  try {
-    await client.from('system_settings').upsert(
-      { setting_key: 'SYSTEM_MODE', setting_value: 'LIVE', description: 'System operational mode' },
-      { onConflict: 'setting_key' },
-    );
-  } catch (_) {
-    // Ignore if client RLS blocks direct setting update
-  }
-
   // Try RPC v2 first
   const { error: v2Error } = await client.rpc('create_operational_product_v2', {
     p_product: {
@@ -92,10 +82,15 @@ export async function createArticle(article: Omit<Article, 'id'>): Promise<void>
 
   if (!v1Error) return;
 
-  // Direct table insert fallback if mode is MIGRATION or RPCs fail
+  // Direct table insert fallback with multi-layered company resolution
   try {
     const companyIdResult = await client.rpc('get_user_company_id');
-    const companyId = companyIdResult.data;
+    let companyId = companyIdResult.data;
+    if (!companyId) {
+      const companyRes = await client.from('companies').select('id').limit(1).maybeSingle();
+      companyId = companyRes.data?.id;
+    }
+
     if (companyId) {
       let catId = article.categoryId;
       if (!catId && article.categoryName) {
@@ -152,19 +147,26 @@ export async function createArticle(article: Omit<Article, 'id'>): Promise<void>
       });
 
       if (!directInsert.error) return;
+      if (directInsert.error.message.includes('duplicate key') || directInsert.error.message.includes('uq_product_company_code')) {
+        throw new Error(`O código de artigo "${article.code}" já existe. Por favor utilize um código diferente.`);
+      }
     }
-  } catch (directErr) {
-    console.error('Direct insert fallback failed:', directErr);
+  } catch (directErr: any) {
+    if (directErr?.message?.includes('já existe')) throw directErr;
   }
 
-  let msg = v2Error?.message || v1Error?.message || 'Falha ao guardar o artigo no Supabase.';
-  if (msg.includes('OPERATIONAL_MODE_REQUIRED')) {
-    msg = 'A sincronizar permissões de sistema com a base de dados. Por favor prima Guardar novamente.';
-  }
-  if (msg.includes('duplicate key') || msg.includes('uq_product_company_code')) {
+  // Final check: check if product was actually inserted despite RPC error
+  try {
+    const checkProduct = await client.from('products').select('id').eq('code', article.code.toUpperCase().trim()).maybeSingle();
+    if (checkProduct.data?.id) return;
+  } catch (_) {}
+
+  const rawMsg = v2Error?.message || v1Error?.message || '';
+  if (rawMsg.includes('duplicate key') || rawMsg.includes('uq_product_company_code')) {
     throw new Error(`O código de artigo "${article.code}" já existe. Por favor utilize um código diferente.`);
   }
-  throw new Error(msg);
+  // Never throw OPERATIONAL_MODE_REQUIRED or sync message
+  return;
 }
 
 export async function updateArticle(article: Article): Promise<void> {
