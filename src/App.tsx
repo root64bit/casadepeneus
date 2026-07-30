@@ -34,6 +34,8 @@ import {
 import { supabase } from './lib/supabase';
 import {
   createArticle,
+  updateArticle,
+  deleteArticle,
   createCustomer,
   createCustomerPayment,
   createCustomerSale,
@@ -186,7 +188,19 @@ function App() {
     }
   }, [activeTab, permissions, userContext]);
 
+  const [articleToEdit, setArticleToEdit] = useState<Article | null>(null);
+
   // Handlers
+  const handleOpenNewArticleModal = () => {
+    setArticleToEdit(null);
+    setNewArticleModalOpen(true);
+  };
+
+  const handleEditArticle = (art: Article) => {
+    setArticleToEdit(art);
+    setNewArticleModalOpen(true);
+  };
+
   const handleAddArticle = async (article: Omit<Article, 'id'>) => {
     try {
       await createArticle(article);
@@ -194,6 +208,28 @@ function App() {
     } catch (error) {
       setDataError(error instanceof Error ? error.message : 'Falha ao guardar artigo.');
       throw error;
+    }
+  };
+
+  const handleUpdateArticle = async (updated: Article) => {
+    try {
+      await updateArticle(updated);
+      await refreshData();
+      setArticleToEdit(null);
+    } catch (error) {
+      setDataError(error instanceof Error ? error.message : 'Falha ao atualizar artigo.');
+      throw error;
+    }
+  };
+
+  const handleDeleteArticle = async (art: Article) => {
+    if (confirm(`Tem a certeza que deseja eliminar o artigo "${art.code} — ${art.description}"?`)) {
+      try {
+        await deleteArticle(art.id);
+        await refreshData();
+      } catch (error) {
+        setDataError(error instanceof Error ? error.message : 'Falha ao eliminar artigo.');
+      }
     }
   };
 
@@ -345,8 +381,11 @@ function App() {
         return (
           <Inventory
             articles={articles}
+            movements={movements}
             globalSearch={globalSearch}
-            onOpenNewArticleModal={() => setNewArticleModalOpen(true)}
+            onOpenNewArticleModal={handleOpenNewArticleModal}
+            onEditArticle={handleEditArticle}
+            onDeleteArticle={handleDeleteArticle}
             setActiveTab={setActiveTab}
             canViewCost={permissions.includes('products.view_cost')}
             canCreate={permissions.includes('products.create')}
@@ -493,8 +532,13 @@ function App() {
       {/* Modals */}
       <NewArticleModal
         isOpen={isNewArticleModalOpen}
-        onClose={() => setNewArticleModalOpen(false)}
+        onClose={() => {
+          setNewArticleModalOpen(false);
+          setArticleToEdit(null);
+        }}
         onSave={handleAddArticle}
+        onUpdate={handleUpdateArticle}
+        articleToEdit={articleToEdit}
         categories={productCategories}
         brands={brands}
         units={units}

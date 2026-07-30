@@ -54,10 +54,32 @@ export function PartyModal({ type, onClose, onSave, paymentTerms }: PartyModalPr
     }
   };
 
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if (e.key === 'F2') {
+      e.preventDefault();
+      e.currentTarget.requestSubmit();
+      return;
+    }
+    if (e.key === 'Enter') {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'SELECT') {
+        e.preventDefault();
+        const formElements = Array.from(
+          e.currentTarget.querySelectorAll<HTMLElement>('input, select, button[type="submit"]')
+        ).filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1);
+        const index = formElements.indexOf(target);
+        if (index >= 0 && index < formElements.length - 1) {
+          formElements[index + 1].focus();
+        }
+      }
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
       <form
         onSubmit={submit}
+        onKeyDown={handleFormKeyDown}
         className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white shadow-2xl dark:bg-[#1f2325]"
       >
         <header className="flex items-center justify-between bg-[#001e40] px-6 py-4 text-white">

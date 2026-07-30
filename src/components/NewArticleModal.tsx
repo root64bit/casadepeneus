@@ -5,13 +5,25 @@ interface NewArticleModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (article: Omit<Article, 'id'>) => Promise<void>;
+  onUpdate?: (article: Article) => Promise<void>;
+  articleToEdit?: Article | null;
   categories: ReferenceOption[];
   brands: ReferenceOption[];
   units: ReferenceOption[];
   taxCodes: ReferenceOption[];
 }
 
-export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClose, onSave, categories, brands, units, taxCodes }) => {
+export const NewArticleModal: React.FC<NewArticleModalProps> = ({
+  isOpen,
+  onClose,
+  onSave,
+  onUpdate,
+  articleToEdit,
+  categories,
+  brands,
+  units,
+  taxCodes,
+}) => {
   const [code, setCode] = useState('');
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -21,9 +33,9 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
   const [isCustomBrand, setIsCustomBrand] = useState(false);
   const [customBrandName, setCustomBrandName] = useState('');
   const [unitId, setUnitId] = useState('');
-  const [minStock, setMinStock] = useState<number>(0);
-  const [costPrice, setCostPrice] = useState<number>(0);
-  const [sellPrice, setSellPrice] = useState<number>(0);
+  const [minStockStr, setMinStockStr] = useState('');
+  const [costPriceStr, setCostPriceStr] = useState('');
+  const [sellPriceStr, setSellPriceStr] = useState('');
   const [taxCodeId, setTaxCodeId] = useState('');
   const [taxRate, setTaxRate] = useState<number>(16);
   const [saving, setSaving] = useState(false);
@@ -31,25 +43,81 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
 
   useEffect(() => {
     if (!isOpen) return;
-    setCategoryId(categories[0]?.id ?? '');
-    setIsCustomCategory(false);
-    setCustomCategoryName('');
-    setBrandId('');
-    setIsCustomBrand(false);
-    setCustomBrandName('');
-    setUnitId(units[0]?.id ?? '');
-    setCostPrice(0);
-    setSellPrice(0);
-    setMinStock(0);
-    setTaxCodeId(taxCodes[0]?.id ?? '');
-    const firstRateMatch = taxCodes[0]?.name.match(/(\d+(?:\.\d+)?)%/);
-    setTaxRate(firstRateMatch ? Number(firstRateMatch[1]) : 16);
-  }, [isOpen, categories, units, taxCodes]);
+    if (articleToEdit) {
+      setCode(articleToEdit.code);
+      setDescription(articleToEdit.description);
+      setCategoryId(articleToEdit.categoryId ?? categories[0]?.id ?? '');
+      setBrandId(articleToEdit.brandId ?? '');
+      setUnitId(articleToEdit.unitId ?? units[0]?.id ?? '');
+      setCostPriceStr(articleToEdit.costPrice > 0 ? String(articleToEdit.costPrice) : '');
+      setSellPriceStr(articleToEdit.sellPrice > 0 ? String(articleToEdit.sellPrice) : '');
+      setMinStockStr(articleToEdit.minStock > 0 ? String(articleToEdit.minStock) : '');
+      setTaxRate(articleToEdit.taxRate ?? 16);
+      setTaxCodeId(articleToEdit.taxCodeId ?? taxCodes[0]?.id ?? '');
+      setIsCustomCategory(false);
+      setCustomCategoryName('');
+      setIsCustomBrand(false);
+      setCustomBrandName('');
+    } else {
+      setCode('');
+      setDescription('');
+      setCategoryId(categories[0]?.id ?? '');
+      setIsCustomCategory(false);
+      setCustomCategoryName('');
+      setBrandId('');
+      setIsCustomBrand(false);
+      setCustomBrandName('');
+      setUnitId(units[0]?.id ?? '');
+      setCostPriceStr('');
+      setSellPriceStr('');
+      setMinStockStr('');
+      setTaxCodeId(taxCodes[0]?.id ?? '');
+      const firstRateMatch = taxCodes[0]?.name.match(/(\d+(?:\.\d+)?)%/);
+      setTaxRate(firstRateMatch ? Number(firstRateMatch[1]) : 16);
+    }
+  }, [isOpen, articleToEdit, categories, units, taxCodes]);
 
   if (!isOpen) return null;
 
+  const costPrice = Number(costPriceStr) || 0;
+  const sellPrice = Number(sellPriceStr) || 0;
+  const minStock = Number(minStockStr) || 0;
+
   const profitMargin = costPrice > 0 ? ((sellPrice - costPrice) / costPrice) * 100 : 0;
   const sellPriceWithIva = sellPrice * (1 + taxRate / 100);
+
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if (e.key === 'F2') {
+      e.preventDefault();
+      e.currentTarget.requestSubmit();
+      return;
+    }
+    if (e.key === 'Enter' || e.key === 'ArrowDown') {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'SELECT') {
+        e.preventDefault();
+        const formElements = Array.from(
+          e.currentTarget.querySelectorAll<HTMLElement>('input, select, button[type="submit"]')
+        ).filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1);
+        const index = formElements.indexOf(target);
+        if (index >= 0 && index < formElements.length - 1) {
+          formElements[index + 1].focus();
+        }
+      }
+    } else if (e.key === 'ArrowUp') {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'SELECT') {
+        e.preventDefault();
+        const formElements = Array.from(
+          e.currentTarget.querySelectorAll<HTMLElement>('input, select, button[type="submit"]')
+        ).filter((el) => !el.hasAttribute('disabled') && el.tabIndex !== -1);
+        const index = formElements.indexOf(target);
+        if (index > 0) {
+          formElements[index - 1].focus();
+        }
+      }
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,9 +138,9 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
       const normalizedCategory = catName.toLowerCase();
       const brName = isCustomBrand ? customBrandName.trim() : (brands.find((item) => item.id === brandId)?.name ?? '');
 
-      await onSave({
-        code: code.toUpperCase(),
-        description,
+      const payload = {
+        code: code.toUpperCase().trim(),
+        description: description.trim(),
         category: normalizedCategory || 'geral',
         categoryId: isCustomCategory ? undefined : categoryId,
         categoryName: isCustomCategory ? customCategoryName.trim() : undefined,
@@ -81,16 +149,22 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
         unitId,
         brand: brName || undefined,
         size: undefined,
-        unit: units.find((item) => item.id === unitId)?.code ?? '',
-        stock: 0,
-        minStock: Number(minStock),
-        costPrice: Number(costPrice),
+        unit: units.find((item) => item.id === unitId)?.code ?? 'UN',
+        stock: articleToEdit?.stock ?? 0,
+        minStock,
+        costPrice,
         profitMargin: Math.round(profitMargin * 100) / 100,
-        sellPrice: Number(sellPrice),
+        sellPrice,
         sellPriceWithIva: Math.round(sellPriceWithIva * 100) / 100,
         taxCodeId: taxCodeId || undefined,
         taxRate: Number(taxRate),
-      });
+      };
+
+      if (articleToEdit && onUpdate) {
+        await onUpdate({ ...articleToEdit, ...payload });
+      } else {
+        await onSave(payload);
+      }
       onClose();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Falha ao guardar artigo.');
@@ -104,15 +178,15 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
       <div className="bg-white dark:bg-[#1f2325] rounded-lg shadow-xl w-full max-w-2xl overflow-hidden border border-[#c3c6d1] dark:border-[#43474f]">
         <div className="bg-[#001e40] text-white px-6 py-4 flex justify-between items-center">
           <h3 className="font-bold text-lg flex items-center">
-            <span className="material-symbols-outlined mr-2">add_circle</span>
-            Cadastrar Novo Artigo
+            <span className="material-symbols-outlined mr-2">{articleToEdit ? 'edit' : 'add_circle'}</span>
+            {articleToEdit ? `Editar Artigo: ${articleToEdit.code}` : 'Cadastrar Novo Artigo'}
           </h3>
           <button onClick={onClose} className="text-white/80 hover:text-white">
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} onKeyDown={handleFormKeyDown} className="p-6 space-y-4">
           {error && (
             <p role="alert" className="rounded bg-red-50 p-3 text-sm font-bold text-red-700">
               {error}
@@ -262,8 +336,9 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
               <input
                 type="number"
                 min="0"
-                value={minStock}
-                onChange={(e) => setMinStock(Number(e.target.value))}
+                value={minStockStr}
+                onChange={(e) => setMinStockStr(e.target.value)}
+                placeholder="Ex: 5"
                 className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-sm font-mono text-red-600"
               />
             </div>
@@ -273,8 +348,9 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
                 type="number"
                 min="0"
                 step="0.01"
-                value={costPrice}
-                onChange={(e) => setCostPrice(Number(e.target.value))}
+                value={costPriceStr}
+                onChange={(e) => setCostPriceStr(e.target.value)}
+                placeholder="Ex: 1000"
                 className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-sm font-mono"
               />
             </div>
@@ -284,8 +360,9 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
                 type="number"
                 min="0"
                 step="0.01"
-                value={sellPrice}
-                onChange={(e) => setSellPrice(Number(e.target.value))}
+                value={sellPriceStr}
+                onChange={(e) => setSellPriceStr(e.target.value)}
+                placeholder="Ex: 1250"
                 className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-sm font-mono text-blue-600 font-bold"
               />
             </div>
@@ -318,9 +395,9 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
             <button
               type="submit"
               disabled={saving}
-              className="px-6 py-2 bg-[#006e25] text-white rounded font-bold text-xs uppercase hover:brightness-110 transition-all shadow disabled:cursor-not-allowed disabled:opacity-50"
+              className="px-6 py-2 bg-[#006e25] text-white rounded font-bold text-xs uppercase hover:brightness-110 transition-all shadow disabled:cursor-not-allowed disabled:opacity-50 flex items-center"
             >
-              {saving ? 'A guardar…' : 'Guardar Artigo (F2)'}
+              {saving ? 'A guardar…' : (articleToEdit ? 'Atualizar Artigo (F2)' : 'Guardar Artigo (F2)')}
             </button>
           </div>
         </form>

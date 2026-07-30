@@ -9,6 +9,7 @@ interface ArticleSearchSelectProps {
   renderLabel?: (article: Article) => string;
   className?: string;
   placeholder?: string;
+  searchByCodeOnly?: boolean;
 }
 
 export const ArticleSearchSelect: React.FC<ArticleSearchSelectProps> = ({
@@ -18,6 +19,7 @@ export const ArticleSearchSelect: React.FC<ArticleSearchSelectProps> = ({
   renderLabel,
   className = '',
   placeholder = 'Pesquisar por código ou descrição…',
+  searchByCodeOnly = false,
 }) => {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -33,12 +35,16 @@ export const ArticleSearchSelect: React.FC<ArticleSearchSelectProps> = ({
 
   const filtered = useMemo(() => {
     if (!query.trim()) return articles;
-    const terms = query.toLowerCase().split(/\s+/);
+    const q = query.toLowerCase().trim();
+    if (searchByCodeOnly) {
+      return articles.filter((a) => a.code.toLowerCase().includes(q));
+    }
+    const terms = q.split(/\s+/);
     return articles.filter((a) => {
       const haystack = `${a.code} ${a.description} ${a.brand ?? ''}`.toLowerCase();
       return terms.every((term) => haystack.includes(term));
     });
-  }, [articles, query]);
+  }, [articles, query, searchByCodeOnly]);
 
   // Reset highlight when filtered list changes
   useEffect(() => setHighlightIndex(0), [filtered]);

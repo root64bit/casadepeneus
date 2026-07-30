@@ -119,6 +119,8 @@ export interface ReferenceOption {
 
 export interface Client {
   id: string;
+  code?: string;
+  number?: string;
   name: string;
   nuit: string;
   address: string;
@@ -129,6 +131,8 @@ export interface Client {
 
 export interface Supplier {
   id: string;
+  code?: string;
+  number?: string;
   name: string;
   nuit: string;
   address: string;

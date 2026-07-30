@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
-import { Article } from '../types';
+import { Article, StockMovement } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
+import { ArticleLedgerModal } from '../components/ArticleLedgerModal';
 
 interface InventoryProps {
   articles: Article[];
+  movements?: StockMovement[];
   globalSearch: string;
   onOpenNewArticleModal: () => void;
+  onEditArticle?: (article: Article) => void;
+  onDeleteArticle?: (article: Article) => void;
   setActiveTab: (tab: string) => void;
   canViewCost: boolean;
   canCreate: boolean;
@@ -13,14 +17,31 @@ interface InventoryProps {
 
 export const Inventory: React.FC<InventoryProps> = ({
   articles,
+  movements = [],
   globalSearch,
   onOpenNewArticleModal,
+  onEditArticle,
+  onDeleteArticle,
   setActiveTab,
   canViewCost,
   canCreate,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('todos');
   const [localSearch, setLocalSearch] = useState<string>('');
+  const [codeFrom, setCodeFrom] = useState<string>('');
+  const [codeTo, setCodeTo] = useState<string>('');
+  const [ledgerArticle, setLedgerArticle] = useState<Article | null>(null);
+
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F3' && canCreate) {
+        e.preventDefault();
+        onOpenNewArticleModal();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [canCreate, onOpenNewArticleModal]);
 
   const searchTerm = (globalSearch || localSearch).toLowerCase();
 
@@ -42,18 +63,26 @@ export const Inventory: React.FC<InventoryProps> = ({
       art.code.toLowerCase().includes(searchTerm) ||
       art.description.toLowerCase().includes(searchTerm) ||
       (art.brand && art.brand.toLowerCase().includes(searchTerm));
-    return matchesCategory && matchesSearch;
+    
+    let matchesCodeRange = true;
+    if (codeFrom.trim()) {
+      matchesCodeRange = matchesCodeRange && art.code.toUpperCase() >= codeFrom.trim().toUpperCase();
+    }
+    if (codeTo.trim()) {
+      matchesCodeRange = matchesCodeRange && art.code.toUpperCase() <= codeTo.trim().toUpperCase();
+    }
+
+    return matchesCategory && matchesSearch && matchesCodeRange;
   });
 
   const totalArticlesCount = filteredArticles.length;
   const totalCostValue = filteredArticles.reduce((acc, a) => acc + (a.costPrice * a.stock), 0);
   const totalSalesValue = filteredArticles.reduce((acc, a) => acc + (a.sellPriceWithIva * a.stock), 0);
-  const outOfStockCount = articles.filter((a) => a.stock === 0).length;
 
   return (
     <div className="space-y-6">
       {/* Toolbar / Actions */}
-      <div className="p-4 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded shadow-sm">
+      <div className="p-4 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded shadow-sm space-y-3">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           {/* Search Bar */}
           <div className="relative flex-1">
@@ -88,13 +117,15 @@ export const Inventory: React.FC<InventoryProps> = ({
 
           {/* Action Buttons */}
           <div className="flex items-center space-x-2">
-            {canCreate && <button
-              onClick={onOpenNewArticleModal}
-              className="flex items-center px-4 py-2 bg-[#006e25] text-white font-bold rounded text-xs uppercase hover:brightness-110 shadow-sm"
-            >
-              <span className="material-symbols-outlined mr-1.5 text-base">add_circle</span>
-              Novo Artigo (F3)
-            </button>}
+            {canCreate && (
+              <button
+                onClick={onOpenNewArticleModal}
+                className="flex items-center px-4 py-2 bg-[#006e25] text-white font-bold rounded text-xs uppercase hover:brightness-110 shadow-sm"
+              >
+                <span className="material-symbols-outlined mr-1.5 text-base">add_circle</span>
+                Novo Artigo (F3)
+              </button>
+            )}
             <button
               onClick={() => window.print()}
               className="flex items-center px-3 py-2 bg-[#e7e8e9] dark:bg-[#282c2e] text-[#191c1d] dark:text-white font-bold rounded text-xs uppercase hover:bg-[#c3c6d1]"
@@ -110,6 +141,41 @@ export const Inventory: React.FC<InventoryProps> = ({
               Movimentos
             </button>
           </div>
+        </div>
+
+        {/* Code Range Filter */}
+        <div className="flex items-center space-x-3 text-xs bg-[#f8f9fa] dark:bg-[#282c2e] p-2 rounded border border-[#c3c6d1] dark:border-[#43474f]">
+          <span className="font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase flex items-center">
+            <span className="material-symbols-outlined text-sm mr-1">filter_alt</span> Intervalo de Códigos:
+          </span>
+          <div className="flex items-center space-x-2">
+            <label className="font-bold text-gray-500">De:</label>
+            <input
+              type="text"
+              value={codeFrom}
+              onChange={(e) => setCodeFrom(e.target.value)}
+              placeholder="Ex: ART-001"
+              className="p-1 border border-[#c3c6d1] dark:border-[#43474f] rounded uppercase w-28 dark:bg-[#1f2325]"
+            />
+          </div>
+          <div className="flex items-center space-x-2">
+            <label className="font-bold text-gray-500">Até:</label>
+            <input
+              type="text"
+              value={codeTo}
+              onChange={(e) => setCodeTo(e.target.value)}
+              placeholder="Ex: ART-999"
+              className="p-1 border border-[#c3c6d1] dark:border-[#43474f] rounded uppercase w-28 dark:bg-[#1f2325]"
+            />
+          </div>
+          {(codeFrom || codeTo) && (
+            <button
+              onClick={() => { setCodeFrom(''); setCodeTo(''); }}
+              className="text-[#ba1a1a] font-bold hover:underline"
+            >
+              Limpar Filtro
+            </button>
+          )}
         </div>
       </div>
 
@@ -127,7 +193,8 @@ export const Inventory: React.FC<InventoryProps> = ({
                 {canViewCost && <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">P. Custo</th>}
                 {canViewCost && <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">% Margem</th>}
                 <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">P. Venda</th>
-                <th className="px-3 py-3 text-right">P. c/ IVA</th>
+                <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">P. c/ IVA</th>
+                <th className="px-3 py-3 text-center">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f]">
@@ -173,8 +240,37 @@ export const Inventory: React.FC<InventoryProps> = ({
                     <td className="px-3 py-2.5 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">
                       {art.sellPrice.toFixed(2)}
                     </td>
-                    <td className="px-3 py-2.5 text-right font-bold text-[#003366] dark:text-[#a7c8ff]">
+                    <td className="px-3 py-2.5 border-r border-[#c3c6d1] dark:border-[#43474f] text-right font-bold text-[#003366] dark:text-[#a7c8ff]">
                       {art.sellPriceWithIva.toFixed(2)} MZN
+                    </td>
+                    <td className="px-3 py-2.5 text-center">
+                      <div className="flex items-center justify-center space-x-1">
+                        <button
+                          onClick={() => setLedgerArticle(art)}
+                          className="p-1 text-[#000080] dark:text-yellow-300 hover:bg-yellow-100 dark:hover:bg-yellow-900/30 rounded"
+                          title="Ver Extracto de Movimentos (Foto 2)"
+                        >
+                          <span className="material-symbols-outlined text-base">receipt_long</span>
+                        </button>
+                        {onEditArticle && (
+                          <button
+                            onClick={() => onEditArticle(art)}
+                            className="p-1 text-[#003366] dark:text-[#a7c8ff] hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                            title="Editar Artigo (F3)"
+                          >
+                            <span className="material-symbols-outlined text-base">edit</span>
+                          </button>
+                        )}
+                        {onDeleteArticle && (
+                          <button
+                            onClick={() => onDeleteArticle(art)}
+                            className="p-1 text-[#ba1a1a] hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
+                            title="Eliminar Artigo"
+                          >
+                            <span className="material-symbols-outlined text-base">delete</span>
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -186,26 +282,34 @@ export const Inventory: React.FC<InventoryProps> = ({
 
       {/* Summary Stats (Bento Style Grid) */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {canViewCost && <div className="bg-white dark:bg-[#1f2325] p-4 border border-[#c3c6d1] dark:border-[#43474f] rounded">
-          <p className="text-xs font-bold text-[#737780] dark:text-[#c3c6d1] uppercase mb-1">Total de Artigos</p>
+        {canViewCost && <div className="bg-[#f8f9fa] dark:bg-[#1f2325] p-4 border border-[#c3c6d1] dark:border-[#43474f] rounded">
+          <p className="text-xs font-bold text-[#737780] dark:text-[#c3c6d1] uppercase mb-1">Total de Artigos Listados</p>
           <p className="text-2xl font-extrabold text-[#001e40] dark:text-[#a7c8ff] font-mono">{totalArticlesCount}</p>
         </div>}
 
-        <div className="bg-white dark:bg-[#1f2325] p-4 border border-[#c3c6d1] dark:border-[#43474f] rounded">
+        <div className="bg-[#f8f9fa] dark:bg-[#1f2325] p-4 border border-[#c3c6d1] dark:border-[#43474f] rounded">
           <p className="text-xs font-bold text-[#737780] dark:text-[#c3c6d1] uppercase mb-1">Valor Custo (Stock Total)</p>
           <p className="text-2xl font-extrabold text-[#003366] dark:text-[#a7c8ff] font-mono">{formatMZN(totalCostValue)}</p>
         </div>
 
-        <div className="bg-white dark:bg-[#1f2325] p-4 border border-[#c3c6d1] dark:border-[#43474f] rounded">
-          <p className="text-xs font-bold text-[#006e25] uppercase mb-1">Valor Venda (Stock Total)</p>
+        <div className="bg-[#f8f9fa] dark:bg-[#1f2325] p-4 border border-[#c3c6d1] dark:border-[#43474f] rounded">
+          <p className="text-xs font-bold text-[#006e25] uppercase mb-1">Valor Venda c/ IVA (Stock Total)</p>
           <p className="text-2xl font-extrabold text-[#006e25] font-mono">{formatMZN(totalSalesValue)}</p>
         </div>
-
-        <div className="bg-white dark:bg-[#1f2325] p-4 border border-[#ffdad6] dark:border-[#ba1a1a]/40 bg-[#ffdad6]/10 rounded">
-          <p className="text-xs font-bold text-[#ba1a1a] uppercase mb-1">Artigos Sem Stock (Esgotados)</p>
-          <p className="text-2xl font-extrabold text-[#ba1a1a] font-mono">{outOfStockCount}</p>
-        </div>
       </div>
+
+      {/* Extracto de Movimentos Modal (Foto 2) */}
+      <ArticleLedgerModal
+        isOpen={Boolean(ledgerArticle)}
+        onClose={() => setLedgerArticle(null)}
+        article={ledgerArticle}
+        articles={articles}
+        movements={movements}
+        onSelectArticleId={(id) => {
+          const found = articles.find((a) => a.id === id);
+          if (found) setLedgerArticle(found);
+        }}
+      />
     </div>
   );
 };

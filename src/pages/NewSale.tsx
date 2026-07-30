@@ -106,7 +106,59 @@ export const NewSale: React.FC<NewSaleProps> = ({
   }, 0);
   const totalFinalAmount = totalAfterDiscount + ivaTotal;
 
-  const handleSaveAndConfirm = async () => {
+  // Account Balance calculation
+  const selectedClient = clients.find((c) => c.id === selectedClientId);
+  const previousBalance = selectedClient?.pendingBalance ?? 0;
+  const newAccumulatedBalance = previousBalance + totalFinalAmount;
+
+  // Keyboard Shortcuts: F2 (Total / Gravar), F9 (Gravar / Imprimir), ESC (Retificar)
+  const [f2Step, setF2Step] = useState(false);
+
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F2') {
+        e.preventDefault();
+        if (!f2Step) {
+          setF2Step(true);
+        } else {
+          void handleSaveAndConfirm();
+          setF2Step(false);
+        }
+      } else if (e.key === 'F9') {
+        e.preventDefault();
+        void handleSaveAndConfirm(true);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setF2Step(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [f2Step, items, selectedClientId, totalFinalAmount]);
+
+  const handleClientCodeChange = (codeStr: string) => {
+    const found = clients.find((c) => c.number === codeStr.trim() || c.id === codeStr.trim());
+    if (found) {
+      setSelectedClientId(found.id);
+      setSelectedClientName(found.name);
+      setClientNuit(found.nuit);
+      setClientAddress(found.address);
+    } else {
+      // Default to Cliente Pontual
+      const pontual = clients.find((c) => c.name.toLowerCase().includes('pontual')) || {
+        id: 'client-pontual',
+        name: 'Cliente Pontual',
+        nuit: '999999999',
+        address: 'Consumo Final',
+      };
+      setSelectedClientId(pontual.id);
+      setSelectedClientName(pontual.name);
+      setClientNuit(pontual.nuit ?? '');
+      setClientAddress(pontual.address ?? '');
+    }
+  };
+
+  const handleSaveAndConfirm = async (shouldPrint: boolean = false) => {
     if (items.length === 0) {
       alert('Adicione pelo menos 1 item à venda.');
       return;
@@ -148,10 +200,11 @@ export const NewSale: React.FC<NewSaleProps> = ({
     setSaveError('');
     try {
       const savedSale = await onCompleteSale(newSale);
-      if (!savedSale.paymentMethodCode) {
+      if (shouldPrint || !savedSale.paymentMethodCode) {
         onOpenPrintModal(savedSale);
       }
       setItems([]);
+      setF2Step(false);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'Falha ao guardar a fatura.');
     } finally {
@@ -185,20 +238,28 @@ export const NewSale: React.FC<NewSaleProps> = ({
             />
           </div>
 
-          <div className="col-span-12 md:col-span-4">
-            <label className="block font-bold text-[#737780] uppercase mb-1">Selecionar Cliente Registado</label>
-            <select
-              value={selectedClientId}
-              onChange={handleSelectClient}
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring"
-            >
-              {clients.map(c => (
-                <option key={c.id} value={c.id}>{c.name} (NUIT: {c.nuit})</option>
-              ))}
-            </select>
+          <div className="col-span-12 md:col-span-2">
+            <label className="block font-bold text-[#737780] uppercase mb-1">Código Cliente</label>
+            <input
+              type="text"
+              placeholder="Ex: 5"
+              onChange={(e) => handleClientCodeChange(e.target.value)}
+              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring font-bold"
+            />
           </div>
 
-          <div className="col-span-12 md:col-span-4">
+          <div className="col-span-12 md:col-span-3">
+            <label className="block font-bold text-[#737780] uppercase mb-1">Nome do Cliente *</label>
+            <input
+              type="text"
+              value={selectedClientName}
+              onChange={(e) => setSelectedClientName(e.target.value)}
+              placeholder="Nome do Cliente"
+              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-bold border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring"
+            />
+          </div>
+
+          <div className="col-span-12 md:col-span-3">
             <label className="block font-bold text-[#737780] uppercase mb-1">Condição de Pagamento</label>
             <select
               value={paymentSelection}
@@ -208,51 +269,27 @@ export const NewSale: React.FC<NewSaleProps> = ({
               {canReceivePayment && paymentMethods.filter((item) => item.allowsCustomerReceipt).map((item) => <option key={item.id} value={`METHOD:${item.code}`}>{item.name}</option>)}
               {paymentTerms.map((item) => <option key={item.id} value={`TERM:${item.code}`}>{item.name}</option>)}
             </select>
-            {!canReceivePayment && (
-              <p className="mt-1 text-[10px] text-[#737780]">Recebimentos exigem perfil de caixa.</p>
-            )}
           </div>
 
-          {/* Row 2 */}
-          <div className="col-span-12 md:col-span-4">
-            <label className="block font-bold text-[#737780] uppercase mb-1">Nome na Fatura</label>
-            <input
-              type="text"
-              value={selectedClientName}
-              onChange={(e) => setSelectedClientName(e.target.value)}
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring"
-            />
-          </div>
-
-          <div className="col-span-12 md:col-span-4">
-            <label className="block font-bold text-[#737780] uppercase mb-1">Morada / Endereço</label>
-            <input
-              type="text"
-              value={clientAddress}
-              onChange={(e) => setClientAddress(e.target.value)}
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring"
-            />
-          </div>
-
-          <div className="col-span-12 md:col-span-2">
-            <label className="block font-bold text-[#737780] uppercase mb-1">NUIT Cliente</label>
-            <input
-              type="text"
-              value={clientNuit}
-              onChange={(e) => setClientNuit(e.target.value)}
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring"
-            />
-          </div>
-
-          <div className="col-span-12 md:col-span-2">
-            <label className="block font-bold text-[#737780] uppercase mb-1">Vendedor</label>
-            <input
-              type="text"
-              readOnly
-              value={sellerName}
-              className="w-full bg-[#f3f4f5] dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm"
-            />
-          </div>
+          {/* Account Balance Summary Banner */}
+          {selectedClientId && (
+            <div className="col-span-12 bg-[#003366]/10 p-2.5 rounded border border-[#003366]/20 flex items-center justify-between text-xs font-mono">
+              <div>
+                <span className="font-bold text-[#001e40] dark:text-white">Cliente: {selectedClientName}</span>
+                {previousBalance > 0 && (
+                  <span className="ml-3 text-red-600 font-bold">
+                    Saldo Pendente Anterior: {formatMZN(previousBalance)}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center space-x-4">
+                <span>Esta Venda: <b>{formatMZN(totalFinalAmount)}</b></span>
+                <span className="text-[#006e25] font-extrabold text-sm">
+                  Novo Saldo Acumulado: {formatMZN(newAccumulatedBalance)}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -406,7 +443,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
               </p>
             )}
             <button
-              onClick={handleSaveAndConfirm}
+              onClick={() => void handleSaveAndConfirm()}
               disabled={saving || items.length === 0 || !selectedClientId}
               className="w-full py-3 bg-[#006e25] text-white font-bold text-xs uppercase rounded hover:brightness-110 shadow-md flex items-center justify-center space-x-2 disabled:cursor-not-allowed disabled:opacity-50"
             >

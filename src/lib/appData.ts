@@ -154,6 +154,34 @@ export async function createArticle(article: Omit<Article, 'id'>): Promise<void>
   throw new Error(msg);
 }
 
+export async function updateArticle(article: Article): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client
+    .from('products')
+    .update({
+      code: article.code.toUpperCase().trim(),
+      description: article.description.trim(),
+      min_stock: article.minStock || 0,
+      avg_cost: article.costPrice || 0,
+      profit_pct: article.profitMargin || 0,
+      sale_price_excl: article.sellPrice || 0,
+      sale_price_incl: article.sellPriceWithIva || 0,
+    })
+    .eq('id', article.id);
+
+  if (error) throw new Error(error.message || 'Falha ao atualizar artigo.');
+}
+
+export async function deleteArticle(id: string): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client
+    .from('products')
+    .update({ is_active: false })
+    .eq('id', id);
+
+  if (error) throw new Error(error.message || 'Falha ao eliminar artigo.');
+}
+
 export interface PartyInput {
   number: string;
   name: string;

@@ -39,6 +39,7 @@ export const Purchases: React.FC<PurchasesProps> = ({
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? '');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [supplierReference, setSupplierReference] = useState('');
+  const [requisitionNo, setRequisitionNo] = useState('');
   const [term, setTerm] = useState(paymentTerms.find((item) => !item.requiresImmediatePayment)?.code ?? paymentTerms[0]?.code ?? '');
   const [articleId, setArticleId] = useState(articles[0]?.id ?? '');
   const [quantity, setQuantity] = useState(1);
@@ -93,12 +94,13 @@ export const Purchases: React.FC<PurchasesProps> = ({
       await onCreateInvoice({
         supplierId,
         date,
-        supplierInvoiceNumber: supplierReference,
+        supplierInvoiceNumber: requisitionNo ? `${supplierReference} (Req: ${requisitionNo})` : supplierReference,
         paymentTermCode: term,
         items,
       });
       setItems([]);
       setSupplierReference('');
+      setRequisitionNo('');
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Falha ao confirmar a compra.');
     } finally {
@@ -107,15 +109,22 @@ export const Purchases: React.FC<PurchasesProps> = ({
   };
 
   const payInvoice = async (document: DocumentRecord) => {
-    const reference = window.prompt('Referência da transferência (deixe vazio para numerário):', '');
-    if (reference === null) return;
+    const inputAmount = window.prompt(
+      `Pagar Fatura ${document.displayNumber} (Pendente: ${document.outstandingAmount.toFixed(2)} MZN).\nIntroduza o valor a pagar (Pagamento Parcial ou Total):`,
+      document.outstandingAmount.toFixed(2),
+    );
+    if (!inputAmount) return;
+    const amountToPay = Math.min(Number(inputAmount) || 0, document.outstandingAmount);
+    if (amountToPay <= 0) return;
+
+    const reference = window.prompt('Referência do pagamento / transferência (opcional):', '') ?? '';
     setPayingId(document.id);
     setError('');
     try {
       await onPayInvoice(
         document,
         reference.trim() ? 'BANK_TRANSFER' : 'CASH',
-        document.outstandingAmount,
+        amountToPay,
         reference,
       );
     } catch (paymentError) {
@@ -138,7 +147,7 @@ export const Purchases: React.FC<PurchasesProps> = ({
 
       {canCreate && (
         <section className="space-y-4 rounded-lg border border-[#c3c6d1] bg-white p-5 shadow-sm dark:border-[#43474f] dark:bg-[#1f2325]">
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid gap-3 md:grid-cols-5">
             <label className="text-xs font-bold uppercase">Fornecedor
               <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} className="mt-1 w-full rounded border p-2 dark:bg-[#282c2e]">
                 <option value="">Selecionar…</option>
@@ -148,8 +157,11 @@ export const Purchases: React.FC<PurchasesProps> = ({
             <label className="text-xs font-bold uppercase">Data
               <input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="mt-1 w-full rounded border p-2 dark:bg-[#282c2e]" />
             </label>
-            <label className="text-xs font-bold uppercase">Factura do fornecedor
-              <input value={supplierReference} onChange={(event) => setSupplierReference(event.target.value)} placeholder="Número da factura do fornecedor" className="mt-1 w-full rounded border p-2 font-mono dark:bg-[#282c2e]" />
+            <label className="text-xs font-bold uppercase">Factura do Fornecedor *
+              <input required value={supplierReference} onChange={(event) => setSupplierReference(event.target.value)} placeholder="Nº Factura Fornecedor" className="mt-1 w-full rounded border p-2 font-mono dark:bg-[#282c2e]" />
+            </label>
+            <label className="text-xs font-bold uppercase">Guia de Requisição
+              <input value={requisitionNo} onChange={(event) => setRequisitionNo(event.target.value)} placeholder="Nº Requisição Casa de Pneus" className="mt-1 w-full rounded border p-2 font-mono dark:bg-[#282c2e]" />
             </label>
             <label className="text-xs font-bold uppercase">Condição
               <select value={term} onChange={(event) => setTerm(event.target.value)} className="mt-1 w-full rounded border p-2 dark:bg-[#282c2e]">
