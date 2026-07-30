@@ -39,10 +39,26 @@ export const Layout: React.FC<LayoutProps> = ({
   clients = [],
   documents = [],
 }) => {
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    if (saved) return saved === 'dark';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
   const [menuOpen, setMenuOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifTab, setNotifTab] = useState<'stock' | 'receivables'>('stock');
+
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [darkMode]);
+
+  const toggleDarkMode = () => setDarkMode((prev) => !prev);
 
   const has = (...codes: string[]) => codes.some((code) => permissions.includes(code));
 
@@ -151,13 +167,13 @@ export const Layout: React.FC<LayoutProps> = ({
           </p>
         </div>
         <button
-          onClick={() => {
-            setDarkMode((value) => !value);
-            document.documentElement.classList.toggle('dark');
-          }}
-          className="font-bold text-primary"
+          onClick={toggleDarkMode}
+          className="flex items-center space-x-1 font-bold text-primary dark:text-amber-400"
         >
-          {darkMode ? 'Modo claro' : 'Modo escuro'}
+          <span className="material-symbols-outlined text-base">
+            {darkMode ? 'light_mode' : 'dark_mode'}
+          </span>
+          <span>{darkMode ? 'Modo claro' : 'Modo escuro'}</span>
         </button>
         <button onClick={onSignOut} className="block font-bold text-red-700">
           Terminar sessão
@@ -176,7 +192,7 @@ export const Layout: React.FC<LayoutProps> = ({
           className="fixed inset-0 z-30 bg-black/45 lg:hidden"
         />
       )}
-      <header className="fixed inset-x-0 top-0 z-20 flex min-h-16 items-center gap-3 border-b bg-white px-3 dark:bg-[#1f2325] sm:px-5 lg:left-[240px]">
+      <header className="fixed inset-x-0 top-0 z-20 flex min-h-16 items-center gap-2 border-b bg-white px-3 dark:bg-[#1f2325] sm:px-5 lg:left-[240px]">
         <button
           aria-label="Abrir menu"
           aria-expanded={menuOpen}
@@ -204,6 +220,17 @@ export const Layout: React.FC<LayoutProps> = ({
             className="w-full rounded-lg border bg-slate-50 py-1.5 pl-9 pr-3 text-xs dark:bg-slate-800 dark:border-slate-700"
           />
         </div>
+
+        {/* Dark / Light Mode Sun/Moon Button (Header) */}
+        <button
+          onClick={toggleDarkMode}
+          title={darkMode ? 'Mudar para Modo Claro' : 'Mudar para Modo Escuro'}
+          className="grid h-10 w-10 place-items-center rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-amber-400 transition-all shrink-0"
+        >
+          <span className="material-symbols-outlined text-xl">
+            {darkMode ? 'light_mode' : 'dark_mode'}
+          </span>
+        </button>
 
         {/* Modern Notification Center Bell Button */}
         <div className="relative">
