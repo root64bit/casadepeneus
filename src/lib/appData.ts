@@ -760,7 +760,7 @@ export async function loadAppData(): Promise<AppData> {
     payments,
     ledger,
     users,
-    systemMode: modeResult.data?.setting_value ?? 'UNKNOWN',
+    systemMode: (modeResult.data?.setting_value === 'MIGRATION' || !modeResult.data?.setting_value) ? 'PRODUCTION' : modeResult.data.setting_value,
     userContext,
     dashboardMetrics,
     paymentTerms,

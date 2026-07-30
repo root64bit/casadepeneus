@@ -89,7 +89,7 @@ function App() {
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [ledger, setLedger] = useState<LedgerRecord[]>([]);
   const [users, setUsers] = useState<UserSummary[]>([]);
-  const [systemMode, setSystemMode] = useState('MIGRATION');
+  const [systemMode, setSystemMode] = useState('PRODUCTION');
   const [paymentTerms, setPaymentTerms] = useState<ReferenceOption[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<ReferenceOption[]>([]);
   const [productCategories, setProductCategories] = useState<ReferenceOption[]>([]);
@@ -126,7 +126,7 @@ function App() {
       setPayments(data.payments);
       setLedger(data.ledger);
       setUsers(data.users);
-      setSystemMode(data.systemMode);
+      setSystemMode(data.systemMode === 'MIGRATION' ? 'PRODUCTION' : data.systemMode);
       setUserContext(data.userContext);
       setDashboardMetrics(data.dashboardMetrics);
       setPaymentTerms(data.paymentTerms);
