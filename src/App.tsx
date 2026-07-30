@@ -300,17 +300,75 @@ function App() {
     await refreshData();
   };
 
-  const handleUpdateUser = async (user: UserSummary, active: boolean) => {
+  const handleUpdateUser = async (
+    user: UserSummary,
+    active: boolean,
+    newBundles?: string[],
+    newPermissions?: string[]
+  ) => {
     try {
-      const { error } = await supabase!.rpc('admin_update_user_profile', {
-        p_user_id: user.id,
-        p_full_name: user.fullName,
-        p_is_active: active,
-      });
-      if (error) throw new Error(error.message);
+      if (user.id) {
+        const { error } = await supabase!.rpc('admin_update_user_profile', {
+          p_user_id: user.id,
+          p_full_name: user.fullName,
+          p_is_active: active,
+        });
+        if (error) throw new Error(error.message);
+
+        if (newBundles && newBundles.length > 0) {
+          await supabase!.from('user_roles').delete().eq('user_id', user.id);
+          for (const bCode of newBundles) {
+            const roleRes = await supabase!.from('roles').select('id').eq('code', bCode).maybeSingle();
+            if (roleRes.data?.id) {
+              await supabase!.from('user_roles').insert({ user_id: user.id, role_id: roleRes.data.id });
+            }
+          }
+        }
+      }
       await refreshData();
     } catch (cause) {
       setDataError(cause instanceof Error ? cause.message : 'Falha ao atualizar utilizador.');
+    }
+  };
+
+  const handleCreateUser = async (userData: {
+    fullName: string;
+    email: string;
+    bundles: string[];
+    permissions: string[];
+    telephone?: string;
+  }) => {
+    try {
+      const companyIdResult = await supabase!.rpc('get_user_company_id');
+      const companyId = companyIdResult.data;
+      if (!companyId) throw new Error('Empresa do utilizador não encontrada.');
+
+      const { data: newUser, error: createErr } = await supabase!
+        .from('user_profiles')
+        .insert({
+          company_id: companyId,
+          full_name: userData.fullName,
+          email: userData.email,
+          phone: userData.telephone || null,
+          is_active: true,
+        })
+        .select('id')
+        .single();
+
+      if (createErr) throw new Error(createErr.message);
+
+      if (newUser?.id && userData.bundles) {
+        for (const bCode of userData.bundles) {
+          const roleRes = await supabase!.from('roles').select('id').eq('code', bCode).maybeSingle();
+          if (roleRes.data?.id) {
+            await supabase!.from('user_roles').insert({ user_id: newUser.id, role_id: roleRes.data.id });
+          }
+        }
+      }
+
+      await refreshData();
+    } catch (cause) {
+      setDataError(cause instanceof Error ? cause.message : 'Falha ao criar utilizador.');
     }
   };
 
@@ -486,6 +544,7 @@ function App() {
             users={users}
             permissions={permissions}
             onUpdateUser={handleUpdateUser}
+            onCreateUser={handleCreateUser}
           />
         );
       case 'stitch':

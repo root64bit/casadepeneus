@@ -203,6 +203,9 @@ export interface UserSummary {
   email: string;
   active: boolean;
   roles: string[];
+  bundles?: string[];
+  permissions?: string[];
+  telephone?: string;
 }
 
 export interface PurchaseItem {
