@@ -174,7 +174,14 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
       )}
 
       <section className="overflow-hidden rounded-lg border bg-white shadow-sm dark:bg-[#1f2325]">
-        <h2 className="border-b bg-slate-100 px-4 py-3 text-xs font-black uppercase dark:bg-slate-800">Histórico de movimentos de stock</h2>
+        <div className="flex items-center justify-between border-b bg-slate-100 px-4 py-3 dark:bg-slate-800">
+          <h2 className="text-xs font-black uppercase text-slate-800 dark:text-slate-200">
+            Histórico de movimentos de stock ({movements.length})
+          </h2>
+          <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+            ● Dados em tempo real (Supabase)
+          </span>
+        </div>
         {movements.length === 0 ? (
           <p className="p-8 text-center text-xs text-slate-500">Sem movimentos para apresentar.</p>
         ) : (
@@ -182,7 +189,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
             <table className="min-w-[760px] w-full text-left text-xs">
               <thead>
                 <tr className="border-b bg-slate-50 uppercase font-bold dark:bg-slate-800">
-                  <th className="p-3">Data</th>
+                  <th className="p-3">Data / Hora</th>
                   <th className="p-3">Tipo</th>
                   <th className="p-3">Documento / Guia</th>
                   <th className="p-3">Artigo</th>
@@ -191,16 +198,34 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                 </tr>
               </thead>
               <tbody className="font-mono divide-y">
-                {movements.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800">
-                    <td className="p-3">{new Date(item.date).toLocaleString('pt-PT')}</td>
-                    <td className="p-3 font-bold">{item.type.toUpperCase()}</td>
-                    <td className="p-3">{item.docRef || '—'}</td>
-                    <td className="p-3 font-bold text-[#003366] dark:text-[#a7c8ff]">[{item.articleCode}] {item.articleDescription}</td>
-                    <td className="p-3 text-right font-extrabold">{item.quantity}</td>
-                    <td className="p-3">{item.operator || '—'}</td>
-                  </tr>
-                ))}
+                {[...movements]
+                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                  .map((item) => (
+                    <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                      <td className="p-3 text-slate-600 dark:text-slate-400">
+                        {new Date(item.date).toLocaleString('pt-PT')}
+                      </td>
+                      <td className="p-3">
+                        <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-extrabold uppercase ${
+                          item.type === 'entrada'
+                            ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300'
+                            : 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-300 border border-red-300'
+                        }`}>
+                          {item.type}
+                        </span>
+                      </td>
+                      <td className="p-3 font-semibold">{item.docRef || '—'}</td>
+                      <td className="p-3 font-bold text-[#003366] dark:text-[#a7c8ff]">
+                        [{item.articleCode}] {item.articleDescription}
+                      </td>
+                      <td className="p-3 text-right font-black text-sm">
+                        {item.quantity}
+                      </td>
+                      <td className="p-3 text-slate-600 dark:text-slate-400">
+                        {item.operator || '—'}
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
