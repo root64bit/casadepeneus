@@ -41,6 +41,8 @@ export interface AppData {
 
 export async function createArticle(article: Omit<Article, 'id'>): Promise<void> {
   const client = requireSupabase();
+
+  // Try RPC v2 first
   const { error: v2Error } = await client.rpc('create_operational_product_v2', {
     p_product: {
       code: article.code,
@@ -63,7 +65,7 @@ export async function createArticle(article: Omit<Article, 'id'>): Promise<void>
 
   if (!v2Error) return;
 
-  // Fallback to v1 RPC if v2 function signature differs
+  // Try RPC v1 if v2 failed
   const { error: v1Error } = await client.rpc('create_operational_product', {
     p_product: {
       code: article.code,
@@ -79,6 +81,71 @@ export async function createArticle(article: Omit<Article, 'id'>): Promise<void>
   });
 
   if (!v1Error) return;
+
+  // Direct table insert fallback if mode is MIGRATION or RPCs fail
+  try {
+    const companyIdResult = await client.rpc('get_user_company_id');
+    const companyId = companyIdResult.data;
+    if (companyId) {
+      let catId = article.categoryId;
+      if (!catId && article.categoryName) {
+        const existingCat = await client.from('product_categories').select('id').eq('company_id', companyId).ilike('name', article.categoryName.trim()).maybeSingle();
+        if (existingCat.data?.id) {
+          catId = existingCat.data.id;
+        } else {
+          const familyRes = await client.from('product_families').select('id').eq('company_id', companyId).limit(1);
+          const famId = familyRes.data?.[0]?.id || '1f000000-0000-0000-0000-000000000001';
+          const newCatCode = article.categoryName.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) + '_' + Math.floor(Math.random() * 1000);
+          const createdCat = await client.from('product_categories').insert({ company_id: companyId, family_id: famId, code: newCatCode, name: article.categoryName.trim() }).select('id').single();
+          if (createdCat.data?.id) catId = createdCat.data.id;
+        }
+      }
+
+      let brId = article.brandId;
+      if (!brId && article.brandName) {
+        const existingBrand = await client.from('brands').select('id').eq('company_id', companyId).ilike('name', article.brandName.trim()).maybeSingle();
+        if (existingBrand.data?.id) {
+          brId = existingBrand.data.id;
+        } else {
+          const createdBrand = await client.from('brands').insert({ company_id: companyId, name: article.brandName.trim() }).select('id').single();
+          if (createdBrand.data?.id) brId = createdBrand.data.id;
+        }
+      }
+
+      let uId = article.unitId;
+      if (!uId) {
+        const unitRes = await client.from('units_of_measure').select('id').eq('company_id', companyId).limit(1);
+        uId = unitRes.data?.[0]?.id || '11000000-0000-0000-0000-000000000001';
+      }
+
+      let tId = article.taxCodeId;
+      if (!tId) {
+        const taxRes = await client.from('tax_codes').select('id').eq('company_id', companyId).eq('is_active', true).order('rate', { ascending: false }).limit(1);
+        tId = taxRes.data?.[0]?.id || '17000000-0000-0000-0000-000000000016';
+      }
+
+      const directInsert = await client.from('products').insert({
+        company_id: companyId,
+        code: article.code.toUpperCase().trim(),
+        description: article.description.trim(),
+        unit_id: uId,
+        tax_code_id: tId,
+        category_id: catId || null,
+        brand_id: brId || null,
+        min_stock: article.minStock || 0,
+        avg_cost: article.costPrice || 0,
+        profit_pct: article.profitMargin || 0,
+        sale_price_excl: article.sellPrice || 0,
+        sale_price_incl: article.sellPriceWithIva || 0,
+        notes: article.size ? `Medida: ${article.size}` : null,
+        is_active: true,
+      });
+
+      if (!directInsert.error) return;
+    }
+  } catch (directErr) {
+    console.error('Direct insert fallback failed:', directErr);
+  }
 
   const msg = v2Error.message || v1Error.message || 'Falha ao guardar o artigo no Supabase.';
   if (msg.includes('duplicate key') || msg.includes('uq_product_company_code')) {
