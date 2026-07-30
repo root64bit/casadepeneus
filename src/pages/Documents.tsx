@@ -13,6 +13,7 @@ export function Documents({ documents, sales, onPrint, onPrintRecord }: Document
   const [search, setSearch] = useState('');
   const [partyType, setPartyType] = useState<'ALL' | 'CUSTOMER' | 'SUPPLIER'>('ALL');
   const [status, setStatus] = useState('ALL');
+  const [typeFilter, setTypeFilter] = useState('ALL');
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -26,15 +27,16 @@ export function Documents({ documents, sales, onPrint, onPrintRecord }: Document
       return (
         matchesSearch &&
         (partyType === 'ALL' || document.partyType === partyType) &&
-        (status === 'ALL' || document.status === status)
+        (status === 'ALL' || document.status === status) &&
+        (typeFilter === 'ALL' || document.typeName === typeFilter || document.typeCode === typeFilter)
       );
     });
-  }, [documents, partyType, search, status]);
+  }, [documents, partyType, search, status, typeFilter]);
 
   return (
     <div className="space-y-5">
       <section className="rounded border border-[#c3c6d1] bg-white p-4 shadow-sm dark:border-[#43474f] dark:bg-[#1f2325]">
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-5">
           <label className="md:col-span-2">
             <span className="mb-1 block text-xs font-bold uppercase text-[#737780]">
               Pesquisar documentos
@@ -77,6 +79,24 @@ export function Documents({ documents, sales, onPrint, onPrintRecord }: Document
               <option value="OVERDUE">Vencido</option>
               <option value="CANCELLED">Cancelado</option>
               <option value="REVERSED">Revertido</option>
+            </select>
+          </label>
+          <label>
+            <span className="mb-1 block text-xs font-bold uppercase text-[#737780]">
+              Tipo de Documento
+            </span>
+            <select
+              value={typeFilter}
+              onChange={(event) => setTypeFilter(event.target.value)}
+              className="w-full rounded border border-[#c3c6d1] bg-white p-2 text-sm dark:border-[#43474f] dark:bg-[#282c2e]"
+            >
+              <option value="ALL">Todos</option>
+              <option value="Factura">Factura</option>
+              <option value="Venda a Dinheiro">Venda a Dinheiro</option>
+              <option value="Guia de Remessa">Guia de Remessa</option>
+              <option value="Nota de Crédito">Nota de Crédito</option>
+              <option value="Factura de Fornecedor">Factura de Fornecedor</option>
+              <option value="Recibo">Recibo</option>
             </select>
           </label>
         </div>

@@ -52,7 +52,11 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
             </div>
             <div className="text-right">
               <span className="inline-block bg-[#001e40] text-white font-bold px-3 py-1 text-sm rounded">
-                FATURA / RECIBO
+                {invoice.documentTypeCode === 'CUSTOMER_DELIVERY_NOTE'
+                  ? 'GUIA DE REMESSA'
+                  : invoice.documentTypeCode === 'CASH_SALE'
+                  ? 'VENDA A DINHEIRO'
+                  : 'FATURA / RECIBO'}
               </span>
               <p className="text-sm font-mono font-bold text-gray-800 mt-2">{invoice.docNumber}</p>
               <p className="text-xs text-gray-600">Data: {invoice.date}</p>

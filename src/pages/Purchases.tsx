@@ -169,10 +169,25 @@ export const Purchases: React.FC<PurchasesProps> = ({
       {canCreate && (
         <section className="space-y-4 rounded-lg border border-[#c3c6d1] bg-white p-5 shadow-sm dark:border-[#43474f] dark:bg-[#1f2325]">
           <div className="grid gap-3 md:grid-cols-5">
+            <label className="text-xs font-bold uppercase">Código Fornecedor
+              <input
+                type="text"
+                placeholder="Ex: F001"
+                onChange={(e) => {
+                  const query = e.target.value.trim().toLowerCase();
+                  if (!query) return;
+                  const found = suppliers.find(
+                    (s) => s.code?.toLowerCase() === query || s.number?.toLowerCase() === query || s.id === query
+                  );
+                  if (found) setSupplierId(found.id);
+                }}
+                className="mt-1 w-full rounded border p-2 font-mono font-bold dark:bg-[#282c2e]"
+              />
+            </label>
             <label className="text-xs font-bold uppercase">Fornecedor
               <select value={supplierId} onChange={(event) => setSupplierId(event.target.value)} className="mt-1 w-full rounded border p-2 dark:bg-[#282c2e]">
                 <option value="">Selecionar…</option>
-                {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
+                {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name} ({supplier.code || supplier.number})</option>)}
               </select>
             </label>
             <label className="text-xs font-bold uppercase">Data

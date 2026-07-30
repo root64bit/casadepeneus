@@ -28,6 +28,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
 }) => {
   const [docNumber] = useState('A atribuir ao confirmar');
   const [showClientInvoices, setShowClientInvoices] = useState(false);
+  const [documentType, setDocumentType] = useState<'CUSTOMER_INVOICE' | 'CASH_SALE' | 'CUSTOMER_DELIVERY_NOTE'>('CUSTOMER_INVOICE');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id ?? '');
   const [selectedClientName, setSelectedClientName] = useState(clients[0]?.name ?? '');
@@ -195,6 +196,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
     const newSale: SaleInvoice = {
       id: `sale-${Date.now()}`,
       clientId: selectedClientId,
+      documentTypeCode: documentType,
       docNumber,
       date,
       clientName: selectedClientName,
@@ -282,7 +284,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
         }`}>
           <div className="flex items-center justify-between border-b pb-2 mb-3">
             <h3 className="font-bold text-xs uppercase text-[#003366] dark:text-[#a7c8ff]">
-              [ Factura a Cliente - Cabeçalho ]
+              {`[ ${documentType === 'CUSTOMER_INVOICE' ? 'Factura a Cliente' : documentType === 'CASH_SALE' ? 'Venda a Dinheiro' : 'Guia de Remessa'} - Cabeçalho ]`}
             </h3>
             {posPhase !== 'HEADER' && (
               <button onClick={() => setPosPhase('HEADER')} className="text-xs text-[#006e25] font-bold hover:underline">
@@ -291,6 +293,25 @@ export const NewSale: React.FC<NewSaleProps> = ({
             )}
           </div>
           <div className="grid grid-cols-12 gap-3 text-xs">
+            <div className="col-span-12 md:col-span-2">
+              <label className="block font-bold text-[#737780] uppercase mb-1">Tipo de Documento</label>
+              <select
+                value={documentType}
+                onChange={(e) => {
+                  const val = e.target.value as 'CUSTOMER_INVOICE' | 'CASH_SALE' | 'CUSTOMER_DELIVERY_NOTE';
+                  setDocumentType(val);
+                  if (val === 'CASH_SALE' && receiptMethod) {
+                    setPaymentSelection(`METHOD:${receiptMethod.code}`);
+                  }
+                }}
+                className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring font-bold text-[#003366] dark:text-[#a7c8ff]"
+              >
+                <option value="CUSTOMER_INVOICE">Factura</option>
+                <option value="CASH_SALE">Venda a Dinheiro (VD)</option>
+                <option value="CUSTOMER_DELIVERY_NOTE">Guia de Remessa</option>
+              </select>
+            </div>
+
             <div className="col-span-12 md:col-span-2">
               <label className="block font-bold text-[#737780] uppercase mb-1">Nº Documento</label>
               <input
@@ -311,7 +332,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
               />
             </div>
 
-            <div className="col-span-12 md:col-span-2">
+            <div className="col-span-12 md:col-span-1">
               <label className="block font-bold text-[#737780] uppercase mb-1">Código Cliente</label>
               <input
                 type="text"
@@ -321,7 +342,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
               />
             </div>
 
-            <div className="col-span-12 md:col-span-3">
+            <div className="col-span-12 md:col-span-2">
               <label className="block font-bold text-[#737780] uppercase mb-1">Nome do Cliente *</label>
               <input
                 type="text"
@@ -329,6 +350,26 @@ export const NewSale: React.FC<NewSaleProps> = ({
                 onChange={(e) => setSelectedClientName(e.target.value)}
                 placeholder="Nome do Cliente"
                 className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-bold border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring"
+              />
+            </div>
+
+            <div className="col-span-12 md:col-span-1">
+              <label className="block font-bold text-[#737780] uppercase mb-1">NUIT</label>
+              <input
+                type="text"
+                value={clientNuit}
+                onChange={(e) => setClientNuit(e.target.value)}
+                className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring"
+              />
+            </div>
+
+            <div className="col-span-12 md:col-span-2">
+              <label className="block font-bold text-[#737780] uppercase mb-1">Morada</label>
+              <input
+                type="text"
+                value={clientAddress}
+                onChange={(e) => setClientAddress(e.target.value)}
+                className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring"
               />
             </div>
 

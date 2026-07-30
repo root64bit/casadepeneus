@@ -85,7 +85,9 @@ export const Inventory: React.FC<InventoryProps> = ({
   }, [canCreate, onOpenNewArticleModal, filteredArticles, onEditArticle]);
 
   const totalArticlesCount = filteredArticles.length;
+  const totalStock = filteredArticles.reduce((acc, a) => acc + a.stock, 0);
   const totalCostValue = filteredArticles.reduce((acc, a) => acc + (a.costPrice * a.stock), 0);
+  const totalCostValueWithIva = filteredArticles.reduce((acc, art) => acc + (art.stock * art.costPrice * (1 + (art.taxRate ?? 16) / 100)), 0);
   const totalSalesValue = filteredArticles.reduce((acc, a) => acc + (a.sellPriceWithIva * a.stock), 0);
 
   return (
@@ -200,6 +202,8 @@ export const Inventory: React.FC<InventoryProps> = ({
                 <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">Stock Mín.</th>
                 <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">Existência</th>
                 {canViewCost && <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">P. Custo</th>}
+                {canViewCost && <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">Custo c/IVA</th>}
+                {canViewCost && <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">Valor Total</th>}
                 {canViewCost && <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">% Margem</th>}
                 <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">P. Venda</th>
                 <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">P. c/ IVA</th>
@@ -242,6 +246,12 @@ export const Inventory: React.FC<InventoryProps> = ({
                     </td>
                     {canViewCost && <td className="px-3 py-2.5 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">
                       {art.costPrice.toFixed(2)}
+                    </td>}
+                    {canViewCost && <td className="px-3 py-2.5 border-r border-[#c3c6d1] dark:border-[#43474f] text-right font-mono">
+                      {formatMZN(art.costPrice * (1 + (art.taxRate ?? 16) / 100))}
+                    </td>}
+                    {canViewCost && <td className="px-3 py-2.5 border-r border-[#c3c6d1] dark:border-[#43474f] text-right font-mono font-bold">
+                      {formatMZN(art.stock * art.costPrice * (1 + (art.taxRate ?? 16) / 100))}
                     </td>}
                     {canViewCost && <td className="px-3 py-2.5 border-r border-[#c3c6d1] dark:border-[#43474f] text-right text-gray-500">
                       {art.profitMargin}%
@@ -290,15 +300,25 @@ export const Inventory: React.FC<InventoryProps> = ({
       </div>
 
       {/* Summary Stats (Bento Style Grid) */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         {canViewCost && <div className="bg-[#f8f9fa] dark:bg-[#1f2325] p-4 border border-[#c3c6d1] dark:border-[#43474f] rounded">
           <p className="text-xs font-bold text-[#737780] dark:text-[#c3c6d1] uppercase mb-1">Total de Artigos Listados</p>
           <p className="text-2xl font-extrabold text-[#001e40] dark:text-[#a7c8ff] font-mono">{totalArticlesCount}</p>
         </div>}
 
         <div className="bg-[#f8f9fa] dark:bg-[#1f2325] p-4 border border-[#c3c6d1] dark:border-[#43474f] rounded">
-          <p className="text-xs font-bold text-[#737780] dark:text-[#c3c6d1] uppercase mb-1">Valor Custo (Stock Total)</p>
+          <p className="text-xs font-bold text-[#737780] dark:text-[#c3c6d1] uppercase mb-1">Qtd. Total em Stock</p>
+          <p className="text-2xl font-extrabold text-[#001e40] dark:text-[#a7c8ff] font-mono">{totalStock}</p>
+        </div>
+
+        <div className="bg-[#f8f9fa] dark:bg-[#1f2325] p-4 border border-[#c3c6d1] dark:border-[#43474f] rounded">
+          <p className="text-xs font-bold text-[#737780] dark:text-[#c3c6d1] uppercase mb-1">Valor Custo s/IVA</p>
           <p className="text-2xl font-extrabold text-[#003366] dark:text-[#a7c8ff] font-mono">{formatMZN(totalCostValue)}</p>
+        </div>
+
+        <div className="bg-[#f8f9fa] dark:bg-[#1f2325] p-4 border border-[#c3c6d1] dark:border-[#43474f] rounded">
+          <p className="text-xs font-bold text-[#737780] dark:text-[#c3c6d1] uppercase mb-1">Valor Custo c/IVA</p>
+          <p className="text-2xl font-extrabold text-[#003366] dark:text-[#a7c8ff] font-mono">{formatMZN(totalCostValueWithIva)}</p>
         </div>
 
         <div className="bg-[#f8f9fa] dark:bg-[#1f2325] p-4 border border-[#c3c6d1] dark:border-[#43474f] rounded">

@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import type { Article, StockMovement } from '../types';
 
 interface ArticleLedgerModalProps {
@@ -33,11 +33,21 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
   const articleMovements = useMemo(() => {
     if (!article) return [];
-    const filtered = movements.filter(
+    let filtered = movements.filter(
       (m) => m.articleCode?.toLowerCase() === article.code.toLowerCase(),
     );
+    if (dateFrom) {
+      filtered = filtered.filter((m) => m.date.substring(0, 10) >= dateFrom);
+    }
+    if (dateTo) {
+      filtered = filtered.filter((m) => m.date.substring(0, 10) <= dateTo);
+    }
+
     // Sort chronologically ascending
     const sorted = [...filtered].sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
@@ -49,6 +59,8 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
       const entradas = isEntrada ? m.quantity : 0;
       const saidas = isEntrada ? 0 : m.quantity;
       currentBalance = currentBalance + entradas - saidas;
+      const valor = m.unitCost ? m.unitCost * m.quantity : 0;
+
       return {
         id: m.id,
         date: new Date(m.date).toLocaleDateString('pt-PT', {
@@ -60,9 +72,11 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
         entradas,
         saidas,
         saldo: currentBalance,
+        unitCost: m.unitCost,
+        valor,
       };
     });
-  }, [article, movements]);
+  }, [article, movements, dateFrom, dateTo]);
 
   if (!isOpen || !article) return null;
 
@@ -96,6 +110,9 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
               <p className="text-sm font-bold text-yellow-200">
                 Artigo {article.code} — {article.description}
               </p>
+              <p className="text-sm font-bold text-yellow-200">
+                Existência: {article.stock} UN | Custo Médio: {article.costPrice.toFixed(2)} | Valor em Stock: {(article.stock * article.costPrice).toFixed(2)}
+              </p>
               <span className="text-xs text-yellow-400">{todayStr}</span>
             </div>
 
@@ -117,6 +134,18 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
             )}
           </div>
 
+          {/* Date Filter */}
+          <div className="flex items-center space-x-4 pb-2">
+            <div className="flex items-center space-x-2">
+              <label className="text-xs font-bold text-white uppercase">De:</label>
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="bg-[#000055] text-yellow-300 border border-yellow-400 rounded p-1 text-xs" />
+            </div>
+            <div className="flex items-center space-x-2">
+              <label className="text-xs font-bold text-white uppercase">Até:</label>
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="bg-[#000055] text-yellow-300 border border-yellow-400 rounded p-1 text-xs" />
+            </div>
+          </div>
+
           {/* Table matching legacy terminal view */}
           <div className="max-h-[60vh] overflow-y-auto border border-yellow-400/30">
             <table className="w-full text-left text-xs font-mono border-collapse">
@@ -125,8 +154,10 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
                   <th className="p-2 border-r border-yellow-400/30 w-10 text-center">M</th>
                   <th className="p-2 border-r border-yellow-400/30 w-24">Data</th>
                   <th className="p-2 border-r border-yellow-400/30">Documento</th>
-                  <th className="p-2 border-r border-yellow-400/30 text-right w-28">Entradas</th>
-                  <th className="p-2 border-r border-yellow-400/30 text-right w-28">Saídas</th>
+                  <th className="p-2 border-r border-yellow-400/30 text-right w-24">Entradas</th>
+                  <th className="p-2 border-r border-yellow-400/30 text-right w-24">Saídas</th>
+                  <th className="p-2 border-r border-yellow-400/30 text-right w-24">Custo Un.</th>
+                  <th className="p-2 border-r border-yellow-400/30 text-right w-28">Valor</th>
                   <th className="p-2 text-right w-28">Saldo</th>
                 </tr>
               </thead>
@@ -155,6 +186,12 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
                       </td>
                       <td className="p-2 border-r border-yellow-400/20 text-right font-extrabold text-red-300">
                         {row.saidas.toFixed(3)}
+                      </td>
+                      <td className="p-2 border-r border-yellow-400/20 text-right font-bold text-yellow-100">
+                        {row.unitCost ? row.unitCost.toFixed(2) : ''}
+                      </td>
+                      <td className="p-2 border-r border-yellow-400/20 text-right font-bold text-yellow-100">
+                        {row.valor ? row.valor.toFixed(2) : ''}
                       </td>
                       <td className="p-2 text-right font-black text-yellow-300 text-sm">
                         {row.saldo.toFixed(3)}

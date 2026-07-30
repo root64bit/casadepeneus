@@ -269,6 +269,7 @@ export async function createCustomerSale(
       discount_percent: item.discountPercent,
     })),
     p_idempotency_key: idempotencyKey,
+    p_document_type_code: sale.documentTypeCode ?? 'CUSTOMER_INVOICE',
   });
   if (error) throw error;
 
@@ -450,7 +451,7 @@ export async function loadAppData(): Promise<AppData> {
         .limit(250),
       client
         .from('stock_movements')
-        .select('id,movement_type,legacy_ref,created_at,quantity_in,quantity_out,products(code,description),warehouses(id,name),user_profiles(full_name)')
+        .select('id,movement_type,legacy_ref,created_at,quantity_in,quantity_out,unit_cost,products(code,description),warehouses(id,name),user_profiles(full_name)')
         .order('created_at', { ascending: false })
         .limit(500),
       client
@@ -685,6 +686,7 @@ export async function loadAppData(): Promise<AppData> {
       operator: relation(row.user_profiles)?.full_name ?? '',
       warehouseId: relation(row.warehouses)?.id ?? undefined,
       warehouseName: relation(row.warehouses)?.name ?? undefined,
+      unitCost: numberValue(row.unit_cost),
     };
   });
 

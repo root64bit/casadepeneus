@@ -43,6 +43,7 @@ export interface SaleInvoice {
   paymentMethod: string;
   paymentTermCode?: string;
   paymentMethodCode?: string;
+  documentTypeCode?: string;
   sellerName: string;
   items: SaleItem[];
   subtotalBruto: number;
@@ -69,6 +70,7 @@ export interface StockMovement {
   warehouseName?: string;
   reason?: string;
   notes?: string;
+  unitCost?: number;
 }
 
 export interface AccessScope {
