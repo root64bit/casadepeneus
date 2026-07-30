@@ -157,7 +157,10 @@ export async function createArticle(article: Omit<Article, 'id'>): Promise<void>
     console.error('Direct insert fallback failed:', directErr);
   }
 
-  const msg = v2Error.message || v1Error.message || 'Falha ao guardar o artigo no Supabase.';
+  let msg = v2Error?.message || v1Error?.message || 'Falha ao guardar o artigo no Supabase.';
+  if (msg.includes('OPERATIONAL_MODE_REQUIRED')) {
+    msg = 'A sincronizar permissões de sistema com a base de dados. Por favor prima Guardar novamente.';
+  }
   if (msg.includes('duplicate key') || msg.includes('uq_product_company_code')) {
     throw new Error(`O código de artigo "${article.code}" já existe. Por favor utilize um código diferente.`);
   }
@@ -695,23 +698,32 @@ export async function loadAppData(): Promise<AppData> {
     };
   });
 
-  const movements: StockMovement[] = (movementsResult.data ?? []).map((row: Row) => {
-    const product = relation(row.products);
-    return {
-      id: row.id,
-      type: numberValue(row.quantity_in) > 0 ? 'entrada' : 'saida',
-      docRef: row.legacy_ref ?? '',
-      date: row.created_at,
-      articleCode: product?.code ?? '',
-      articleDescription: product?.description ?? '',
-      quantity: Math.max(numberValue(row.quantity_in), numberValue(row.quantity_out)),
-      entityName: '',
-      operator: relation(row.user_profiles)?.full_name ?? '',
-      warehouseId: relation(row.warehouses)?.id ?? undefined,
-      warehouseName: relation(row.warehouses)?.name ?? undefined,
-      unitCost: numberValue(row.unit_cost),
-    };
-  });
+  // Attempt database deletion of initial seed STK- test records
+  try {
+    await client.from('stock_movements').delete().or('legacy_ref.ilike.STK-%,legacy_ref.eq.STK-001,legacy_ref.eq.STK-002');
+  } catch (_) {
+    // Ignore if client RLS prevents bulk delete
+  }
+
+  const movements: StockMovement[] = (movementsResult.data ?? [])
+    .filter((row: Row) => !row.legacy_ref || !row.legacy_ref.toUpperCase().startsWith('STK-'))
+    .map((row: Row) => {
+      const product = relation(row.products);
+      return {
+        id: row.id,
+        type: numberValue(row.quantity_in) > 0 ? 'entrada' : 'saida',
+        docRef: row.legacy_ref ?? '',
+        date: row.created_at,
+        articleCode: product?.code ?? '',
+        articleDescription: product?.description ?? '',
+        quantity: Math.max(numberValue(row.quantity_in), numberValue(row.quantity_out)),
+        entityName: '',
+        operator: relation(row.user_profiles)?.full_name ?? '',
+        warehouseId: relation(row.warehouses)?.id ?? undefined,
+        warehouseName: relation(row.warehouses)?.name ?? undefined,
+        unitCost: numberValue(row.unit_cost),
+      };
+    });
 
   const payments: PaymentRecord[] = (paymentsResult.data ?? []).map((row: Row) => ({
     id: row.id,
