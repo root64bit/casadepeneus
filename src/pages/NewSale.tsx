@@ -310,27 +310,32 @@ export const NewSale: React.FC<NewSaleProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f] font-mono">
-              {/* Interactive Row to Add Items */}
-              <tr className="bg-[#f8f9fa] dark:bg-[#282c2e]">
+              {/* Interactive Row to Add Items (XT-POS PRO Quick Bar) */}
+              <tr className="bg-[#0000aa]/10 dark:bg-[#282c2e] border-b-2 border-[#003366]">
                 <td className="p-2" colSpan={2}>
                   <ArticleSearchSelect
                     articles={articles}
                     selectedArticleId={selectedArticleId}
                     onSelect={handleArticleSelect}
-                    renderLabel={(a) => `[${a.code}] ${a.description} - ${a.sellPrice.toFixed(2)} MZN (Stock: ${a.stock})`}
+                    renderLabel={(a) => `[${a.code}] ${a.description} - ${a.sellPrice.toFixed(2)} MZN (Existência: ${a.stock})`}
                     placeholder="Pesquisar artigo por código ou descrição…"
                   />
                 </td>
                 <td className="p-2">
-                  <input
-                    type="number"
-                    min="1"
-                    value={inputQty}
-                    onChange={(e) => setInputQty(Number(e.target.value))}
-                    className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-2 text-center text-xs font-bold"
-                  />
+                  <div className="flex flex-col items-center">
+                    <input
+                      type="number"
+                      min="1"
+                      value={inputQty}
+                      onChange={(e) => setInputQty(Number(e.target.value))}
+                      className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-center text-xs font-bold bg-yellow-100 text-black"
+                    />
+                    <span className="text-[10px] font-bold text-[#006e25] mt-0.5 whitespace-nowrap">
+                      Existência: {articles.find(a => a.id === selectedArticleId)?.stock ?? 0}
+                    </span>
+                  </div>
                 </td>
-                <td className="p-2 text-right font-bold text-gray-500">
+                <td className="p-2 text-right font-bold text-gray-700 dark:text-white">
                   {articles.find(a => a.id === selectedArticleId)?.sellPrice.toFixed(2)}
                 </td>
                 <td className="p-2">
