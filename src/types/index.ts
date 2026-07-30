@@ -11,7 +11,7 @@ export interface Article {
   sellPriceWithIva: number;
   taxCodeId?: string;
   taxRate: number; // e.g., 16 for 16%, 0 for exempt
-  category: 'pneus' | 'camaras' | 'servicos' | 'acessorios';
+  category: string;
   brand?: string;
   size?: string;
   categoryId?: string;

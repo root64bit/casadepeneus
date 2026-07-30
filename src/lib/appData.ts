@@ -41,7 +41,7 @@ export interface AppData {
 
 export async function createArticle(article: Omit<Article, 'id'>): Promise<void> {
   const client = requireSupabase();
-  const { error } = await client.rpc('create_operational_product_v2', {
+  const { error: v2Error } = await client.rpc('create_operational_product_v2', {
     p_product: {
       code: article.code,
       description: article.description,
@@ -52,15 +52,39 @@ export async function createArticle(article: Omit<Article, 'id'>): Promise<void>
       sale_price_excl: article.sellPrice,
       sale_price_incl: article.sellPriceWithIva,
       notes: article.size ? `Medida: ${article.size}` : null,
-      category_id: article.categoryId,
-      category_name: article.categoryName,
-      brand_id: article.brandId,
-      brand_name: article.brandName,
-      unit_id: article.unitId,
-      tax_code_id: article.taxCodeId,
+      category_id: article.categoryId || null,
+      category_name: article.categoryName || null,
+      brand_id: article.brandId || null,
+      brand_name: article.brandName || null,
+      unit_id: article.unitId || null,
+      tax_code_id: article.taxCodeId || null,
     },
   });
-  if (error) throw error;
+
+  if (!v2Error) return;
+
+  // Fallback to v1 RPC if v2 function signature differs
+  const { error: v1Error } = await client.rpc('create_operational_product', {
+    p_product: {
+      code: article.code,
+      description: article.description,
+      unit: article.unit,
+      min_stock: article.minStock,
+      cost_price: article.costPrice,
+      profit_margin: article.profitMargin,
+      sale_price_excl: article.sellPrice,
+      sale_price_incl: article.sellPriceWithIva,
+      notes: article.size ? `Medida: ${article.size}` : null,
+    },
+  });
+
+  if (!v1Error) return;
+
+  const msg = v2Error.message || v1Error.message || 'Falha ao guardar o artigo no Supabase.';
+  if (msg.includes('duplicate key') || msg.includes('uq_product_company_code')) {
+    throw new Error(`O código de artigo "${article.code}" já existe. Por favor utilize um código diferente.`);
+  }
+  throw new Error(msg);
 }
 
 export interface PartyInput {
@@ -249,12 +273,9 @@ const numberValue = (value: unknown) => Number(value ?? 0);
 const relation = (value: unknown): Row | null =>
   Array.isArray(value) ? (value[0] ?? null) : ((value as Row | null) ?? null);
 
-const categoryValue = (name: unknown): Article['category'] => {
-  const normalized = String(name ?? '').toLowerCase();
-  if (normalized.includes('câmara')) return 'camaras';
-  if (normalized.includes('servi')) return 'servicos';
-  if (normalized.includes('acess')) return 'acessorios';
-  return 'pneus';
+const categoryValue = (name: unknown): string => {
+  const str = String(name ?? '').trim();
+  return str ? str.toLowerCase() : 'geral';
 };
 
 export interface OperationalReportData {

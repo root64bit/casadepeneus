@@ -71,7 +71,7 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({ isOpen, onClos
       await onSave({
         code: code.toUpperCase(),
         description,
-        category: normalizedCategory.includes('câmara') ? 'camaras' : normalizedCategory.includes('servi') ? 'servicos' : normalizedCategory.includes('acess') ? 'acessorios' : 'pneus',
+        category: normalizedCategory || 'geral',
         categoryId: isCustomCategory ? undefined : categoryId,
         categoryName: isCustomCategory ? customCategoryName.trim() : undefined,
         brandId: isCustomBrand ? undefined : (brandId || undefined),

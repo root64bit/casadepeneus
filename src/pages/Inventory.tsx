@@ -24,8 +24,20 @@ export const Inventory: React.FC<InventoryProps> = ({
 
   const searchTerm = (globalSearch || localSearch).toLowerCase();
 
+  const categoryPills = React.useMemo(() => {
+    const set = new Set<string>();
+    articles.forEach((a) => {
+      if (a.category) set.add(a.category.toLowerCase());
+    });
+    const dynamicList = Array.from(set).map((cat) => ({
+      id: cat,
+      label: cat.charAt(0).toUpperCase() + cat.slice(1),
+    }));
+    return [{ id: 'todos', label: 'Todos' }, ...dynamicList];
+  }, [articles]);
+
   const filteredArticles = articles.filter((art) => {
-    const matchesCategory = selectedCategory === 'todos' || art.category === selectedCategory;
+    const matchesCategory = selectedCategory === 'todos' || art.category.toLowerCase() === selectedCategory.toLowerCase();
     const matchesSearch =
       art.code.toLowerCase().includes(searchTerm) ||
       art.description.toLowerCase().includes(searchTerm) ||
@@ -52,19 +64,14 @@ export const Inventory: React.FC<InventoryProps> = ({
               type="text"
               value={localSearch}
               onChange={(e) => setLocalSearch(e.target.value)}
-              placeholder="Pesquisar por código, medida ou descrição de pneu..."
+              placeholder="Pesquisar por código, marca, medida ou descrição do artigo..."
               className="w-full pl-10 pr-4 py-2.5 bg-[#f8f9fa] dark:bg-[#282c2e] border border-[#c3c6d1] dark:border-[#43474f] rounded text-sm focus-ring"
             />
           </div>
 
           {/* Category Filter Pills */}
           <div className="flex items-center space-x-1.5 overflow-x-auto py-1">
-            {[
-              { id: 'todos', label: 'Todos' },
-              { id: 'pneus', label: 'Pneus' },
-              { id: 'camaras', label: 'Câmaras' },
-              { id: 'servicos', label: 'Serviços' },
-            ].map((cat) => (
+            {categoryPills.map((cat) => (
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id)}
