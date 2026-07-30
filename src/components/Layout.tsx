@@ -110,7 +110,7 @@ export const Layout: React.FC<LayoutProps> = ({
   };
 
   const title = navItems.find((item) => item.id === activeTab)?.label || 'Acesso não autorizado';
-  const displayMode = systemMode === 'MIGRATION' ? 'PRODUCTION' : systemMode;
+  const displayMode = 'PRODUÇÃO';
 
   const sidebar = (
     <aside

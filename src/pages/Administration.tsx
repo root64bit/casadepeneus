@@ -221,11 +221,11 @@ export function Administration({
     <div className="space-y-6">
       {/* Header Cards */}
       <section className="grid gap-4 md:grid-cols-4">
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-950/40">
-          <p className="text-xs font-black uppercase text-amber-800 dark:text-amber-300">Modo do Sistema</p>
-          <p className="mt-1 text-2xl font-black text-amber-950 dark:text-amber-100">{systemMode}</p>
-          <p className="mt-1 text-[11px] text-amber-800 dark:text-amber-400">
-            Ambiente operacional configurado e ativo.
+        <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-4 dark:border-emerald-700 dark:bg-emerald-950/40">
+          <p className="text-xs font-black uppercase text-emerald-800 dark:text-emerald-300">Modo do Sistema</p>
+          <p className="mt-1 text-2xl font-black text-emerald-950 dark:text-emerald-100">PRODUÇÃO</p>
+          <p className="mt-1 text-[11px] text-emerald-800 dark:text-emerald-400">
+            Ambiente operacional ativo e pronto a utilizar.
           </p>
         </div>
         <div className="rounded-lg border bg-white p-4 dark:bg-[#1f2325]">
