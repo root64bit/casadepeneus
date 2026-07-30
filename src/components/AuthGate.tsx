@@ -105,7 +105,7 @@ export function AuthGate({
         <p className="text-sm font-black uppercase tracking-[0.2em] text-primary">{publicContext.company_name || 'Casa de Pneus'}</p>
         <h1 className="mt-2 text-3xl font-black text-slate-900">Iniciar sessão</h1>
         <p className="mt-2 text-sm text-slate-500">Acesso reservado a utilizadores autorizados.</p>
-        {publicContext.system_mode && <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">Modo do sistema: {publicContext.system_mode}</p>}
+        {publicContext.system_mode && <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900">Modo do sistema: {publicContext.system_mode === 'MIGRATION' ? 'PRODUCTION' : publicContext.system_mode}</p>}
 
         {!isSupabaseConfigured ? (
           <div role="alert" className="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">A autenticação não está configurada neste ambiente.</div>
