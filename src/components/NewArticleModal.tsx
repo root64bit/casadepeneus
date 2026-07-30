@@ -303,7 +303,7 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({
           </div>
 
           <div className="grid grid-cols-1 gap-3 bg-[#f3f4f5] dark:bg-[#282c2e] p-3 rounded border border-[#c3c6d1] dark:border-[#43474f] sm:grid-cols-2 lg:grid-cols-5">
-            <div><label className="block text-[11px] font-bold text-[#43474f] dark:text-[#c3c6d1] mb-1">Unidade</label><select required value={unitId} onChange={(event) => setUnitId(event.target.value)} className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-sm">{units.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
+            <div><label className="block text-[11px] font-bold text-[#43474f] dark:text-[#c3c6d1] mb-1">Unidade</label><input readOnly value="UN" className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-sm bg-[#f3f4f5]" /></div>
             <div>
               <label className="block text-[11px] font-bold text-[#43474f] dark:text-[#c3c6d1] mb-1">Taxa IVA %</label>
               <div className="flex space-x-1">

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Article, SaleInvoice, SaleItem, Client, ReferenceOption } from '../types';
+import { Article, SaleInvoice, SaleItem, Client, ReferenceOption, DocumentRecord } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
 import { ArticleSearchSelect } from '../components/ArticleSearchSelect';
 
@@ -12,6 +12,7 @@ interface NewSaleProps {
   operatorName: string;
   paymentTerms: ReferenceOption[];
   paymentMethods: ReferenceOption[];
+  documents?: DocumentRecord[];
 }
 
 export const NewSale: React.FC<NewSaleProps> = ({
@@ -23,8 +24,10 @@ export const NewSale: React.FC<NewSaleProps> = ({
   operatorName,
   paymentTerms,
   paymentMethods,
+  documents,
 }) => {
   const [docNumber] = useState('A atribuir ao confirmar');
+  const [showClientInvoices, setShowClientInvoices] = useState(false);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id ?? '');
   const [selectedClientName, setSelectedClientName] = useState(clients[0]?.name ?? '');
@@ -160,6 +163,11 @@ export const NewSale: React.FC<NewSaleProps> = ({
       setSelectedClientName(found.name);
       setClientNuit(found.nuit);
       setClientAddress(found.address);
+      if (documents?.some(d => d.partyId === found.id && d.outstandingAmount > 0)) {
+        setShowClientInvoices(true);
+      } else {
+        setShowClientInvoices(false);
+      }
     } else {
       const pontual = clients.find((c) => c.name.toLowerCase().includes('pontual')) || {
         id: 'client-pontual',
@@ -359,6 +367,38 @@ export const NewSale: React.FC<NewSaleProps> = ({
         </section>
       )}
 
+      {/* Client Pending Invoices Table */}
+      {showClientInvoices && selectedClientId && (
+        <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded overflow-hidden shadow-sm p-4">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="font-bold text-[#ba1a1a] dark:text-[#ffb4ab]">Documentos Pendentes - {selectedClientName}</h3>
+            <button onClick={() => setShowClientInvoices(false)} className="text-[#737780] hover:text-[#191c1d] dark:hover:text-white font-bold text-sm">✕ Fechar</button>
+          </div>
+          <table className="w-full text-left text-xs border-collapse">
+            <thead className="bg-[#e7e8e9] dark:bg-[#282c2e] text-[#43474f] dark:text-[#c3c6d1] font-bold uppercase border-b border-[#c3c6d1]">
+              <tr>
+                <th className="p-2">Documento</th>
+                <th className="p-2">Data</th>
+                <th className="p-2">Tipo</th>
+                <th className="p-2 text-right">Total</th>
+                <th className="p-2 text-right">Pendente</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f] font-mono">
+              {documents?.filter(d => d.partyId === selectedClientId && d.outstandingAmount > 0).map(d => (
+                <tr key={d.id} className="hover:bg-[#f3f4f5] dark:hover:bg-[#282c2e]">
+                  <td className="p-2">{d.displayNumber}</td>
+                  <td className="p-2">{d.date}</td>
+                  <td className="p-2 font-sans">{d.typeName}</td>
+                  <td className="p-2 text-right">{formatMZN(d.grandTotal)}</td>
+                  <td className="p-2 text-right font-bold text-red-600">{formatMZN(d.outstandingAmount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
       {/* FASE 2: LINHAS DE ARTIGOS */}
       {(posPhase === 'LINES' || posPhase === 'FOOTER') && (
         <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded overflow-hidden shadow-sm">
@@ -484,41 +524,41 @@ export const NewSale: React.FC<NewSaleProps> = ({
         </section>
       )}
 
-      {/* FASE 3: RODAPÉ & TOTAIS (Matching Screens 9 & 14) */}
+      {/* FASE 3: RODAPÉ & TOTAIS */}
       {(posPhase === 'FOOTER' || posPhase === 'LINES') && (
-        <section className="bg-[#000080] text-yellow-300 border-2 border-yellow-400 p-5 rounded shadow-2xl space-y-4">
-          <div className="border-b border-yellow-400/40 pb-2 flex justify-between items-center text-white">
+        <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-4 rounded shadow-sm space-y-4">
+          <div className="border-b border-[#c3c6d1] dark:border-[#43474f] pb-2 flex justify-between items-center text-[#191c1d] dark:text-white">
             <h3 className="font-extrabold text-sm uppercase">
               [ Factura a Cliente — Rodapé e Totais ]
             </h3>
-            <span className="text-xs font-bold text-yellow-300">
+            <span className="text-xs font-bold">
               Cliente: {selectedClientName}
             </span>
           </div>
 
           <div className="grid grid-cols-12 gap-4 text-xs">
             {/* Left Box: Desconto Geral & Observações */}
-            <div className="col-span-12 md:col-span-6 space-y-3 bg-[#0000aa] p-3 rounded border border-yellow-400/30">
+            <div className="col-span-12 md:col-span-6 space-y-3 bg-[#f3f4f5] dark:bg-[#282c2e] p-3 rounded border border-[#c3c6d1] dark:border-[#43474f]">
               <div className="flex items-center space-x-2">
-                <label className="font-bold uppercase text-white">% Desconto Geral:</label>
+                <label className="font-bold uppercase text-[#191c1d] dark:text-white">% Desconto Geral:</label>
                 <input
                   type="number"
                   min="0"
                   max="100"
                   value={generalDiscount}
                   onChange={(e) => setGeneralDiscount(Number(e.target.value))}
-                  className="w-20 bg-yellow-100 text-black border border-yellow-400 rounded p-1 text-center font-bold"
+                  className="w-20 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded p-1 text-center font-bold text-[#191c1d] dark:text-white"
                 />
-                <span className="font-bold text-white">Valor: {formatMZN(descontoGeralValor)}</span>
+                <span className="font-bold text-[#191c1d] dark:text-white">Valor: {formatMZN(descontoGeralValor)}</span>
               </div>
 
               <div>
-                <label className="block font-bold uppercase text-white mb-1">Observações / Garantias:</label>
+                <label className="block font-bold uppercase text-[#191c1d] dark:text-white mb-1">Observações / Garantias:</label>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Observações da fatura ou termos de garantia dos pneus..."
-                  className="w-full h-20 bg-[#000055] border border-yellow-400/40 rounded p-2 text-xs text-yellow-200 focus:outline-none"
+                  className="w-full h-20 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs text-[#191c1d] dark:text-white focus:outline-none"
                 ></textarea>
               </div>
             </div>
@@ -526,18 +566,18 @@ export const NewSale: React.FC<NewSaleProps> = ({
             {/* Right Box: Totais Discriminados por Código IVA & Resumo Total */}
             <div className="col-span-12 md:col-span-6 grid grid-cols-2 gap-3">
               {/* Discriminação IVA */}
-              <div className="border border-yellow-400 p-2 bg-[#0000aa] text-[11px] font-mono space-y-1">
-                <div className="border-b border-yellow-400/50 font-bold flex justify-between text-white uppercase text-[10px]">
+              <div className="border border-[#c3c6d1] dark:border-[#43474f] p-2 bg-[#f3f4f5] dark:bg-[#282c2e] text-[11px] font-mono space-y-1">
+                <div className="border-b border-[#c3c6d1] dark:border-[#43474f] font-bold flex justify-between text-[#191c1d] dark:text-white uppercase text-[10px]">
                   <span>CD</span>
                   <span>VALOR BASE IVA</span>
                   <span>VALOR TOTAL</span>
                 </div>
-                <div className="flex justify-between font-bold">
+                <div className="flex justify-between font-bold text-[#191c1d] dark:text-white">
                   <span>1</span>
                   <span>{subtotalLiquido.toFixed(2)}</span>
                   <span>{ivaTotal.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-yellow-400/60">
+                <div className="flex justify-between text-[#737780]">
                   <span>0</span>
                   <span>0.00</span>
                   <span>0.00</span>
@@ -545,31 +585,31 @@ export const NewSale: React.FC<NewSaleProps> = ({
               </div>
 
               {/* Quadro de Totais */}
-              <div className="border-2 border-yellow-400 p-3 bg-[#0000aa] text-xs font-mono space-y-1.5 flex flex-col justify-between">
-                <div className="flex justify-between">
-                  <span className="text-white font-bold">ILIQUIDO:</span>
+              <div className="border border-[#c3c6d1] dark:border-[#43474f] p-3 bg-[#f3f4f5] dark:bg-[#282c2e] text-xs font-mono space-y-1.5 flex flex-col justify-between">
+                <div className="flex justify-between text-[#191c1d] dark:text-white">
+                  <span className="font-bold">ILIQUIDO:</span>
                   <span>{formatMZN(subtotalBruto)}</span>
                 </div>
-                <div className="flex justify-between text-red-300">
+                <div className="flex justify-between text-red-600">
                   <span>DESCONTOS:</span>
                   <span>-{formatMZN(descontoLinhas + descontoGeralValor)}</span>
                 </div>
-                <div className="flex justify-between text-white">
+                <div className="flex justify-between text-[#191c1d] dark:text-white">
                   <span>IVA:</span>
                   <span>{formatMZN(ivaTotal)}</span>
                 </div>
-                <div className="pt-2 border-t-2 border-yellow-400 flex justify-between items-center text-sm font-black text-white">
+                <div className="pt-2 border-t border-[#c3c6d1] dark:border-[#43474f] flex justify-between items-center text-sm font-black text-[#191c1d] dark:text-white">
                   <span>TOTAL:</span>
-                  <span className="text-xl text-yellow-300 font-extrabold">{formatMZN(totalFinalAmount)}</span>
+                  <span className="text-xl text-[#006e25] font-extrabold">{formatMZN(totalFinalAmount)}</span>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex justify-between items-center pt-2 border-t border-yellow-400/40">
+          <div className="flex justify-between items-center pt-3 border-t border-[#c3c6d1] dark:border-[#43474f]">
             {saveError && (
-              <p role="alert" className="rounded bg-red-900 p-2 text-xs font-bold text-red-100">
+              <p role="alert" className="rounded bg-red-100 p-2 text-xs font-bold text-red-800">
                 {saveError}
               </p>
             )}
@@ -577,7 +617,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
               <button
                 type="button"
                 onClick={() => { setItems([]); setPosPhase('HEADER'); }}
-                className="px-4 py-2 bg-red-700 text-white rounded font-bold text-xs uppercase hover:bg-red-800"
+                className="px-4 py-2 bg-[#ba1a1a] text-white rounded font-bold text-xs uppercase hover:bg-red-800"
               >
                 Novo Documento (F5)
               </button>
@@ -585,7 +625,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
                 type="button"
                 disabled={saving || items.length === 0}
                 onClick={() => void handleSaveAndConfirm(true)}
-                className="px-4 py-2 bg-blue-700 text-white rounded font-bold text-xs uppercase hover:bg-blue-800 disabled:opacity-50"
+                className="px-4 py-2 bg-[#003366] text-white rounded font-bold text-xs uppercase hover:brightness-110 disabled:opacity-50"
               >
                 Gravar & Imprimir (F9)
               </button>
@@ -593,7 +633,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
                 type="button"
                 disabled={saving || items.length === 0}
                 onClick={() => void handleSaveAndConfirm(false)}
-                className="px-6 py-2 bg-[#006e25] text-white rounded font-black text-xs uppercase hover:brightness-110 shadow-lg disabled:opacity-50"
+                className="px-6 py-2 bg-[#006e25] text-white rounded font-black text-xs uppercase hover:brightness-110 shadow-sm disabled:opacity-50"
               >
                 {saving ? 'A gravar…' : 'Gravar Fatura (F2)'}
               </button>
@@ -603,13 +643,13 @@ export const NewSale: React.FC<NewSaleProps> = ({
       )}
 
       {/* Dynamic XT-POS PRO Bottom Status Bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#0000aa] text-white border-t-2 border-yellow-400 px-6 py-2 text-xs font-mono font-bold flex items-center justify-between shadow-2xl">
-        <div className="flex items-center space-x-6 text-yellow-300">
+      <div className="bg-[#e7e8e9] dark:bg-[#282c2e] text-[#191c1d] dark:text-white border-t border-[#c3c6d1] dark:border-[#43474f] px-6 py-2 text-xs font-mono font-bold flex items-center justify-between rounded shadow-sm mt-4">
+        <div className="flex items-center space-x-6">
           {posPhase === 'HEADER' && (
             <>
               <span>ESC=Sair</span>
               <span>TAB=Tabelas</span>
-              <span className="bg-yellow-400 text-black px-1 rounded">F2=Ult/Cont</span>
+              <span className="bg-[#c3c6d1] dark:bg-[#43474f] px-1 rounded">F2=Ult/Cont</span>
               <span>F9=2ªvia</span>
               <span>PgUp/Dn=Prox/Ant</span>
             </>
@@ -618,22 +658,22 @@ export const NewSale: React.FC<NewSaleProps> = ({
             <>
               <span>ESC=Sair</span>
               <span>TAB=Tabelas</span>
-              <span className="bg-yellow-400 text-black px-1 rounded">F2=Continuar</span>
+              <span className="bg-[#c3c6d1] dark:bg-[#43474f] px-1 rounded">F2=Continuar</span>
               <span>Ctrl-Del/Ins=Linhas</span>
             </>
           )}
           {posPhase === 'FOOTER' && (
             <>
               <span>ESC=Sair</span>
-              <span className="bg-yellow-400 text-black px-1 rounded">F2=Gravar</span>
+              <span className="bg-[#c3c6d1] dark:bg-[#43474f] px-1 rounded">F2=Gravar</span>
               <span>F3=Ajustar</span>
               <span>F5=Novo</span>
               <span>F9=Imp</span>
             </>
           )}
         </div>
-        <div className="text-white text-[11px]">
-          Fase Ativa: <span className="text-yellow-300 uppercase">{posPhase}</span> | Cliente: <b>{selectedClientName || 'Nenhum'}</b>
+        <div className="text-[11px]">
+          Fase Ativa: <span className="uppercase text-[#006e25]">{posPhase}</span> | Cliente: <b>{selectedClientName || 'Nenhum'}</b>
         </div>
       </div>
     </div>

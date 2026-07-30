@@ -396,6 +396,7 @@ function App() {
           <NewSale
             articles={articles}
             clients={clients}
+            documents={documents}
             onCompleteSale={handleCompleteSale}
             onOpenPrintModal={handleOpenPrintModal}
             canReceivePayment={
@@ -475,6 +476,8 @@ function App() {
           <Accounts
             payments={payments}
             ledger={ledger}
+            clients={clients}
+            documents={documents}
             onPrintPayment={setPrintPayment}
           />
         );

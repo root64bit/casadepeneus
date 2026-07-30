@@ -320,31 +320,31 @@ export const Inventory: React.FC<InventoryProps> = ({
         }}
       />
 
-      {/* Dynamic XT-POS PRO Bottom Status Bar (Screen 3) */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#0000aa] text-white border-t-2 border-yellow-400 px-6 py-2 text-xs font-mono font-bold flex items-center justify-between shadow-2xl">
-        <div className="flex items-center space-x-6 text-yellow-300">
+      {/* Bottom Status Bar */}
+      <div className="mt-4 rounded border border-[#c3c6d1] bg-[#e7e8e9] dark:border-[#43474f] dark:bg-[#282c2e] px-4 py-2 text-xs font-mono font-bold flex items-center justify-between">
+        <div className="flex items-center space-x-4 text-[#191c1d] dark:text-white">
           <span>ESC=Sair</span>
           <span>TAB=Ord</span>
           <span>Barra=Filtro</span>
-          <button onClick={onOpenNewArticleModal} className="bg-yellow-400 text-black px-1 rounded font-bold hover:brightness-110">
+          <button onClick={onOpenNewArticleModal} className="rounded bg-[#003366] px-2 py-0.5 text-white font-bold hover:brightness-110">
             F2=Introduzir
           </button>
           {filteredArticles.length > 0 && onEditArticle && (
-            <button onClick={() => onEditArticle(filteredArticles[0])} className="bg-yellow-400 text-black px-1 rounded font-bold hover:brightness-110">
+            <button onClick={() => onEditArticle(filteredArticles[0])} className="rounded bg-[#003366] px-2 py-0.5 text-white font-bold hover:brightness-110">
               F3=Alterar
             </button>
           )}
           {filteredArticles.length > 0 && (
-            <button onClick={() => setLedgerArticle(filteredArticles[0])} className="bg-yellow-400 text-black px-1 rounded font-bold hover:brightness-110">
+            <button onClick={() => setLedgerArticle(filteredArticles[0])} className="rounded bg-[#003366] px-2 py-0.5 text-white font-bold hover:brightness-110">
               F4=Consultar
             </button>
           )}
-          <button onClick={() => window.print()} className="bg-yellow-400 text-black px-1 rounded font-bold hover:brightness-110">
+          <button onClick={() => window.print()} className="rounded bg-[#003366] px-2 py-0.5 text-white font-bold hover:brightness-110">
             F9=Imp
           </button>
         </div>
-        <div className="text-white text-[11px]">
-          Ficheiro de Artigos: <span className="text-yellow-300 font-bold">{filteredArticles.length} Registo(s)</span>
+        <div className="text-[#737780] text-[11px]">
+          Ficheiro de Artigos: <b className="text-[#191c1d] dark:text-white">{filteredArticles.length} Registo(s)</b>
         </div>
       </div>
     </div>

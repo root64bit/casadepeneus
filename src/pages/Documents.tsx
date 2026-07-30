@@ -21,6 +21,7 @@ export function Documents({ documents, sales, onPrint, onPrintRecord }: Document
         !term ||
         document.displayNumber.toLowerCase().includes(term) ||
         document.partyName.toLowerCase().includes(term) ||
+        (document.partyCode && document.partyCode.toLowerCase().includes(term)) ||
         document.typeName.toLowerCase().includes(term);
       return (
         matchesSearch &&

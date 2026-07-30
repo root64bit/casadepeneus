@@ -1,31 +1,45 @@
 import { useMemo, useState } from 'react';
-import type { LedgerRecord, PaymentRecord } from '../types';
+import type { Client, DocumentRecord, LedgerRecord, PaymentRecord } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
 
 interface AccountsProps {
   payments: PaymentRecord[];
   ledger: LedgerRecord[];
+  clients?: Client[];
+  documents?: DocumentRecord[];
   onPrintPayment: (payment: PaymentRecord) => void;
 }
 
-export function Accounts({ payments, ledger, onPrintPayment }: AccountsProps) {
+export function Accounts({ payments, ledger, clients, documents, onPrintPayment }: AccountsProps) {
   const [view, setView] = useState<'payments' | 'ledger'>('payments');
   const [partyType, setPartyType] = useState<'ALL' | 'CUSTOMER' | 'SUPPLIER'>('ALL');
+  const [searchTerm, setSearchTerm] = useState('');
 
-  const filteredPayments = useMemo(
-    () =>
-      payments.filter(
-        (payment) =>
+  const filteredPayments = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    return payments.filter(
+      (payment) => {
+        const matchesParty =
           partyType === 'ALL' ||
           (partyType === 'CUSTOMER' && payment.direction === 'CUSTOMER_RECEIPT') ||
-          (partyType === 'SUPPLIER' && payment.direction === 'SUPPLIER_PAYMENT'),
-      ),
-    [partyType, payments],
-  );
-  const filteredLedger = useMemo(
-    () => ledger.filter((entry) => partyType === 'ALL' || entry.partyType === partyType),
-    [ledger, partyType],
-  );
+          (partyType === 'SUPPLIER' && payment.direction === 'SUPPLIER_PAYMENT');
+        const matchesSearch =
+          !term ||
+          payment.displayNumber.toLowerCase().includes(term) ||
+          payment.partyName.toLowerCase().includes(term);
+        return matchesParty && matchesSearch;
+      },
+    );
+  }, [partyType, payments, searchTerm]);
+
+  const filteredLedger = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    return ledger.filter((entry) => {
+      const matchesParty = partyType === 'ALL' || entry.partyType === partyType;
+      const matchesSearch = !term || entry.partyName.toLowerCase().includes(term);
+      return matchesParty && matchesSearch;
+    });
+  }, [ledger, partyType, searchTerm]);
 
   return (
     <div className="space-y-5">
@@ -44,15 +58,24 @@ export function Accounts({ payments, ledger, onPrintPayment }: AccountsProps) {
             Contas correntes
           </button>
         </div>
-        <select
-          value={partyType}
-          onChange={(event) => setPartyType(event.target.value as typeof partyType)}
-          className="rounded border border-[#c3c6d1] bg-white p-2 text-sm dark:border-[#43474f] dark:bg-[#282c2e]"
-        >
-          <option value="ALL">Clientes e fornecedores</option>
-          <option value="CUSTOMER">Clientes</option>
-          <option value="SUPPLIER">Fornecedores</option>
-        </select>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Pesquisar por código, nome ou nº..."
+            className="rounded border border-[#c3c6d1] bg-white px-3 py-2 text-xs dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white min-w-[220px]"
+          />
+          <select
+            value={partyType}
+            onChange={(event) => setPartyType(event.target.value as typeof partyType)}
+            className="rounded border border-[#c3c6d1] bg-white p-2 text-sm dark:border-[#43474f] dark:bg-[#282c2e]"
+          >
+            <option value="ALL">Clientes e fornecedores</option>
+            <option value="CUSTOMER">Clientes</option>
+            <option value="SUPPLIER">Fornecedores</option>
+          </select>
+        </div>
       </div>
 
       <section className="overflow-hidden rounded border border-[#c3c6d1] bg-white shadow-sm dark:border-[#43474f] dark:bg-[#1f2325]">

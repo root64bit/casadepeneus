@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type {
   Article,
   DocumentRecord,
@@ -134,6 +134,27 @@ export const Purchases: React.FC<PurchasesProps> = ({
     }
   };
 
+  // Keyboard shortcuts: F2=Gravar, F5=Novo, F9=Imprimir
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F2') {
+        e.preventDefault();
+        if (items.length > 0 && !saving) void saveInvoice();
+      } else if (e.key === 'F5') {
+        e.preventDefault();
+        setItems([]);
+        setSupplierReference('');
+        setRequisitionNo('');
+        setError('');
+      } else if (e.key === 'F9') {
+        e.preventDefault();
+        window.print();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [items, saving]);
+
   return (
     <div className="space-y-6 pb-12">
       <header>
@@ -218,24 +239,16 @@ export const Purchases: React.FC<PurchasesProps> = ({
         {supplierDocuments.length === 0 && <p className="p-6 text-center text-sm text-[#737780]">Sem documentos de fornecedor.</p>}
       </section>
 
-      {/* Dynamic XT-POS PRO Bottom Status Bar (Screen 2 & 4) */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#0000aa] text-white border-t-2 border-yellow-400 px-6 py-2 text-xs font-mono font-bold flex items-center justify-between shadow-2xl">
-        <div className="flex items-center space-x-6 text-yellow-300">
+      {/* Bottom Status Bar */}
+      <div className="mt-4 rounded border border-[#c3c6d1] bg-[#e7e8e9] dark:border-[#43474f] dark:bg-[#282c2e] px-4 py-2 text-xs font-mono font-bold flex items-center justify-between">
+        <div className="flex items-center space-x-4 text-[#191c1d] dark:text-white">
           <span>ESC=Sair</span>
-          <span>TAB=Tabelas</span>
-          <button disabled={saving || items.length === 0} onClick={() => void saveInvoice()} className="bg-yellow-400 text-black px-1 rounded font-bold hover:brightness-110 disabled:opacity-50">
-            F2=Gravar
-          </button>
-          <span>F3=Ajustar</span>
-          <button onClick={() => setItems([])} className="bg-yellow-400 text-black px-1 rounded font-bold hover:brightness-110">
-            F5=Novo
-          </button>
-          <button onClick={() => window.print()} className="bg-yellow-400 text-black px-1 rounded font-bold hover:brightness-110">
-            F9=Imp
-          </button>
+          <span className="rounded bg-[#003366] px-2 py-0.5 text-white">F2=Gravar</span>
+          <span>F5=Novo</span>
+          <span className="rounded bg-[#003366] px-2 py-0.5 text-white">F9=Imp</span>
         </div>
-        <div className="text-white text-[11px]">
-          Fatura de Fornecedor | Itens: <b>{items.length}</b> | Total: <b>{formatMZN(total)}</b>
+        <div className="text-[#737780] text-[11px]">
+          Fatura de Fornecedor | Itens: <b>{items.length}</b> | Total: <b className="text-[#191c1d] dark:text-white">{formatMZN(total)}</b>
         </div>
       </div>
     </div>

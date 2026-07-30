@@ -660,6 +660,7 @@ export async function loadAppData(): Promise<AppData> {
       typeName: documentType?.name ?? '',
       partyType: row.customer_id ? 'CUSTOMER' : 'SUPPLIER',
       partyId: row.customer_id ?? row.supplier_id ?? '',
+      partyCode: customer?.number ?? customer?.code ?? supplier?.number ?? supplier?.code ?? '',
       partyName: customer?.name ?? supplier?.name ?? '',
       status: row.status,
       netTotal: numberValue(row.net_total),

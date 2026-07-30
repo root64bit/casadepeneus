@@ -161,6 +161,7 @@ export interface DocumentRecord {
   typeName: string;
   partyType: 'CUSTOMER' | 'SUPPLIER';
   partyId: string;
+  partyCode?: string;
   partyName: string;
   status: string;
   netTotal: number;
