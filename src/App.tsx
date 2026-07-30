@@ -512,6 +512,9 @@ function App() {
         warehouseLabel={userContext?.warehouses.map((warehouse) => warehouse.name).join(', ')}
         onSignOut={() => { void supabase?.auth.signOut(); }}
         permissions={permissions}
+        articles={articles}
+        clients={clients}
+        documents={documents}
       >
         {dataError && (
           <div role="alert" className="mb-4 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
