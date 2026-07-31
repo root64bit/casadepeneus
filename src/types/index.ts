@@ -138,14 +138,16 @@ export interface Client {
 
 export interface Supplier {
   id: string;
-  code?: string;
-  number?: string;
+  code: string;
+  number: string;
   name: string;
   nuit: string;
   address: string;
   phone: string;
+  email: string;
   contactPerson: string;
   totalPurchases: number;
+  pendingBalance: number;
 }
 
 export interface CompanyProfile {

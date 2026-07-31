@@ -245,9 +245,13 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 font-sans">
-      <div className="w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden rounded-lg border border-[#c3c6d1] dark:border-[#43474f] bg-white dark:bg-[#1f2325] shadow-2xl">
+    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/75 font-sans ${isFullScreen ? 'p-0' : 'p-4'}`}>
+      <div className={`w-full flex flex-col overflow-hidden border border-[#c3c6d1] dark:border-[#43474f] bg-white dark:bg-[#1f2325] shadow-2xl transition-all ${
+        isFullScreen ? 'h-full max-h-full rounded-none border-none' : 'max-w-5xl max-h-[92vh] rounded-lg'
+      }`}>
         {/* Header Bar */}
         <div className="flex items-center justify-between border-b border-[#c3c6d1] dark:border-[#43474f] bg-[#001e40] px-5 py-3 text-white">
           <div className="flex items-center space-x-3">
@@ -256,9 +260,21 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
               Extracto de Movimentos de Stock — Ficha de Artigo
             </h3>
           </div>
-          <button onClick={onClose} className="text-white hover:text-red-400">
-            <span className="material-symbols-outlined text-xl">close</span>
-          </button>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={() => setIsFullScreen(!isFullScreen)}
+              className="text-white hover:text-yellow-300 flex items-center space-x-1 text-xs font-bold uppercase"
+              title={isFullScreen ? 'Sair do modo Ecrã Inteiro' : 'Expandir modal para Ecrã Inteiro'}
+            >
+              <span className="material-symbols-outlined text-lg">
+                {isFullScreen ? 'fullscreen_exit' : 'fullscreen'}
+              </span>
+              <span className="hidden sm:inline">{isFullScreen ? 'Sair Ecrã Inteiro' : 'Ecrã Inteiro'}</span>
+            </button>
+            <button onClick={onClose} className="text-white hover:text-red-400">
+              <span className="material-symbols-outlined text-xl">close</span>
+            </button>
+          </div>
         </div>
 
         {/* Article Summary & Filter Bar */}

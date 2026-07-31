@@ -44,6 +44,7 @@ import {
   createSupplierPayment,
   loadAppData,
   postStockMovement,
+  createAndConfirmFinancialAdvice,
 } from './lib/appData';
 import type { PartyInput } from './lib/appData';
 
@@ -506,10 +507,18 @@ function App() {
           <Entities
             clients={clients}
             suppliers={suppliers}
+            documents={documents}
+            ledgerEntries={ledger}
             onNewCustomer={() => setPartyModalType('customer')}
             onNewSupplier={() => setPartyModalType('supplier')}
             canCreateCustomer={permissions.includes('customers.create')}
             canCreateSupplier={permissions.includes('suppliers.create')}
+            onConfirmAdvice={async (payload) => {
+              const docId = await createAndConfirmFinancialAdvice(payload);
+              await refreshData();
+              return docId;
+            }}
+            onPrintRecord={setPrintDocument}
           />
         );
       case 'reports':

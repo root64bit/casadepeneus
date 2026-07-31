@@ -30,6 +30,69 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [ledgerArticle, setLedgerArticle] = useState<Article | null>(null);
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  // Date and Text Filters
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'ALL' | 'entrada' | 'saida'>('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Clear Filters
+  const handleClearFilters = () => {
+    setDateFrom('');
+    setDateTo('');
+    setTypeFilter('ALL');
+    setSearchQuery('');
+  };
+
+  // Filtered movements based on date, type and search query
+  const filteredMovements = useMemo(() => {
+    return movements.filter((m) => {
+      const itemDate = m.date.substring(0, 10);
+      if (dateFrom && itemDate < dateFrom) return false;
+      if (dateTo && itemDate > dateTo) return false;
+      if (typeFilter !== 'ALL' && m.type !== typeFilter) return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        const codeMatch = m.articleCode.toLowerCase().includes(q);
+        const descMatch = m.articleDescription.toLowerCase().includes(q);
+        const refMatch = m.docRef.toLowerCase().includes(q);
+        const operatorMatch = m.operator.toLowerCase().includes(q);
+        if (!codeMatch && !descMatch && !refMatch && !operatorMatch) return false;
+      }
+      return true;
+    });
+  }, [movements, dateFrom, dateTo, typeFilter, searchQuery]);
+
+  const exportMovementsToCSV = () => {
+    const headers = ['Data / Hora', 'Tipo', 'Documento / Guia', 'Armazém', 'Código Artigo', 'Descrição Artigo', 'Quantidade', 'Motivo / Notas', 'Operador'];
+    const sorted = [...filteredMovements].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    const rows = sorted.map((item) => [
+      `"${new Date(item.date).toLocaleString('pt-PT').replace(/"/g, '""')}"`,
+      item.type.toUpperCase(),
+      `"${(item.docRef || (item.type === 'entrada' ? 'Entrada Directa' : 'Saída Directa')).replace(/"/g, '""')}"`,
+      `"${(item.warehouseName || 'Armazém Principal').replace(/"/g, '""')}"`,
+      `"${item.articleCode.replace(/"/g, '""')}"`,
+      `"${item.articleDescription.replace(/"/g, '""')}"`,
+      item.quantity.toFixed(3),
+      `"${(item.reason || item.notes || (item.type === 'entrada' ? 'Entrada Direta Manual' : 'Saída Direta Manual')).replace(/"/g, '""')}"`,
+      `"${(item.operator || 'Administrador').replace(/"/g, '""')}"`,
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+    const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+
+    const dateSuffix = dateFrom || dateTo ? `_${dateFrom || 'inicio'}_a_${dateTo || 'hoje'}` : '';
+    link.download = `movimentos-stock${dateSuffix}_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const article = useMemo(() => articles.find((item) => item.id === articleId), [articles, articleId]);
   const quantity = Number(quantityStr) || 0;
@@ -205,17 +268,109 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
         </section>
       )}
 
-      <section className="overflow-hidden rounded-lg border bg-white shadow-sm dark:bg-[#1f2325]">
-        <div className="flex items-center justify-between border-b bg-slate-100 px-4 py-3 dark:bg-slate-800">
-          <h2 className="text-xs font-black uppercase text-slate-800 dark:text-slate-200">
-            Histórico de movimentos de stock ({movements.length})
-          </h2>
-          <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
-            ● Dados em tempo real (Supabase)
-          </span>
+      <section className={`overflow-hidden rounded-lg border bg-white shadow-sm dark:bg-[#1f2325] ${
+        isFullScreen ? 'fixed inset-0 z-50 rounded-none border-none p-6 overflow-auto bg-white dark:bg-[#1f2325]' : ''
+      }`}>
+        <div className="flex flex-wrap items-center justify-between border-b bg-slate-100 px-4 py-3 dark:bg-slate-800 gap-2">
+          <div className="flex items-center space-x-3">
+            <h2 className="text-xs font-black uppercase text-slate-800 dark:text-slate-200">
+              Histórico de movimentos de stock ({filteredMovements.length})
+            </h2>
+            <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+              ● Dados em tempo real (Supabase)
+            </span>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={exportMovementsToCSV}
+              className="px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-extrabold flex items-center space-x-1 uppercase transition-colors"
+              title="Descarregar histórico de movimentos filtrados em formato Excel/CSV"
+            >
+              <span className="material-symbols-outlined text-sm">download</span>
+              <span>Baixar Excel</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsFullScreen(!isFullScreen)}
+              className="px-3 py-1.5 rounded bg-[#003366] hover:bg-[#002244] text-white text-xs font-extrabold flex items-center space-x-1 uppercase transition-colors"
+              title={isFullScreen ? 'Sair do modo Ecrã Inteiro' : 'Expandir tabela para Ecrã Inteiro'}
+            >
+              <span className="material-symbols-outlined text-sm">
+                {isFullScreen ? 'fullscreen_exit' : 'fullscreen'}
+              </span>
+              <span>{isFullScreen ? 'Sair Ecrã Inteiro' : 'Ecrã Inteiro'}</span>
+            </button>
+          </div>
         </div>
-        {movements.length === 0 ? (
-          <p className="p-8 text-center text-xs text-slate-500">Sem movimentos para apresentar.</p>
+
+        {/* Date & Search Filter Bar */}
+        <div className="p-3 bg-slate-50 dark:bg-[#282c2e] border-b flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center space-x-1">
+              <label className="font-bold text-slate-600 dark:text-slate-300 uppercase text-[11px]">De:</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="p-1 border rounded text-xs font-mono dark:bg-[#1f2325]"
+              />
+            </div>
+
+            <div className="flex items-center space-x-1">
+              <label className="font-bold text-slate-600 dark:text-slate-300 uppercase text-[11px]">Até:</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="p-1 border rounded text-xs font-mono dark:bg-[#1f2325]"
+              />
+            </div>
+
+            <div className="flex items-center space-x-1">
+              <label className="font-bold text-slate-600 dark:text-slate-300 uppercase text-[11px]">Tipo:</label>
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value as any)}
+                className="p-1 border rounded text-xs font-bold dark:bg-[#1f2325]"
+              >
+                <option value="ALL">Todos os Tipos</option>
+                <option value="entrada">Entradas</option>
+                <option value="saida">Saídas</option>
+              </select>
+            </div>
+
+            <div className="flex items-center space-x-1">
+              <label className="font-bold text-slate-600 dark:text-slate-300 uppercase text-[11px]">Pesquisar:</label>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Código, artigo, doc..."
+                className="p-1 border rounded text-xs w-36 dark:bg-[#1f2325]"
+              />
+            </div>
+
+            {(dateFrom || dateTo || typeFilter !== 'ALL' || searchQuery) && (
+              <button
+                type="button"
+                onClick={handleClearFilters}
+                className="text-red-600 font-bold hover:underline text-[11px] uppercase"
+              >
+                🧹 Limpar
+              </button>
+            )}
+          </div>
+
+          <div className="text-[11px] font-bold text-slate-500">
+            A apresentar <b>{filteredMovements.length}</b> de <b>{movements.length}</b> movimentos
+          </div>
+        </div>
+
+        {filteredMovements.length === 0 ? (
+          <p className="p-8 text-center text-xs text-slate-500">Sem movimentos a apresentar para os filtros seleccionados.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-[900px] w-full text-left text-xs">
@@ -232,7 +387,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                 </tr>
               </thead>
               <tbody className="font-mono divide-y">
-                {[...movements]
+                {[...filteredMovements]
                   .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                   .map((item) => {
                     const matchedArt = articles.find((a) => a.code.toLowerCase() === item.articleCode?.toLowerCase());

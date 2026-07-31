@@ -406,7 +406,7 @@ export async function loadAppData(): Promise<AppData> {
         .limit(500),
       client
         .from('suppliers')
-        .select('id,supplier_number,name,tax_number,telephone,contact_person,current_balance,supplier_addresses(address_line_1,is_primary)')
+        .select('id,supplier_number,name,tax_number,telephone,email,contact_person,current_balance,supplier_addresses(address_line_1,is_primary)')
         .eq('active', true)
         .order('name')
         .limit(500),
@@ -417,7 +417,7 @@ export async function loadAppData(): Promise<AppData> {
         .limit(250),
       client
         .from('stock_movements')
-        .select('id,movement_type,legacy_ref,reason,notes,source_document_id,created_at,quantity_in,quantity_out,unit_cost,products(code,description),warehouses(id,name),user_profiles(full_name),documents(id,display_number,document_types(code,name))')
+        .select('id,movement_type,legacy_ref,source_document_id,created_at,quantity_in,quantity_out,unit_cost,products(code,description),warehouses(id,name),user_profiles(full_name)')
         .order('created_at', { ascending: false })
         .limit(500),
       client
@@ -453,29 +453,14 @@ export async function loadAppData(): Promise<AppData> {
       client.from('tax_codes').select('id,code,description,rate').eq('is_active', true).order('rate', { ascending: false }).limit(50),
     ]);
 
-  const failed = [
+  const criticalFailed = [
     contextResult,
     metricsResult,
     permissionsResult,
-    modeResult,
     companyResult,
     productsResult,
-    balancesResult,
-    customersResult,
-    suppliersResult,
-    documentsResult,
-    movementsResult,
-    paymentsResult,
-    ledgerResult,
-    usersResult,
-    paymentTermsResult,
-    paymentMethodsResult,
-    categoriesResult,
-    brandsResult,
-    unitsResult,
-    taxCodesResult,
-  ].find((result) => result && result.error && result !== modeResult);
-  if (failed?.error) throw failed.error;
+  ].find((result) => result && result.error);
+  if (criticalFailed?.error) throw criticalFailed.error;
   if (!companyResult.data) throw new Error('Dados da empresa não encontrados.');
 
   const rawContext = contextResult.data as Row;
@@ -569,15 +554,27 @@ export async function loadAppData(): Promise<AppData> {
   const suppliers: Supplier[] = (suppliersResult.data ?? []).map((row: Row) => {
     const addresses = (row.supplier_addresses ?? []) as Row[];
     const address = addresses.find((item) => item.is_primary) ?? addresses[0];
+
+    const supplierDocs = (documentsResult.data ?? []).filter(
+      (d: Row) =>
+        d.supplier_id === row.id &&
+        relation(d.document_types)?.code === 'SUPPLIER_INVOICE' &&
+        ['CONFIRMED', 'PARTIALLY_PAID', 'PAID'].includes(d.status)
+    );
+    const totalPurchasesCalc = supplierDocs.reduce((sum: number, d: Row) => sum + numberValue(d.grand_total), 0);
+
     return {
       id: row.id,
-      number: row.supplier_number,
+      code: row.supplier_number ?? '',
+      number: row.supplier_number ?? '',
       name: row.name,
       nuit: row.tax_number ?? '',
       address: address?.address_line_1 ?? '',
       phone: row.telephone ?? '',
+      email: row.email ?? '',
       contactPerson: row.contact_person ?? '',
-      totalPurchases: numberValue(row.current_balance),
+      totalPurchases: totalPurchasesCalc,
+      pendingBalance: numberValue(row.current_balance),
     };
   });
 
@@ -646,38 +643,41 @@ export async function loadAppData(): Promise<AppData> {
     };
   });
 
-  const movements: StockMovement[] = (movementsResult.data ?? [])
-    .map((row: Row) => {
-      const product = relation(row.products) || articles.find((p: Article) => p.id === row.product_id);
-      const doc = relation(row.documents);
-      const docType = doc ? relation(doc.document_types) : null;
-      
-      const isEntrada = numberValue(row.quantity_in) > 0;
-      const computedRef = doc?.display_number 
-        || row.legacy_ref 
-        || row.reason 
-        || (isEntrada ? 'Entrada Directa' : 'Saída Directa');
+  const rawMovements = ((movementsResult?.data as Row[]) ?? []).map((row: Row) => {
+    // Filter out initial legacy test movements STK-001, STK-002
+    if (row.legacy_ref === 'STK-001' || row.legacy_ref === 'STK-002') return null;
 
-      return {
-        id: row.id,
-        type: isEntrada ? 'entrada' : 'saida',
-        docRef: computedRef,
-        sourceDocumentId: row.source_document_id ?? doc?.id,
-        docTypeCode: docType?.code,
-        docTypeName: docType?.name,
-        date: row.created_at,
-        articleCode: product?.code ?? '',
-        articleDescription: product?.description ?? '',
-        quantity: Math.max(numberValue(row.quantity_in), numberValue(row.quantity_out)),
-        entityName: '',
-        operator: relation(row.user_profiles)?.full_name || 'Administrador Casa de Pneus',
-        warehouseId: relation(row.warehouses)?.id ?? undefined,
-        warehouseName: relation(row.warehouses)?.name ?? undefined,
-        reason: row.reason ?? undefined,
-        notes: row.notes ?? undefined,
-        unitCost: numberValue(row.unit_cost),
-      };
-    });
+    const product = relation(row.products) || articles.find((p: Article) => p.id === row.product_id);
+    if (!product || !product.code) return null;
+
+    const matchedDoc = documents.find((d) => d.id === row.source_document_id);
+    const isEntrada = numberValue(row.quantity_in) > 0;
+    const computedRef = matchedDoc?.displayNumber 
+      || row.legacy_ref 
+      || (isEntrada ? 'Entrada Directa' : 'Saída Directa');
+
+    const item: StockMovement = {
+      id: row.id,
+      type: isEntrada ? 'entrada' : 'saida',
+      docRef: computedRef,
+      sourceDocumentId: row.source_document_id ?? matchedDoc?.id,
+      docTypeCode: matchedDoc?.typeCode,
+      docTypeName: matchedDoc?.typeName,
+      date: row.created_at,
+      articleCode: product.code,
+      articleDescription: product.description,
+      quantity: Math.max(numberValue(row.quantity_in), numberValue(row.quantity_out)),
+      entityName: '',
+      operator: relation(row.user_profiles)?.full_name || 'Administrador Casa de Pneus',
+      warehouseId: relation(row.warehouses)?.id ?? undefined,
+      warehouseName: relation(row.warehouses)?.name ?? undefined,
+      reason: isEntrada ? 'Entrada Direta Manual' : 'Saída Direta Manual',
+      unitCost: numberValue(row.unit_cost),
+    };
+    return item;
+  });
+
+  const movements: StockMovement[] = rawMovements.filter((m): m is StockMovement => m !== null);
 
   const payments: PaymentRecord[] = (paymentsResult.data ?? []).map((row: Row) => ({
     id: row.id,
@@ -846,4 +846,52 @@ export async function fetchSalesOperationalReport(
 
   if (error) throw new Error(error.message || 'Falha ao carregar relatório de vendas.');
   return data;
+}
+
+export async function createAndConfirmFinancialAdvice(payload: {
+  entityType: 'CUSTOMER' | 'SUPPLIER';
+  adviceType: 'CREDIT';
+  entityId: string;
+  documentDate: string;
+  targetDocumentId?: string;
+  reason: string;
+  notes: string;
+  items: {
+    description: string;
+    net_amount: number;
+    tax_rate: number;
+    tax_amount: number;
+    total_amount: number;
+  }[];
+}): Promise<string> {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('create_and_confirm_financial_advice', {
+    p_entity_type: payload.entityType,
+    p_advice_type: payload.adviceType,
+    p_entity_id: payload.entityId,
+    p_document_date: payload.documentDate,
+    p_target_document_id: payload.targetDocumentId || null,
+    p_reason: payload.reason,
+    p_notes: payload.notes || null,
+    p_items: payload.items,
+  });
+
+  if (error) throw new Error(error.message || 'Falha ao confirmar o aviso financeiro na base de dados.');
+  return data as string;
+}
+
+export async function cancelFinancialAdvice(
+  documentId: string,
+  reason: string,
+  idempotencyKey?: string
+): Promise<boolean> {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('cancel_financial_advice', {
+    p_advice_document_id: documentId,
+    p_cancellation_reason: reason,
+    p_idempotency_key: idempotencyKey || null,
+  });
+
+  if (error) throw new Error(error.message || 'Falha ao cancelar o aviso financeiro na base de dados.');
+  return Boolean(data);
 }
