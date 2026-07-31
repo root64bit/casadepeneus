@@ -29,7 +29,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
   const [documentType, setDocumentType] = useState<'CUSTOMER_INVOICE' | 'CASH_SALE' | 'CUSTOMER_DELIVERY_NOTE'>('CUSTOMER_INVOICE');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [docNumber, setDocNumber] = useState('A atribuir ao confirmar');
-  const [docStatus, setDocStatus] = useState<'PREPARATION' | 'CONFIRMING' | 'CONFIRMED'>('PREPARATION');
+  const [docStatus, setDocStatus] = useState<'PREPARATION' | 'CONFIRMING' | 'CONFIRMED' | 'READ_ONLY'>('PREPARATION');
 
   const [clientCodeInput, setClientCodeInput] = useState(clients[0]?.number || clients[0]?.code || '');
   const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id ?? '');
@@ -59,13 +59,23 @@ export const NewSale: React.FC<NewSaleProps> = ({
   const [saveError, setSaveError] = useState('');
   const [confirmedSaleRecord, setConfirmedSaleRecord] = useState<SaleInvoice | null>(null);
 
-  const articleSelectRef = useRef<HTMLInputElement>(null);
   const qtyInputRef = useRef<HTMLInputElement>(null);
 
+  const confirmResetIfNeeded = (): boolean => {
+    if (items.length > 0 && docStatus !== 'CONFIRMED' && docStatus !== 'READ_ONLY') {
+      return window.confirm('Existem artigos/alterações não gravadas. Deseja descartar?');
+    }
+    return true;
+  };
+
   const handleSelectDocumentType = (type: 'CUSTOMER_INVOICE' | 'CASH_SALE' | 'CUSTOMER_DELIVERY_NOTE') => {
+    if (!confirmResetIfNeeded()) return;
+
     setDocumentType(type);
     setDocStatus('PREPARATION');
+    setItems([]);
     setConfirmedSaleRecord(null);
+    setSaveError('');
 
     if (type === 'CASH_SALE') {
       const pontual = clients.find((c) => c.name.toLowerCase().includes('pontual')) || clients[0];
@@ -125,6 +135,8 @@ export const NewSale: React.FC<NewSaleProps> = ({
   };
 
   const handleAddItem = () => {
+    if (docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY') return;
+
     const art = articles.find((a) => a.id === selectedArticleId);
     if (!art || inputQty <= 0) return;
 
@@ -153,11 +165,15 @@ export const NewSale: React.FC<NewSaleProps> = ({
   };
 
   const handleRemoveItem = (index: number) => {
+    if (docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY') return;
     setItems((current) => current.filter((_, i) => i !== index));
   };
 
-  const loadLastDocument = () => {
-    if (!documents || documents.length === 0) return false;
+  const loadLastDocumentInConsultationMode = () => {
+    if (!documents || documents.length === 0) {
+      setSaveError('Nenhum documento anterior encontrado na base de dados.');
+      return false;
+    }
 
     const matchingDocs = documents.filter((d) => {
       if (documentType === 'CASH_SALE') {
@@ -179,12 +195,43 @@ export const NewSale: React.FC<NewSaleProps> = ({
       setSelectedClientName(found.name);
       setClientNuit(found.nuit || '');
       setClientAddress(found.address || '');
-      if (documents?.some((d) => d.partyId === found.id && d.outstandingAmount > 0)) {
-        setShowClientInvoices(true);
-      }
-      return true;
     }
-    return false;
+
+    setDocNumber(targetDoc.displayNumber);
+    setDate(targetDoc.date);
+    setDocStatus('READ_ONLY');
+    setSaveError('');
+
+    const consultSale: SaleInvoice = {
+      id: targetDoc.id,
+      clientId: targetDoc.partyId,
+      docNumber: targetDoc.displayNumber,
+      date: targetDoc.date,
+      clientName: targetDoc.partyName || selectedClientName,
+      clientNuit: found?.nuit || '',
+      clientAddress: found?.address || '',
+      paymentMethod: 'CASH',
+      sellerName: operatorName,
+      items: [],
+      subtotalBruto: targetDoc.netTotal,
+      descontoTotal: 0,
+      subtotalLiquido: targetDoc.netTotal,
+      ivaTotal: targetDoc.taxTotal,
+      totalAmount: targetDoc.grandTotal,
+      paidAmount: targetDoc.paidAmount,
+      pendingAmount: targetDoc.outstandingAmount,
+      status: targetDoc.status === 'CONFIRMED' ? 'Concluída' : 'Pendente',
+    };
+
+    setConfirmedSaleRecord(consultSale);
+    return true;
+  };
+
+  const handleDuplicateToNewDocument = () => {
+    setDocStatus('PREPARATION');
+    setDocNumber('A atribuir ao confirmar');
+    setConfirmedSaleRecord(null);
+    setSaveError('');
   };
 
   const subtotalBruto = items.reduce((acc, item) => acc + item.unitPrice * item.quantity, 0);
@@ -244,6 +291,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
         paidAmount: documentType === 'CASH_SALE' ? totalFinalAmount : 0,
         pendingAmount: documentType === 'CASH_SALE' || documentType === 'CUSTOMER_DELIVERY_NOTE' ? 0 : totalFinalAmount,
         status: 'Concluída',
+        notes,
       };
 
       const savedSale = await onCompleteSale(newSale);
@@ -262,6 +310,8 @@ export const NewSale: React.FC<NewSaleProps> = ({
   };
 
   const handleResetForm = () => {
+    if (!confirmResetIfNeeded()) return;
+
     setItems([]);
     setDocStatus('PREPARATION');
     setDocNumber('A atribuir ao confirmar');
@@ -290,6 +340,12 @@ export const NewSale: React.FC<NewSaleProps> = ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        loadLastDocumentInConsultationMode();
+        return;
+      }
+
       if (e.key === 'F2') {
         e.preventDefault();
         if (docStatus === 'CONFIRMING') {
@@ -298,25 +354,25 @@ export const NewSale: React.FC<NewSaleProps> = ({
           if (items.length > 0) {
             setDocStatus('CONFIRMING');
           } else {
-            loadLastDocument();
+            setSaveError('Adicione pelo menos 1 artigo antes de gravar com F2.');
           }
         }
       } else if (e.key === 'F3') {
         e.preventDefault();
         if (docStatus === 'CONFIRMING') {
           setDocStatus('PREPARATION');
+        } else if (docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY') {
+          setSaveError('Documento já confirmado/leitura. Alterações directas bloqueadas.');
         }
       } else if (e.key === 'F5') {
         e.preventDefault();
         handleResetForm();
       } else if (e.key === 'F9') {
         e.preventDefault();
-        if (docStatus === 'CONFIRMED' && confirmedSaleRecord) {
+        if ((docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY') && confirmedSaleRecord) {
           onOpenPrintModal(confirmedSaleRecord);
-        } else if (items.length > 0) {
-          void handleSaveAndConfirm(true);
         } else {
-          setSaveError('Adicione pelo menos 1 artigo antes de imprimir.');
+          setSaveError('Confirme primeiro o documento com F2 antes de imprimir (F9).');
         }
       } else if (e.key === 'Escape') {
         e.preventDefault();
@@ -325,6 +381,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
         }
       }
     };
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [docStatus, items, selectedClientId, totalFinalAmount, clients, documents, documentType, confirmedSaleRecord]);
@@ -378,6 +435,8 @@ export const NewSale: React.FC<NewSaleProps> = ({
             className={`px-2.5 py-1 rounded text-[11px] font-extrabold uppercase ${
               docStatus === 'CONFIRMED'
                 ? 'bg-green-100 text-green-800 border border-green-300'
+                : docStatus === 'READ_ONLY'
+                ? 'bg-purple-100 text-purple-800 border border-purple-300'
                 : docStatus === 'CONFIRMING'
                 ? 'bg-amber-100 text-amber-900 border border-amber-300 animate-pulse'
                 : 'bg-blue-50 text-blue-800 border border-blue-200'
@@ -385,19 +444,19 @@ export const NewSale: React.FC<NewSaleProps> = ({
           >
             {docStatus === 'CONFIRMED'
               ? 'CONFIRMADO'
+              : docStatus === 'READ_ONLY'
+              ? 'EM CONSULTA (LEITURA)'
               : docStatus === 'CONFIRMING'
               ? 'A CONFIRMAR'
               : 'EM PREPARAÇÃO'}
           </span>
           <button
             type="button"
-            onClick={loadLastDocument}
-            className="rounded bg-[#003366] px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-800 transition-colors"
-            title={`Puxar cliente do último documento de ${
-              documentType === 'CASH_SALE' ? 'VD' : documentType === 'CUSTOMER_DELIVERY_NOTE' ? 'Guia de Remessa' : 'Factura'
-            }`}
+            onClick={loadLastDocumentInConsultationMode}
+            className="rounded bg-slate-800 text-white px-3 py-1.5 text-xs font-bold hover:bg-slate-900 transition-colors"
+            title="Consultar último documento (Ctrl+L)"
           >
-            {`F2 — Última ${documentType === 'CASH_SALE' ? 'VD' : documentType === 'CUSTOMER_DELIVERY_NOTE' ? 'Guia' : 'Factura'}`}
+            Último Documento (Ctrl+L)
           </button>
           <button
             type="button"
@@ -409,6 +468,21 @@ export const NewSale: React.FC<NewSaleProps> = ({
         </div>
       </section>
 
+      {docStatus === 'READ_ONLY' && (
+        <div className="bg-purple-50 border border-purple-300 p-3 rounded-lg flex items-center justify-between text-xs font-mono">
+          <span className="font-bold text-purple-900">
+            📄 DOCUMENTO EM CONSULTA (#{docNumber}) — MODO LEITURA (Sem novos lançamentos ou saídas de stock)
+          </span>
+          <button
+            type="button"
+            onClick={handleDuplicateToNewDocument}
+            className="bg-purple-700 text-white px-3 py-1 rounded font-bold hover:bg-purple-800"
+          >
+            Copiar para Novo Documento
+          </button>
+        </div>
+      )}
+
       <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-4 rounded-lg shadow-sm">
         <div className="grid grid-cols-12 gap-3 text-xs">
           <div className="col-span-12 md:col-span-2">
@@ -416,8 +490,9 @@ export const NewSale: React.FC<NewSaleProps> = ({
             <input
               type="date"
               value={date}
+              disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
               onChange={(e) => setDate(e.target.value)}
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring"
+              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring disabled:opacity-60"
             />
           </div>
 
@@ -427,6 +502,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
               type="text"
               placeholder="Ex: 5"
               value={clientCodeInput}
+              disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
               onChange={(e) => setClientCodeInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
@@ -436,7 +512,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
                 }
               }}
               onBlur={() => lookupClientByCode(clientCodeInput)}
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring font-bold"
+              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring font-bold disabled:opacity-60"
             />
           </div>
 
@@ -445,9 +521,10 @@ export const NewSale: React.FC<NewSaleProps> = ({
             <input
               type="text"
               value={selectedClientName}
+              disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
               onChange={(e) => setSelectedClientName(e.target.value)}
               placeholder="Nome do Cliente"
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-bold border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring"
+              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-bold border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring disabled:opacity-60"
             />
           </div>
 
@@ -456,9 +533,10 @@ export const NewSale: React.FC<NewSaleProps> = ({
             <input
               type="text"
               value={clientNuit}
+              disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
               onChange={(e) => setClientNuit(e.target.value)}
               placeholder="NUIT (opcional)"
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring"
+              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring disabled:opacity-60"
             />
           </div>
 
@@ -467,9 +545,10 @@ export const NewSale: React.FC<NewSaleProps> = ({
             <input
               type="text"
               value={clientAddress}
+              disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
               onChange={(e) => setClientAddress(e.target.value)}
               placeholder="Morada (opcional)"
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring"
+              className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring disabled:opacity-60"
             />
           </div>
 
@@ -478,8 +557,9 @@ export const NewSale: React.FC<NewSaleProps> = ({
               <label className="block font-bold text-[#737780] uppercase mb-1">Condição de Pagamento</label>
               <select
                 value={paymentSelection}
+                disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
                 onChange={(e) => setPaymentSelection(e.target.value)}
-                className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs font-bold text-[#003366]"
+                className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs font-bold text-[#003366] disabled:opacity-60"
               >
                 {paymentTerms.map((term) => (
                   <option key={term.id} value={`TERM:${term.code}`}>
@@ -495,8 +575,9 @@ export const NewSale: React.FC<NewSaleProps> = ({
               <label className="block font-bold text-[#737780] uppercase mb-1">Método de Pagamento</label>
               <select
                 value={paymentSelection}
+                disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
                 onChange={(e) => setPaymentSelection(e.target.value)}
-                className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs font-bold text-[#006e25]"
+                className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs font-bold text-[#006e25] disabled:opacity-60"
               >
                 {paymentMethods.map((method) => (
                   <option key={method.id} value={`METHOD:${method.code}`}>
@@ -513,9 +594,10 @@ export const NewSale: React.FC<NewSaleProps> = ({
               <input
                 type="text"
                 value={deliveryLocation}
+                disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
                 onChange={(e) => setDeliveryLocation(e.target.value)}
                 placeholder="Ex: Armazém Central ou Destino do Cliente"
-                className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring font-mono"
+                className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring font-mono disabled:opacity-60"
               />
             </div>
           )}
@@ -562,7 +644,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
                 <tr key={d.id} className="hover:bg-[#f3f4f5] dark:hover:bg-[#282c2e]">
                   <td className="p-2">{d.displayNumber}</td>
                   <td className="p-2">{d.date}</td>
-                  <td className="p-2">{d.typeName}</td>
+                  <td className="p-2 font-sans">{d.typeName}</td>
                   <td className="p-2 text-right">{formatMZN(d.grandTotal)}</td>
                   <td className="p-2 text-right font-bold text-red-600">{formatMZN(d.outstandingAmount)}</td>
                 </tr>
@@ -594,7 +676,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f] font-mono">
-              {docStatus !== 'CONFIRMED' && (
+              {docStatus !== 'CONFIRMED' && docStatus !== 'READ_ONLY' && (
                 <tr className="bg-[#0000aa]/10 dark:bg-[#282c2e] border-b-2 border-[#003366]">
                   <td className="p-2" colSpan={2}>
                     <ArticleSearchSelect
@@ -678,7 +760,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
                   <td className="p-3 text-center font-bold text-[#003366]">{item.ivaPercent}%</td>
                   <td className="p-3 text-right font-bold text-[#006e25]">{formatMZN(item.total)}</td>
                   <td className="p-3 text-center">
-                    {docStatus !== 'CONFIRMED' && (
+                    {docStatus !== 'CONFIRMED' && docStatus !== 'READ_ONLY' && (
                       <button
                         type="button"
                         onClick={() => handleRemoveItem(index)}
@@ -713,9 +795,9 @@ export const NewSale: React.FC<NewSaleProps> = ({
                 min="0"
                 max="100"
                 value={generalDiscount}
-                disabled={docStatus === 'CONFIRMED'}
+                disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
                 onChange={(e) => setGeneralDiscount(Number(e.target.value))}
-                className="w-20 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded p-1 text-center font-bold text-[#191c1d] dark:text-white"
+                className="w-20 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded p-1 text-center font-bold text-[#191c1d] dark:text-white disabled:opacity-60"
               />
               <span className="font-bold text-[#191c1d] dark:text-white">Valor: {formatMZN(descontoGeralValor)}</span>
             </div>
@@ -724,10 +806,10 @@ export const NewSale: React.FC<NewSaleProps> = ({
               <label className="block font-bold uppercase text-[#191c1d] dark:text-white mb-1 text-xs">Observações / Garantias:</label>
               <textarea
                 value={notes}
-                disabled={docStatus === 'CONFIRMED'}
+                disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Observações da fatura ou termos de garantia dos pneus..."
-                className="w-full h-16 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs text-[#191c1d] dark:text-white focus:outline-none"
+                className="w-full h-16 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs text-[#191c1d] dark:text-white focus:outline-none disabled:opacity-60"
               ></textarea>
             </div>
           </div>
@@ -810,7 +892,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
           )}
 
           <div className="flex items-center space-x-3 ml-auto">
-            {docStatus === 'CONFIRMED' && confirmedSaleRecord && (
+            {(docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY') && confirmedSaleRecord && (
               <button
                 type="button"
                 onClick={() => onOpenPrintModal(confirmedSaleRecord)}
@@ -820,7 +902,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
               </button>
             )}
 
-            {docStatus !== 'CONFIRMED' && (
+            {docStatus !== 'CONFIRMED' && docStatus !== 'READ_ONLY' && (
               <>
                 <button
                   type="button"
@@ -841,7 +923,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
                   }}
                   className="px-4 py-2 bg-[#003366] text-white rounded font-bold text-xs uppercase hover:brightness-110 disabled:opacity-50"
                 >
-                  Gravar & Imprimir (F9)
+                  Confirmar & Imprimir (F9)
                 </button>
                 <button
                   type="button"
@@ -863,7 +945,6 @@ export const NewSale: React.FC<NewSaleProps> = ({
         </div>
       </section>
 
-      {/* BARRA DE ATALHOS OPERACIONAL FIXA NO RODAPÉ */}
       <div className="bg-[#e7e8e9] dark:bg-[#282c2e] text-[#191c1d] dark:text-white border-t border-[#c3c6d1] dark:border-[#43474f] px-6 py-2 text-xs font-mono font-bold flex items-center justify-between rounded shadow-sm">
         <div className="flex items-center space-x-6">
           <span>ESC=Sair</span>
@@ -879,10 +960,10 @@ export const NewSale: React.FC<NewSaleProps> = ({
           <button
             type="button"
             onClick={() => {
-              if (docStatus === 'CONFIRMED' && confirmedSaleRecord) {
+              if ((docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY') && confirmedSaleRecord) {
                 onOpenPrintModal(confirmedSaleRecord);
               } else {
-                void handleSaveAndConfirm(true);
+                setSaveError('Confirme primeiro o documento com F2 antes de imprimir com F9.');
               }
             }}
             className="hover:underline"
