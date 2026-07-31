@@ -30,10 +30,11 @@ export const NewSale: React.FC<NewSaleProps> = ({
   const [showClientInvoices, setShowClientInvoices] = useState(false);
   const [documentType, setDocumentType] = useState<'CUSTOMER_INVOICE' | 'CASH_SALE' | 'CUSTOMER_DELIVERY_NOTE'>('CUSTOMER_INVOICE');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [clientCodeInput, setClientCodeInput] = useState(clients[0]?.number || clients[0]?.code || '');
   const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id ?? '');
   const [selectedClientName, setSelectedClientName] = useState(clients[0]?.name ?? '');
-  const [clientNuit, setClientNuit] = useState(clients[0]?.nuit ?? '');
-  const [clientAddress, setClientAddress] = useState(clients[0]?.address ?? '');
+  const [clientNuit, setClientNuit] = useState('');
+  const [clientAddress, setClientAddress] = useState('');
   const immediateTerm = paymentTerms.find((item) => item.requiresImmediatePayment);
   const creditTerm = paymentTerms.find((item) => !item.requiresImmediatePayment);
   const receiptMethod = paymentMethods.find((item) => item.allowsCustomerReceipt);
@@ -62,10 +63,11 @@ export const NewSale: React.FC<NewSaleProps> = ({
   const handleSelectClient = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const found = clients.find(c => c.id === e.target.value);
     if (found) {
+      setClientCodeInput(found.number || found.code || '');
       setSelectedClientId(found.id);
       setSelectedClientName(found.name);
-      setClientNuit(found.nuit);
-      setClientAddress(found.address);
+      setClientNuit(found.nuit || '');
+      setClientAddress(found.address || '');
     } else {
       setSelectedClientId('');
       setSelectedClientName('');
@@ -74,7 +76,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
 
   const handleAddItem = () => {
     const art = articles.find(a => a.id === selectedArticleId);
-    if (!art) return;
+    if (!art || inputQty <= 0) return;
 
     const basePrice = art.sellPrice;
     const discountedPrice = basePrice * (1 - inputDiscount / 100);
@@ -91,9 +93,14 @@ export const NewSale: React.FC<NewSaleProps> = ({
       total: Math.round(itemTotalWithIva * 100) / 100
     };
 
-    setItems([...items, newItem]);
+    setItems((current) => [...current, newItem]);
     setInputQty(1);
     setInputDiscount(0);
+
+    // Return focus to article search select input for continuous fast entry
+    setTimeout(() => {
+      document.querySelector<HTMLInputElement>('input[placeholder*="Pesquisar artigo"]')?.focus();
+    }, 50);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -340,7 +347,15 @@ export const NewSale: React.FC<NewSaleProps> = ({
               <input
                 type="text"
                 placeholder="Ex: 5"
+                value={clientCodeInput}
                 onChange={(e) => handleClientCodeChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleClientCodeChange(clientCodeInput);
+                    document.querySelector<HTMLInputElement>('input[placeholder="Nome do Cliente"]')?.focus();
+                  }
+                }}
                 className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-sm focus-ring font-bold"
               />
             </div>
@@ -485,6 +500,12 @@ export const NewSale: React.FC<NewSaleProps> = ({
                           min="1"
                           value={inputQty}
                           onChange={(e) => setInputQty(Number(e.target.value))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddItem();
+                            }
+                          }}
                           className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-center text-xs font-bold bg-yellow-100 text-black"
                         />
                         <span className="text-[10px] font-bold text-[#006e25] mt-0.5 whitespace-nowrap">

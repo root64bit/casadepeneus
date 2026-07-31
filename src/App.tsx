@@ -236,12 +236,6 @@ function App() {
 
     const savedSale = await createCustomerSale(sale, sale.clientId);
     await refreshData();
-    if (savedSale.paymentMethodCode) {
-      setPaymentSale(savedSale);
-      setPaymentModalAmount(savedSale.totalAmount);
-      setPaymentModalClient(savedSale.clientName);
-      setPaymentModalOpen(true);
-    }
     return savedSale;
   };
 
