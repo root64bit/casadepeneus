@@ -1,19 +1,23 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { AccessScope, Article, StockMovement } from '../types';
+import type { AccessScope, Article, StockMovement, DocumentRecord } from '../types';
 import { ArticleSearchSelect } from '../components/ArticleSearchSelect';
+import { ArticleLedgerModal } from '../components/ArticleLedgerModal';
 
 interface StockMovementsProps {
   movements: StockMovement[];
   articles: Article[];
+  documents?: DocumentRecord[];
   warehouses: AccessScope[];
   operatorName: string;
   onAddMovement: (movement: StockMovement) => Promise<void>;
+  onOpenDocument?: (doc: DocumentRecord) => void;
   canPostEntry: boolean;
   canPostExit: boolean;
+  canViewCost?: boolean;
 }
 
 export const StockMovements: React.FC<StockMovementsProps> = ({
-  movements, articles, warehouses, operatorName, onAddMovement, canPostEntry, canPostExit,
+  movements, articles, documents = [], warehouses, operatorName, onAddMovement, onOpenDocument, canPostEntry, canPostExit, canViewCost = true,
 }) => {
   const [type, setType] = useState<'entrada' | 'saida'>(canPostEntry ? 'entrada' : 'saida');
   const [warehouseId, setWarehouseId] = useState('');
@@ -25,6 +29,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [ledgerArticle, setLedgerArticle] = useState<Article | null>(null);
 
   const article = useMemo(() => articles.find((item) => item.id === articleId), [articles, articleId]);
   const quantity = Number(quantityStr) || 0;
@@ -242,8 +247,22 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                         </span>
                       </td>
                       <td className="p-3 font-semibold">{item.docRef || '—'}</td>
-                      <td className="p-3 font-bold text-[#003366] dark:text-[#a7c8ff]">
-                        [{item.articleCode}] {item.articleDescription}
+                      <td className="p-3 font-bold">
+                        {(() => {
+                          const matchedArt = articles.find((a) => a.code.toLowerCase() === item.articleCode?.toLowerCase());
+                          return matchedArt ? (
+                            <button
+                              type="button"
+                              onClick={() => setLedgerArticle(matchedArt)}
+                              className="text-[#003366] dark:text-[#a7c8ff] hover:underline font-extrabold"
+                              title="Clique para abrir o Extracto de Movimentos deste Artigo"
+                            >
+                              [{item.articleCode}] {item.articleDescription} 📊
+                            </button>
+                          ) : (
+                            <span className="text-[#003366] dark:text-[#a7c8ff]">[{item.articleCode}] {item.articleDescription}</span>
+                          );
+                        })()}
                       </td>
                       <td className="p-3 text-right font-black text-sm">
                         {item.quantity}
@@ -258,6 +277,22 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
           </div>
         )}
       </section>
+
+      {/* Extracto Modal */}
+      <ArticleLedgerModal
+        isOpen={Boolean(ledgerArticle)}
+        onClose={() => setLedgerArticle(null)}
+        article={ledgerArticle}
+        articles={articles}
+        movements={movements}
+        documents={documents}
+        onOpenDocument={onOpenDocument}
+        canViewCost={canViewCost}
+        onSelectArticleId={(id) => {
+          const found = articles.find((a) => a.id === id);
+          if (found) setLedgerArticle(found);
+        }}
+      />
     </div>
   );
 };

@@ -433,10 +433,12 @@ function App() {
           <Inventory
             articles={articles}
             movements={movements}
+            documents={documents}
             globalSearch={globalSearch}
             onOpenNewArticleModal={handleOpenNewArticleModal}
             onEditArticle={handleEditArticle}
             onDeleteArticle={handleDeleteArticle}
+            onOpenDocument={setPrintDocument}
             setActiveTab={setActiveTab}
             canViewCost={permissions.includes('products.view_cost')}
             canCreate={permissions.includes('products.create')}
@@ -489,9 +491,12 @@ function App() {
           <StockMovements
             movements={movements}
             articles={articles}
+            documents={documents}
             onAddMovement={handleAddMovement}
+            onOpenDocument={setPrintDocument}
             canPostEntry={permissions.includes('stock.direct_entry') || permissions.includes('stock.entry.confirm')}
             canPostExit={permissions.includes('stock.direct_exit') || permissions.includes('stock.exit.confirm')}
+            canViewCost={permissions.includes('products.view_cost')}
             warehouses={userContext?.warehouses ?? []}
             operatorName={userContext?.fullName ?? ''}
           />

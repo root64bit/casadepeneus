@@ -724,6 +724,7 @@ export async function loadAppData(): Promise<AppData> {
   const brands: ReferenceOption[] = (brandsResult.data ?? []).map((row: Row) => ({
     id: row.id, code: row.id, name: row.name,
   }));
+
   const units: ReferenceOption[] = (unitsResult.data ?? []).map((row: Row) => ({
     id: row.id, code: row.abbreviation, name: `${row.name} (${row.abbreviation})`,
   }));
@@ -753,4 +754,82 @@ export async function loadAppData(): Promise<AppData> {
     units,
     taxCodes,
   };
+}
+
+export interface StockExtractResult {
+  product_id: string;
+  product_code: string;
+  product_description: string;
+  unit: string;
+  opening_balance: number;
+  current_stock: number;
+  avg_cost: number;
+  stock_valuation: number;
+  can_view_cost: boolean;
+  movements: Array<{
+    id: string;
+    created_at: string;
+    doc_ref: string;
+    source_document_id?: string;
+    doc_type_code: string;
+    doc_type_name: string;
+    movement_direction: 'ENTRADA' | 'SAÍDA';
+    quantity_in: number;
+    quantity_out: number;
+    unit_cost: number;
+    movement_value: number;
+    running_balance: number;
+    operator_name: string;
+    reason: string;
+  }>;
+  totals: {
+    total_in_qty: number;
+    total_out_qty: number;
+    total_in_val: number;
+    total_out_val: number;
+  };
+}
+
+export async function fetchStockMovementExtract(
+  productId: string,
+  from?: string,
+  to?: string,
+  movementType: string = 'ALL'
+): Promise<StockExtractResult> {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('get_stock_movement_extract', {
+    p_product_id: productId,
+    p_from: from || null,
+    p_to: to || null,
+    p_movement_type: movementType,
+  });
+
+  if (error) throw new Error(error.message || 'Falha ao carregar extracto de stock.');
+  return data as StockExtractResult;
+}
+
+export async function fetchSalesOperationalReport(
+  from?: string,
+  to?: string,
+  docType: string = 'ALL',
+  paymentStatus: string = 'ALL',
+  customerId?: string,
+  productId?: string,
+  limit: number = 1000,
+  offset: number = 0
+): Promise<any> {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('get_sales_operational_report_v2', {
+    p_from: from || null,
+    p_to: to || null,
+    p_doc_type: docType,
+    p_payment_status: paymentStatus,
+    p_customer_id: customerId || null,
+    p_product_id: productId || null,
+    p_limit: limit,
+    p_offset: offset,
+  });
+
+  if (error) throw new Error(error.message || 'Falha ao carregar relatório de vendas.');
+  return data;
 }

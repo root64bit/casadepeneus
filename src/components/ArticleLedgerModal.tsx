@@ -1,6 +1,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import type { Article, StockMovement, DocumentRecord } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
+import { fetchStockMovementExtract, type StockExtractResult } from '../lib/appData';
 
 interface ArticleLedgerModalProps {
   isOpen: boolean;
@@ -45,10 +46,35 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
+  const [serverExtract, setServerExtract] = useState<StockExtractResult | null>(null);
+  const [loading, setLoading] = useState(false);
+
   // Sync search input with selected article code
   useEffect(() => {
     if (article) setSearchCodeQuery(article.code);
   }, [article]);
+
+  // Load RPC extract whenever article, dates or movement type change
+  useEffect(() => {
+    if (!isOpen || !article) return;
+    let active = true;
+    setLoading(true);
+
+    fetchStockMovementExtract(article.id, dateFrom, dateTo, movementTypeFilter)
+      .then((res) => {
+        if (active) setServerExtract(res);
+      })
+      .catch(() => {
+        // Fallback to local props if RPC call fails or offline
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isOpen, article, dateFrom, dateTo, movementTypeFilter]);
 
   // Handle article lookup on Enter
   const handleCodeSearchEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -68,7 +94,42 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
   const { articleMovements, initialBalance, totals } = useMemo(() => {
     if (!article) return { articleMovements: [], initialBalance: 0, totals: { entradasQty: 0, saidasQty: 0, entradasVal: 0, saidasVal: 0 } };
 
-    // All movements for this specific article
+    if (serverExtract) {
+      const mapped = serverExtract.movements.map((m) => {
+        const matchedDoc = documents.find(
+          (d) => (m.source_document_id && d.id === m.source_document_id) || d.displayNumber.toLowerCase() === m.doc_ref.toLowerCase()
+        );
+        return {
+          id: m.id,
+          rawDate: m.created_at,
+          formattedDate: new Date(m.created_at).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+          formattedTime: new Date(m.created_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' }),
+          docRef: m.doc_ref,
+          docType: m.doc_type_name,
+          movementType: m.movement_direction,
+          entradas: m.quantity_in,
+          saidas: m.quantity_out,
+          saldo: m.running_balance,
+          unitCost: m.unit_cost,
+          valor: m.movement_value,
+          operator: m.operator_name,
+          matchedDoc,
+        };
+      });
+
+      return {
+        articleMovements: mapped,
+        initialBalance: serverExtract.opening_balance,
+        totals: {
+          entradasQty: serverExtract.totals.total_in_qty,
+          saidasQty: serverExtract.totals.total_out_qty,
+          entradasVal: serverExtract.totals.total_in_val,
+          saidasVal: serverExtract.totals.total_out_val,
+        },
+      };
+    }
+
+    // Fallback: All movements for this specific article from props
     const allArticleMovs = movements
       .filter((m) => m.articleCode?.toLowerCase() === article.code.toLowerCase())
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -151,7 +212,7 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
         saidasVal: totalSaidasVal,
       },
     };
-  }, [article, movements, dateFrom, dateTo, movementTypeFilter, documents]);
+  }, [article, movements, dateFrom, dateTo, movementTypeFilter, documents, serverExtract]);
 
   if (!isOpen || !article) return null;
 

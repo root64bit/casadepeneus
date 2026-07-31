@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import type { SaleInvoice, DocumentRecord, Article, Client } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
+import { fetchSalesOperationalReport } from '../lib/appData';
 
 interface ReportsProps {
   permissions: string[];

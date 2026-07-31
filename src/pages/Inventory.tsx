@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
-import { Article, StockMovement } from '../types';
+import { Article, StockMovement, DocumentRecord } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
 import { ArticleLedgerModal } from '../components/ArticleLedgerModal';
 
 interface InventoryProps {
   articles: Article[];
   movements?: StockMovement[];
+  documents?: DocumentRecord[];
   globalSearch: string;
   onOpenNewArticleModal: () => void;
   onEditArticle?: (article: Article) => void;
   onDeleteArticle?: (article: Article) => void;
+  onOpenDocument?: (doc: DocumentRecord) => void;
   setActiveTab: (tab: string) => void;
   canViewCost: boolean;
   canCreate: boolean;
@@ -18,10 +20,12 @@ interface InventoryProps {
 export const Inventory: React.FC<InventoryProps> = ({
   articles,
   movements = [],
+  documents = [],
   globalSearch,
   onOpenNewArticleModal,
   onEditArticle,
   onDeleteArticle,
+  onOpenDocument,
   setActiveTab,
   canViewCost,
   canCreate,
@@ -334,6 +338,8 @@ export const Inventory: React.FC<InventoryProps> = ({
         article={ledgerArticle}
         articles={articles}
         movements={movements}
+        documents={documents}
+        onOpenDocument={onOpenDocument}
         canViewCost={canViewCost}
         onSelectArticleId={(id) => {
           const found = articles.find((a) => a.id === id);
