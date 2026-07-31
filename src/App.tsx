@@ -511,6 +511,12 @@ function App() {
         return (
           <Reports
             permissions={permissions}
+            sales={sales}
+            documents={documents}
+            articles={articles}
+            clients={clients}
+            onPrintRecord={setPrintDocument}
+            canViewCost={permissions.includes('products.view_cost')}
           />
         );
       case 'documents':
@@ -639,6 +645,8 @@ function App() {
       session={session}
       checking={checkingSession}
       userContext={userContext}
+      loadError={dataError}
+      onRetry={refreshData}
       onPasswordChanged={refreshData}
     >
       {application}

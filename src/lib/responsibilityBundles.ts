@@ -263,6 +263,27 @@ export const RESPONSIBILITY_BUNDLES: ResponsibilityBundle[] = [
   },
 ];
 
+const BUNDLE_DATABASE_ROLES: Record<string, string[]> = {
+  ADMIN: ['ADMINISTRATOR'],
+  GESTOR_OPERACIONAL: ['MANAGER_LIMITED'],
+  VENDAS_CAIXA: ['SALES_OP', 'CASHIER'],
+  COMPRAS_FORNECEDORES: ['PURCHASING_OP'],
+  FINANCEIRO_TESOURARIA: ['ACCOUNTING_OP'],
+  ARMAZEM_STOCK: ['STOCK_OP'],
+  CONSULTA_AUDITORIA: ['READ_ONLY'],
+};
+
+export function roleCodesForBundles(bundleCodes: string[]): string[] {
+  return Array.from(new Set(bundleCodes.flatMap((code) => BUNDLE_DATABASE_ROLES[code] ?? [])));
+}
+
+export function bundleCodesFromRoleCodes(roleCodes: string[]): string[] {
+  const assigned = new Set(roleCodes);
+  return Object.entries(BUNDLE_DATABASE_ROLES)
+    .filter(([, requiredRoles]) => requiredRoles.every((code) => assigned.has(code)))
+    .map(([bundleCode]) => bundleCode);
+}
+
 export interface AdvancedOverridePermission {
   code: string;
   name: string;

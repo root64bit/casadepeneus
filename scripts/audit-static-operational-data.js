@@ -12,6 +12,9 @@ const rules = [
   { name: 'hardcoded privileged credential', pattern: /(?:service_role|access_token|password)\s*[:=]\s*['"][^'"]{12,}['"]/i },
   { name: 'hardcoded UUID in application source', pattern: /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i },
   { name: 'hardcoded example email', pattern: /\b(?:example|teste?|demo)@[\w.-]+\.[a-z]{2,}\b/i },
+  { name: 'direct financial table mutation', pattern: /\.from\(['"](?:documents|document_lines|payments|ledger_entries)['"]\)\.(?:insert|update|delete)\(/ },
+  { name: 'direct stock ledger mutation', pattern: /\.from\(['"](?:stock_movements|inventory_balances)['"]\)\.(?:insert|update|delete)\(/ },
+  { name: 'fabricated operational document number', pattern: /(?:docNumber|displayNumber)\s*:\s*`[^`]*\$\{[^}]*Math\.random\(\)/ },
 ];
 
 function walk(directory) {

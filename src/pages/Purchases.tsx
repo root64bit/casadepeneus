@@ -361,16 +361,18 @@ export const Purchases: React.FC<PurchasesProps> = ({
             )}
           </div>
         </div>
-        <table className="w-full text-sm">
-          <thead className="bg-[#f3f4f5] text-xs uppercase dark:bg-[#282c2e]"><tr><th className="p-3 text-left">Documento</th><th className="p-3 text-left">Fornecedor</th><th className="p-3 text-left">Estado</th><th className="p-3 text-right">Total</th><th className="p-3 text-right">Pendente</th><th /></tr></thead>
-          <tbody>{supplierDocuments.map((document) => <tr key={document.id} className="border-t"><td className="p-3 font-mono">{document.displayNumber}</td><td className="p-3">{document.partyName}</td><td className="p-3">{document.status}</td><td className="p-3 text-right">{formatMZN(document.grandTotal)}</td><td className="p-3 text-right font-bold">{formatMZN(document.outstandingAmount)}</td><td className="p-3 text-right">{canPay && document.outstandingAmount > 0 && <button disabled={payingId === document.id} onClick={() => void payInvoice(document)} className="rounded bg-[#003366] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{payingId === document.id ? 'A pagar…' : 'Pagar'}</button>}</td></tr>)}</tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-[#f3f4f5] text-xs uppercase dark:bg-[#282c2e]"><tr><th className="p-3 text-left">Documento</th><th className="p-3 text-left">Fornecedor</th><th className="p-3 text-left">Estado</th><th className="p-3 text-right">Total</th><th className="p-3 text-right">Pendente</th><th /></tr></thead>
+            <tbody>{supplierDocuments.map((document) => <tr key={document.id} className="border-t"><td className="p-3 font-mono">{document.displayNumber}</td><td className="p-3">{document.partyName}</td><td className="p-3">{document.status}</td><td className="p-3 text-right">{formatMZN(document.grandTotal)}</td><td className="p-3 text-right font-bold">{formatMZN(document.outstandingAmount)}</td><td className="p-3 text-right">{canPay && document.outstandingAmount > 0 && <button disabled={payingId === document.id} onClick={() => void payInvoice(document)} className="rounded bg-[#003366] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{payingId === document.id ? 'A pagar…' : 'Pagar'}</button>}</td></tr>)}</tbody>
+          </table>
+        </div>
         {supplierDocuments.length === 0 && <p className="p-6 text-center text-sm text-[#737780]">Sem documentos de fornecedor para a data selecionada.</p>}
       </section>
 
       {/* Bottom Status Bar */}
-      <div className="mt-4 rounded border border-[#c3c6d1] bg-[#e7e8e9] dark:border-[#43474f] dark:bg-[#282c2e] px-4 py-2 text-xs font-mono font-bold flex items-center justify-between shadow-sm">
-        <div className="flex items-center space-x-3 text-[#191c1d] dark:text-white">
+      <div className="mt-4 flex flex-col gap-2 rounded border border-[#c3c6d1] bg-[#e7e8e9] px-4 py-2 text-xs font-mono font-bold shadow-sm dark:border-[#43474f] dark:bg-[#282c2e] sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-3 text-[#191c1d] dark:text-white">
           <button
             type="button"
             onClick={resetForm}

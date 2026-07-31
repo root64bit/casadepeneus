@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { UserSummary } from '../types';
 import {
   RESPONSIBILITY_BUNDLES,
@@ -49,6 +49,15 @@ export function Administration({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsModalOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [isModalOpen]);
 
   // Calculate live capabilities for modal
   const capabilities = useMemo(() => {
@@ -272,10 +281,11 @@ export function Administration({
         {/* Filters */}
         <div className="grid gap-3 border-b bg-slate-50 p-4 md:grid-cols-3 dark:bg-slate-800/50">
           <div>
-            <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
+            <label htmlFor="admin-user-search" className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
               Pesquisar Utilizador
             </label>
             <input
+              id="admin-user-search"
               type="text"
               placeholder="Nome ou email…"
               value={search}
@@ -284,10 +294,11 @@ export function Administration({
             />
           </div>
           <div>
-            <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
+            <label htmlFor="admin-status-filter" className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
               Filtrar por Estado
             </label>
             <select
+              id="admin-status-filter"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as any)}
               className="w-full rounded-md border bg-white px-3 py-1.5 text-xs dark:bg-slate-900"
@@ -298,10 +309,11 @@ export function Administration({
             </select>
           </div>
           <div>
-            <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
+            <label htmlFor="admin-bundle-filter" className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
               Filtrar por Pacote
             </label>
             <select
+              id="admin-bundle-filter"
               value={bundleFilter}
               onChange={(e) => setBundleFilter(e.target.value)}
               className="w-full rounded-md border bg-white px-3 py-1.5 text-xs dark:bg-slate-900"
@@ -403,10 +415,10 @@ export function Administration({
       {/* USER CREATION & EDITING MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs overflow-y-auto">
-          <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl border bg-white shadow-2xl dark:bg-[#1f2325] dark:text-slate-100 p-6 space-y-6">
+          <div role="dialog" aria-modal="true" aria-labelledby="admin-user-dialog-title" className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl border bg-white shadow-2xl dark:bg-[#1f2325] dark:text-slate-100 p-6 space-y-6">
             <header className="flex items-center justify-between border-b pb-3">
               <div>
-                <h3 className="text-base font-black text-[#003366] dark:text-[#a7c8ff]">
+                <h3 id="admin-user-dialog-title" className="text-base font-black text-[#003366] dark:text-[#a7c8ff]">
                   {editingUser ? `Editar Utilizador: ${editingUser.fullName}` : 'Criar Novo Utilizador'}
                 </h3>
                 <p className="text-xs text-slate-500">
@@ -414,6 +426,8 @@ export function Administration({
                 </p>
               </div>
               <button
+                type="button"
+                aria-label="Fechar"
                 onClick={() => setIsModalOpen(false)}
                 className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
               >
@@ -422,13 +436,13 @@ export function Administration({
             </header>
 
             {formError && (
-              <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-xs font-bold text-red-800">
+              <div role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-xs font-bold text-red-800">
                 ⚠️ {formError}
               </div>
             )}
 
             {formSuccess && (
-              <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-xs font-bold text-emerald-800">
+              <div role="status" className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-xs font-bold text-emerald-800">
                 ✅ {formSuccess}
               </div>
             )}
@@ -437,10 +451,12 @@ export function Administration({
               {/* Basic Fields */}
               <div className="grid gap-4 md:grid-cols-3">
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-600 mb-1">
+                  <label htmlFor="admin-full-name" className="block text-xs font-bold uppercase text-slate-600 mb-1">
                     Nome Completo *
                   </label>
                   <input
+                    id="admin-full-name"
+                    autoFocus
                     type="text"
                     required
                     placeholder="Ex: João Manuel"
@@ -450,10 +466,11 @@ export function Administration({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-600 mb-1">
+                  <label htmlFor="admin-email" className="block text-xs font-bold uppercase text-slate-600 mb-1">
                     Email / Utilizador *
                   </label>
                   <input
+                    id="admin-email"
                     type="email"
                     required
                     placeholder="joao@casadepneus.co.mz"
@@ -463,10 +480,11 @@ export function Administration({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold uppercase text-slate-600 mb-1">
+                  <label htmlFor="admin-telephone" className="block text-xs font-bold uppercase text-slate-600 mb-1">
                     Contacto Telefónico
                   </label>
                   <input
+                    id="admin-telephone"
                     type="text"
                     placeholder="+258 84 123 4567"
                     value={telephone}

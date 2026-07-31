@@ -7,6 +7,8 @@ interface AuthGateProps {
   session: Session | null;
   checking: boolean;
   userContext: UserContext | null;
+  loadError: string;
+  onRetry: () => Promise<void>;
   onPasswordChanged: () => Promise<void>;
   children: ReactNode;
 }
@@ -24,6 +26,8 @@ export function AuthGate({
   session,
   checking,
   userContext,
+  loadError,
+  onRetry,
   onPasswordChanged,
   children,
 }: AuthGateProps) {
@@ -45,14 +49,32 @@ export function AuthGate({
   }, []);
 
   useEffect(() => {
+    if (checking) return;
     if (!session) {
       window.history.replaceState({}, '', '/login');
       window.setTimeout(() => emailRef.current?.focus(), 0);
+    } else if (window.location.pathname === '/login') {
+      window.history.replaceState({}, '', '/');
     }
-  }, [session]);
+  }, [checking, session]);
 
   if (checking) {
     return <main className="min-h-screen grid place-items-center bg-slate-50"><p aria-live="polite" className="font-bold text-slate-700">A verificar sessão…</p></main>;
+  }
+
+  if (session && !userContext && loadError) {
+    return (
+      <main className="min-h-screen grid place-items-center bg-slate-50 px-4 py-8">
+        <section role="alert" className="w-full max-w-lg rounded-2xl border border-red-200 bg-white p-6 shadow-xl sm:p-8">
+          <h1 className="text-2xl font-black text-slate-900">Não foi possível abrir a aplicação</h1>
+          <p className="mt-3 text-sm text-red-700">{loadError}</p>
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <button type="button" className="rounded-xl bg-primary px-4 py-3 font-black text-white" onClick={() => void onRetry()}>Tentar novamente</button>
+            <button type="button" className="rounded-xl border border-slate-300 px-4 py-3 font-bold text-slate-700" onClick={() => void requireSupabase().auth.signOut()}>Terminar sessão</button>
+          </div>
+        </section>
+      </main>
+    );
   }
 
   if (session && !userContext) {
@@ -113,12 +135,12 @@ export function AuthGate({
             <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Email</span>
               <input ref={emailRef} autoFocus className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
             </label>
-            <label className="block"><span className="mb-2 block text-sm font-bold text-slate-700">Palavra-passe</span>
+            <div className="block"><label htmlFor="login-password" className="mb-2 block text-sm font-bold text-slate-700">Palavra-passe</label>
               <span className="relative block">
-                <input className="w-full rounded-xl border border-slate-300 px-4 py-3 pr-20 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
-                <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-primary" onClick={() => setShowPassword((value) => !value)}>{showPassword ? 'Ocultar' : 'Mostrar'}</button>
+                <input id="login-password" className="w-full rounded-xl border border-slate-300 px-4 py-3 pr-20 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
+                <button type="button" aria-controls="login-password" aria-pressed={showPassword} className="absolute right-3 top-1/2 -translate-y-1/2 rounded text-xs font-bold text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2" onClick={() => setShowPassword((value) => !value)}>{showPassword ? 'Ocultar' : 'Mostrar'}</button>
               </span>
-            </label>
+            </div>
             {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p>}
             {notice && <p role="status" className="rounded-xl bg-green-50 p-3 text-sm font-semibold text-green-800">{notice}</p>}
             <button className="w-full rounded-xl bg-primary px-4 py-3 font-black text-white disabled:cursor-not-allowed disabled:opacity-60" type="submit" disabled={submitting}>{submitting ? 'A entrar…' : 'Entrar'}</button>

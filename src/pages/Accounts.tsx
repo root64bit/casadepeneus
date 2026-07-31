@@ -58,18 +58,18 @@ export function Accounts({ payments, ledger, clients, documents, onPrintPayment 
             Contas correntes
           </button>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Pesquisar por código, nome ou nº..."
-            className="rounded border border-[#c3c6d1] bg-white px-3 py-2 text-xs dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white min-w-[220px]"
+            className="w-full min-w-0 rounded border border-[#c3c6d1] bg-white px-3 py-2 text-xs dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white sm:min-w-[220px]"
           />
           <select
             value={partyType}
             onChange={(event) => setPartyType(event.target.value as typeof partyType)}
-            className="rounded border border-[#c3c6d1] bg-white p-2 text-sm dark:border-[#43474f] dark:bg-[#282c2e]"
+            className="w-full rounded border border-[#c3c6d1] bg-white p-2 text-sm dark:border-[#43474f] dark:bg-[#282c2e] sm:w-auto"
           >
             <option value="ALL">Clientes e fornecedores</option>
             <option value="CUSTOMER">Clientes</option>

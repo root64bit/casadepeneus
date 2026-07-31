@@ -945,8 +945,8 @@ export const NewSale: React.FC<NewSaleProps> = ({
         </div>
       </section>
 
-      <div className="bg-[#e7e8e9] dark:bg-[#282c2e] text-[#191c1d] dark:text-white border-t border-[#c3c6d1] dark:border-[#43474f] px-6 py-2 text-xs font-mono font-bold flex items-center justify-between rounded shadow-sm">
-        <div className="flex items-center space-x-6">
+      <div className="flex flex-col gap-2 rounded border-t border-[#c3c6d1] bg-[#e7e8e9] px-3 py-2 text-xs font-mono font-bold text-[#191c1d] shadow-sm dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-6">
           <span>ESC=Sair</span>
           <button type="button" onClick={() => setDocStatus('CONFIRMING')} className="hover:underline">
             <span className="bg-[#003366] text-white px-2 py-0.5 rounded">F2=Gravar</span>

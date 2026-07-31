@@ -334,6 +334,7 @@ export const Inventory: React.FC<InventoryProps> = ({
         article={ledgerArticle}
         articles={articles}
         movements={movements}
+        canViewCost={canViewCost}
         onSelectArticleId={(id) => {
           const found = articles.find((a) => a.id === id);
           if (found) setLedgerArticle(found);

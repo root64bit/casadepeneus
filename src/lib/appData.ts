@@ -15,6 +15,7 @@ import type {
   ReferenceOption,
 } from '../types';
 import { requireSupabase } from './supabase';
+import { bundleCodesFromRoleCodes } from './responsibilityBundles';
 
 export interface AppData {
   company: CompanyProfile;
@@ -42,29 +43,9 @@ export interface AppData {
 export async function createArticle(article: Omit<Article, 'id'>): Promise<void> {
   const client = requireSupabase();
   const cleanCode = article.code.toUpperCase().trim();
-
-  // If product with code already exists in DB, update it directly so creation never fails with duplicate key
-  try {
-    const existingProduct = await client.from('products').select('id,is_active').eq('code', cleanCode).maybeSingle();
-    if (existingProduct.data?.id) {
-      await client.from('products').update({
-        description: article.description.trim(),
-        min_stock: article.minStock || 0,
-        avg_cost: article.costPrice || 0,
-        profit_pct: article.profitMargin || 0,
-        sale_price_excl: article.sellPrice || 0,
-        sale_price_incl: article.sellPriceWithIva || 0,
-        notes: article.size ? `Medida: ${article.size}` : null,
-        is_active: true,
-      }).eq('id', existingProduct.data.id);
-      return;
-    }
-  } catch (_) {}
-
-  // Try RPC v2 first
-  const { error: v2Error } = await client.rpc('create_operational_product_v2', {
+  const { error } = await client.rpc('create_operational_product_v2', {
     p_product: {
-      code: article.code,
+      code: cleanCode,
       description: article.description,
       unit: article.unit,
       min_stock: article.minStock,
@@ -82,102 +63,12 @@ export async function createArticle(article: Omit<Article, 'id'>): Promise<void>
     },
   });
 
-  if (!v2Error) return;
+  if (!error) return;
 
-  // Try RPC v1 if v2 failed
-  const { error: v1Error } = await client.rpc('create_operational_product', {
-    p_product: {
-      code: article.code,
-      description: article.description,
-      unit: article.unit,
-      min_stock: article.minStock,
-      cost_price: article.costPrice,
-      profit_margin: article.profitMargin,
-      sale_price_excl: article.sellPrice,
-      sale_price_incl: article.sellPriceWithIva,
-      notes: article.size ? `Medida: ${article.size}` : null,
-    },
-  });
-
-  if (!v1Error) return;
-
-  // Direct table insert fallback with multi-layered company resolution
-  try {
-    const companyIdResult = await client.rpc('get_user_company_id');
-    let companyId = companyIdResult.data;
-    if (!companyId) {
-      const companyRes = await client.from('companies').select('id').limit(1).maybeSingle();
-      companyId = companyRes.data?.id;
-    }
-
-    if (companyId) {
-      let catId = article.categoryId;
-      if (!catId && article.categoryName) {
-        const existingCat = await client.from('product_categories').select('id').eq('company_id', companyId).ilike('name', article.categoryName.trim()).maybeSingle();
-        if (existingCat.data?.id) {
-          catId = existingCat.data.id;
-        } else {
-          const familyRes = await client.from('product_families').select('id').eq('company_id', companyId).limit(1);
-          const famId = familyRes.data?.[0]?.id || '1f000000-0000-0000-0000-000000000001';
-          const newCatCode = article.categoryName.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) + '_' + Math.floor(Math.random() * 1000);
-          const createdCat = await client.from('product_categories').insert({ company_id: companyId, family_id: famId, code: newCatCode, name: article.categoryName.trim() }).select('id').single();
-          if (createdCat.data?.id) catId = createdCat.data.id;
-        }
-      }
-
-      let brId = article.brandId;
-      if (!brId && article.brandName) {
-        const existingBrand = await client.from('brands').select('id').eq('company_id', companyId).ilike('name', article.brandName.trim()).maybeSingle();
-        if (existingBrand.data?.id) {
-          brId = existingBrand.data.id;
-        } else {
-          const createdBrand = await client.from('brands').insert({ company_id: companyId, name: article.brandName.trim() }).select('id').single();
-          if (createdBrand.data?.id) brId = createdBrand.data.id;
-        }
-      }
-
-      let uId = article.unitId;
-      if (!uId) {
-        const unitRes = await client.from('units_of_measure').select('id').eq('company_id', companyId).limit(1);
-        uId = unitRes.data?.[0]?.id || '11000000-0000-0000-0000-000000000001';
-      }
-
-      let tId = article.taxCodeId;
-      if (!tId) {
-        const taxRes = await client.from('tax_codes').select('id').eq('company_id', companyId).eq('is_active', true).order('rate', { ascending: false }).limit(1);
-        tId = taxRes.data?.[0]?.id || '17000000-0000-0000-0000-000000000016';
-      }
-
-      const directInsert = await client.from('products').insert({
-        company_id: companyId,
-        code: cleanCode,
-        description: article.description.trim(),
-        unit_id: uId,
-        tax_code_id: tId,
-        category_id: catId || null,
-        brand_id: brId || null,
-        min_stock: article.minStock || 0,
-        avg_cost: article.costPrice || 0,
-        profit_pct: article.profitMargin || 0,
-        sale_price_excl: article.sellPrice || 0,
-        sale_price_incl: article.sellPriceWithIva || 0,
-        notes: article.size ? `Medida: ${article.size}` : null,
-        is_active: true,
-      });
-
-      if (!directInsert.error) return;
-    }
-  } catch (directErr: any) {
-    if (directErr?.message?.includes('já existe')) throw directErr;
+  if (error.message.includes('duplicate key') || error.message.includes('uq_product')) {
+    throw new Error(`O código de artigo "${cleanCode}" já existe.`);
   }
-
-  // Final check: check if product was actually inserted despite RPC error
-  try {
-    const checkProduct = await client.from('products').select('id').eq('code', cleanCode).maybeSingle();
-    if (checkProduct.data?.id) return;
-  } catch (_) {}
-
-  return;
+  throw new Error(error.message || 'Falha ao guardar artigo.');
 }
 
 export async function updateArticle(article: Article): Promise<void> {
@@ -192,6 +83,10 @@ export async function updateArticle(article: Article): Promise<void> {
       profit_pct: article.profitMargin || 0,
       sale_price_excl: article.sellPrice || 0,
       sale_price_incl: article.sellPriceWithIva || 0,
+      category_id: article.categoryId || null,
+      brand_id: article.brandId || null,
+      unit_id: article.unitId,
+      tax_code_id: article.taxCodeId,
     })
     .eq('id', article.id);
 
@@ -200,20 +95,12 @@ export async function updateArticle(article: Article): Promise<void> {
 
 export async function deleteArticle(id: string): Promise<void> {
   const client = requireSupabase();
-  try {
-    await client.from('inventory_balances').delete().eq('product_id', id);
-    await client.from('stock_movements').delete().eq('product_id', id);
-  } catch (_) {}
-
   const { error } = await client
     .from('products')
-    .delete()
+    .update({ is_active: false })
     .eq('id', id);
 
-  if (error) {
-    const timestamp = Date.now();
-    await client.from('products').update({ is_active: false, code: `DELETED_${timestamp}` }).eq('id', id);
-  }
+  if (error) throw new Error(error.message || 'Falha ao desativar artigo.');
 }
 
 export interface PartyInput {
@@ -251,48 +138,6 @@ export async function createCustomer(input: PartyInput): Promise<void> {
 
   if (!error) return;
 
-  // Direct table insert fallback if RPC fails
-  try {
-    const companyIdResult = await client.rpc('get_user_company_id');
-    let companyId = companyIdResult.data;
-    if (!companyId) {
-      const companyRes = await client.from('companies').select('id').limit(1).maybeSingle();
-      companyId = companyRes.data?.id;
-    }
-
-    if (companyId) {
-      const existing = await client.from('customers').select('id').eq('company_id', companyId).eq('number', cleanNumber).maybeSingle();
-      if (existing.data?.id) {
-        await client.from('customers').update({
-          name: cleanName,
-          tax_number: input.taxNumber || null,
-          phone: input.telephone || null,
-          email: input.email || null,
-          address: input.address || null,
-          city: input.city || null,
-          credit_limit: input.creditLimit || 0,
-          is_active: true,
-        }).eq('id', existing.data.id);
-        return;
-      }
-
-      const directInsert = await client.from('customers').insert({
-        company_id: companyId,
-        number: cleanNumber,
-        name: cleanName,
-        tax_number: input.taxNumber || null,
-        phone: input.telephone || null,
-        email: input.email || null,
-        address: input.address || null,
-        city: input.city || null,
-        credit_limit: input.creditLimit || 0,
-        is_active: true,
-      });
-
-      if (!directInsert.error) return;
-    }
-  } catch (_) {}
-
   if (error.message.includes('duplicate key') || error.message.includes('uq_customer')) {
     throw new Error(`O código de cliente "${input.number}" já existe. Por favor utilize um código diferente.`);
   }
@@ -322,50 +167,6 @@ export async function createSupplier(input: PartyInput): Promise<void> {
 
   if (!error) return;
 
-  // Direct table insert fallback if RPC fails
-  try {
-    const companyIdResult = await client.rpc('get_user_company_id');
-    let companyId = companyIdResult.data;
-    if (!companyId) {
-      const companyRes = await client.from('companies').select('id').limit(1).maybeSingle();
-      companyId = companyRes.data?.id;
-    }
-
-    if (companyId) {
-      const existing = await client.from('suppliers').select('id').eq('company_id', companyId).eq('number', cleanNumber).maybeSingle();
-      if (existing.data?.id) {
-        await client.from('suppliers').update({
-          name: cleanName,
-          tax_number: input.taxNumber || null,
-          phone: input.telephone || null,
-          email: input.email || null,
-          address: input.address || null,
-          city: input.city || null,
-          contact_person: input.contactPerson || null,
-          credit_limit: input.creditLimit || 0,
-          is_active: true,
-        }).eq('id', existing.data.id);
-        return;
-      }
-
-      const directInsert = await client.from('suppliers').insert({
-        company_id: companyId,
-        number: cleanNumber,
-        name: cleanName,
-        tax_number: input.taxNumber || null,
-        phone: input.telephone || null,
-        email: input.email || null,
-        address: input.address || null,
-        city: input.city || null,
-        contact_person: input.contactPerson || null,
-        credit_limit: input.creditLimit || 0,
-        is_active: true,
-      });
-
-      if (!directInsert.error) return;
-    }
-  } catch (_) {}
-
   if (error.message.includes('duplicate key') || error.message.includes('uq_supplier')) {
     throw new Error(`O código de fornecedor "${input.number}" já existe. Por favor utilize um código diferente.`);
   }
@@ -385,7 +186,6 @@ export async function postStockMovement(movement: StockMovement): Promise<void> 
   const defaultReason = movement.type === 'entrada' ? 'Entrada Direta Manual' : 'Saída Direta Manual';
   const reasonToPass = (movement.reason && movement.reason.trim()) ? movement.reason.trim() : defaultReason;
 
-  // 1. Try RPC v2 first
   const { error } = await client.rpc('post_operational_stock_movement_v2', {
     p_warehouse_id: movement.warehouseId,
     p_product_id: articleResult.data.id,
@@ -398,47 +198,7 @@ export async function postStockMovement(movement: StockMovement): Promise<void> 
   });
 
   if (!error) return;
-
-  // 2. Direct table insert fallback into stock_movements & update inventory_balances
-  try {
-    const companyIdResult = await client.rpc('get_user_company_id');
-    let companyId = companyIdResult.data;
-    if (!companyId) {
-      const companyRes = await client.from('companies').select('id').limit(1).maybeSingle();
-      companyId = companyRes.data?.id;
-    }
-
-    if (companyId) {
-      await client.from('stock_movements').insert({
-        company_id: companyId,
-        warehouse_id: movement.warehouseId,
-        product_id: articleResult.data.id,
-        movement_type: movement.type === 'entrada' ? 'direct_entry' : 'direct_exit',
-        quantity_in: movement.type === 'entrada' ? movement.quantity : 0,
-        quantity_out: movement.type === 'saida' ? movement.quantity : 0,
-        unit_cost: articleResult.data.avg_cost || movement.unitCost || 0,
-        legacy_ref: movement.docRef?.trim() || null,
-        notes: reasonToPass,
-      });
-
-      // Update product balance in inventory_balances
-      const existingBal = await client.from('inventory_balances').select('id,quantity').eq('product_id', articleResult.data.id).maybeSingle();
-      const currentQty = numberValue(existingBal.data?.quantity);
-      const newQty = movement.type === 'entrada' ? currentQty + movement.quantity : Math.max(0, currentQty - movement.quantity);
-
-      if (existingBal.data?.id) {
-        await client.from('inventory_balances').update({ quantity: newQty }).eq('id', existingBal.data.id);
-      } else {
-        await client.from('inventory_balances').insert({
-          company_id: companyId,
-          warehouse_id: movement.warehouseId,
-          product_id: articleResult.data.id,
-          quantity: newQty,
-        });
-      }
-      return;
-    }
-  } catch (_) {}
+  throw new Error(error.message || 'Falha ao registar movimento de stock.');
 }
 
 export async function createCustomerSale(
@@ -448,143 +208,36 @@ export async function createCustomerSale(
   const client = requireSupabase();
   const idempotencyKey = crypto.randomUUID();
 
-  // 1. Try RPC first if customerId looks like a UUID
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId);
-  if (isUuid) {
-    const { data, error } = await client.rpc('create_and_confirm_customer_sale', {
-      p_customer_id: customerId,
-      p_document_date: sale.date,
-      p_payment_term_code: sale.paymentTermCode ?? 'DINHEIRO',
-      p_items: sale.items.map((item) => ({
-        article_id: item.articleId,
-        quantity: item.quantity,
-        discount_percent: item.discountPercent || 0,
-      })),
-      p_idempotency_key: idempotencyKey,
-      p_document_type_code: sale.documentTypeCode ?? 'CUSTOMER_INVOICE',
-    });
+  if (!isUuid) throw new Error('Cliente da venda inválido. Atualize a lista e tente novamente.');
 
-    if (!error && data) {
-      const document = Array.isArray(data) ? data[0] : data;
-      return {
-        ...sale,
-        id: document.id,
-        docNumber: document.display_number,
-        totalAmount: numberValue(document.grand_total),
-        paidAmount: numberValue(document.amount_paid),
-        pendingAmount: numberValue(document.outstanding_amount),
-        status: document.status === 'CONFIRMED' ? 'Concluída' : 'Pendente',
-      };
-    }
-  }
+  const { data, error } = await client.rpc('create_and_confirm_customer_sale', {
+    p_customer_id: customerId,
+    p_document_date: sale.date,
+    p_payment_term_code: sale.paymentTermCode ?? 'DINHEIRO',
+    p_items: sale.items.map((item) => ({
+      article_id: item.articleId,
+      quantity: item.quantity,
+      discount_percent: item.discountPercent || 0,
+    })),
+    p_idempotency_key: idempotencyKey,
+    p_document_type_code: sale.documentTypeCode ?? 'CUSTOMER_INVOICE',
+  });
 
-  // 2. Direct table insert fallback into documents & document_lines & stock_movements
-  try {
-    const companyIdResult = await client.rpc('get_user_company_id');
-    let companyId = companyIdResult.data;
-    if (!companyId) {
-      const companyRes = await client.from('companies').select('id').limit(1).maybeSingle();
-      companyId = companyRes.data?.id;
-    }
+  if (error) throw new Error(error.message || 'Falha ao confirmar a venda.');
+  if (!data) throw new Error('A venda não devolveu um documento confirmado.');
 
-    if (companyId) {
-      // Resolve valid customer UUID
-      let validCustId = isUuid ? customerId : null;
-      if (!validCustId) {
-        const custRes = await client.from('customers').select('id').eq('company_id', companyId).limit(1).maybeSingle();
-        validCustId = custRes.data?.id || null;
-      }
-
-      // Resolve document_type_id
-      const typeCode = sale.documentTypeCode || 'CUSTOMER_INVOICE';
-      const docTypeRes = await client.from('document_types').select('id').eq('code', typeCode).maybeSingle();
-      const docTypeId = docTypeRes.data?.id || '11000000-0000-0000-0000-000000000001';
-
-      const prefix = typeCode === 'CASH_SALE' ? 'VD' : typeCode === 'CUSTOMER_DELIVERY_NOTE' ? 'GR' : 'FT';
-      const docNum = `${prefix}-${Math.floor(1000 + Math.random() * 9000)}`;
-
-      const subtotal = sale.subtotalBruto || sale.items.reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
-      const grandTotal = sale.totalAmount || sale.items.reduce((s, i) => s + i.total, 0);
-      const taxTotal = sale.ivaTotal || (grandTotal - subtotal);
-
-      const newDoc = await client.from('documents').insert({
-        company_id: companyId,
-        customer_id: validCustId,
-        document_type_id: docTypeId,
-        display_number: docNum,
-        document_date: sale.date,
-        due_date: sale.date,
-        status: 'CONFIRMED',
-        subtotal,
-        discount_total: sale.descontoTotal || 0,
-        net_total: subtotal - (sale.descontoTotal || 0),
-        tax_total: taxTotal,
-        grand_total: grandTotal,
-        amount_paid: typeCode === 'CASH_SALE' ? grandTotal : (sale.paidAmount || 0),
-        outstanding_amount: typeCode === 'CASH_SALE' ? 0 : Math.max(0, grandTotal - (sale.paidAmount || 0)),
-        salesperson_name: sale.sellerName || 'Vendedor',
-        idempotency_key: idempotencyKey,
-      }).select('id').single();
-
-      const docId = newDoc.data?.id || crypto.randomUUID();
-
-      if (newDoc.data?.id) {
-        for (const item of sale.items) {
-          await client.from('document_lines').insert({
-            company_id: companyId,
-            document_id: docId,
-            product_id: item.articleId,
-            product_code_snapshot: item.code,
-            description_snapshot: item.description,
-            quantity: item.quantity,
-            unit_price: item.unitPrice,
-            discount_percentage: item.discountPercent || 0,
-            tax_rate_snapshot: item.ivaPercent || 16,
-            total_amount: item.total,
-          });
-
-          // Automatic stock deduction for sales / delivery notes
-          try {
-            await client.from('stock_movements').insert({
-              company_id: companyId,
-              product_id: item.articleId,
-              movement_type: 'sale_invoice',
-              quantity_in: 0,
-              quantity_out: item.quantity,
-              unit_cost: item.unitPrice,
-              legacy_ref: docNum,
-              notes: `Saída por ${typeCode} ${docNum}`,
-            });
-
-            const existingBal = await client.from('inventory_balances').select('id,quantity').eq('product_id', item.articleId).maybeSingle();
-            if (existingBal.data?.id) {
-              const newQty = Math.max(0, numberValue(existingBal.data.quantity) - item.quantity);
-              await client.from('inventory_balances').update({ quantity: newQty }).eq('id', existingBal.data.id);
-            }
-          } catch (_) {}
-        }
-      }
-
-      return {
-        ...sale,
-        id: docId,
-        docNumber: docNum,
-        totalAmount: grandTotal,
-        paidAmount: typeCode === 'CASH_SALE' ? grandTotal : (sale.paidAmount || 0),
-        pendingAmount: typeCode === 'CASH_SALE' ? 0 : Math.max(0, grandTotal - (sale.paidAmount || 0)),
-        status: 'Concluída',
-      };
-    }
-  } catch (directErr) {
-    console.error('Direct sale fallback failed:', directErr);
-  }
-
+  const document = Array.isArray(data) ? data[0] : data;
   return {
     ...sale,
-    id: crypto.randomUUID(),
-    docNumber: `FT-${Math.floor(1000 + Math.random() * 9000)}`,
-    status: 'Concluída',
+    id: document.id,
+    docNumber: document.display_number,
+    totalAmount: numberValue(document.grand_total),
+    paidAmount: numberValue(document.amount_paid),
+    pendingAmount: numberValue(document.outstanding_amount),
+    status: document.status === 'CONFIRMED' ? 'Concluída' : 'Pendente',
   };
+
 }
 
 export async function createCustomerPayment(
@@ -598,7 +251,7 @@ export async function createCustomerPayment(
     p_customer_id: sale.clientId,
     p_document_id: sale.id,
     p_method_code: methodCode,
-    p_amount: Math.min(amount, sale.pendingAmount || sale.totalAmount),
+    p_amount: Math.min(amount, sale.pendingAmount ?? sale.totalAmount),
     p_reference: methodCode === 'CASH' ? null : reference.trim(),
     p_idempotency_key: crypto.randomUUID(),
   });
@@ -650,102 +303,6 @@ export async function createSupplierInvoice(
     };
   }
 
-  // 2. Direct table insert fallback into documents & document_lines
-  try {
-    const companyIdResult = await client.rpc('get_user_company_id');
-    let companyId = companyIdResult.data;
-    if (!companyId) {
-      const companyRes = await client.from('companies').select('id').limit(1).maybeSingle();
-      companyId = companyRes.data?.id;
-    }
-
-    if (companyId) {
-      // Find document type ID for SUPPLIER_INVOICE
-      const docTypeRes = await client.from('document_types').select('id').eq('code', 'SUPPLIER_INVOICE').maybeSingle();
-      const docTypeId = docTypeRes.data?.id || '22000000-0000-0000-0000-000000000002';
-
-      // Find payment term ID
-      const pTermRes = await client.from('payment_terms').select('id').eq('code', invoice.paymentTermCode || 'DINHEIRO').maybeSingle();
-      const pTermId = pTermRes.data?.id || '33000000-0000-0000-0000-000000000001';
-
-      const grandTotal = invoice.items.reduce((sum, item) => sum + item.total, 0);
-      const subtotal = invoice.items.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0);
-      const taxTotal = grandTotal - subtotal;
-      const docNum = `FR-FORN-${Math.floor(1000 + Math.random() * 9000)}`;
-
-      const newDoc = await client.from('documents').insert({
-        company_id: companyId,
-        supplier_id: invoice.supplierId,
-        document_type_id: docTypeId,
-        payment_term_id: pTermId,
-        display_number: docNum,
-        document_date: invoice.date,
-        due_date: invoice.date,
-        status: 'CONFIRMED',
-        subtotal,
-        discount_total: 0,
-        net_total: subtotal,
-        tax_total: taxTotal,
-        grand_total: grandTotal,
-        amount_paid: 0,
-        outstanding_amount: grandTotal,
-        idempotency_key: idempotencyKey,
-      }).select('id').single();
-
-      if (newDoc.data?.id) {
-        // Insert lines & stock movements
-        for (const item of invoice.items) {
-          await client.from('document_lines').insert({
-            company_id: companyId,
-            document_id: newDoc.data.id,
-            product_id: item.articleId,
-            product_code_snapshot: item.code,
-            description_snapshot: item.description,
-            quantity: item.quantity,
-            unit_price: item.unitCost,
-            discount_percentage: item.discountPercent || 0,
-            tax_rate_snapshot: item.taxPercent || 16,
-            total_amount: item.total,
-          });
-
-          // Stock movement entry for supplier invoice
-          try {
-            await client.from('stock_movements').insert({
-              company_id: companyId,
-              product_id: item.articleId,
-              movement_type: 'purchase_invoice',
-              quantity_in: item.quantity,
-              quantity_out: 0,
-              unit_cost: item.unitCost,
-              legacy_ref: invoice.supplierInvoiceNumber,
-              notes: `Entrada por Factura Fornecedor ${invoice.supplierInvoiceNumber}`,
-            });
-          } catch (_) {}
-        }
-
-        return {
-          id: newDoc.data.id,
-          displayNumber: docNum,
-          date: invoice.date,
-          dueDate: invoice.date,
-          typeCode: 'SUPPLIER_INVOICE',
-          typeName: 'Factura de Fornecedor',
-          partyType: 'SUPPLIER',
-          partyId: invoice.supplierId,
-          partyName: '',
-          status: 'CONFIRMED',
-          netTotal: subtotal,
-          taxTotal: taxTotal,
-          grandTotal: grandTotal,
-          paidAmount: 0,
-          outstandingAmount: grandTotal,
-        };
-      }
-    }
-  } catch (directErr) {
-    console.error('Direct supplier invoice fallback failed:', directErr);
-  }
-
   const msg = error?.message || 'Falha ao confirmar a compra.';
   throw new Error(msg);
 }
@@ -769,24 +326,7 @@ export async function createSupplierPayment(
     },
   );
 
-  if (!error) return;
-
-  // Direct update fallback if RPC fails
-  try {
-    const newPaid = document.paidAmount + amount;
-    const newPending = Math.max(0, document.grandTotal - newPaid);
-    const newStatus = newPending <= 0 ? 'PAID' : 'PARTIAL';
-
-    await client.from('documents').update({
-      amount_paid: newPaid,
-      outstanding_amount: newPending,
-      status: newStatus,
-    }).eq('id', document.id);
-
-    return;
-  } catch (_) {}
-
-  throw new Error(error.message || 'Falha ao registar pagamento do fornecedor.');
+  if (error) throw new Error(error.message || 'Falha ao registar pagamento do fornecedor.');
 }
 
 type Row = Record<string, any>;
@@ -853,26 +393,26 @@ export async function loadAppData(): Promise<AppData> {
         .single(),
       client
         .from('products')
-        .select('id,code,description,min_stock,avg_cost,profit_pct,sale_price_excl,sale_price_incl,tax_code_id,tax_codes(id,code,description,rate),product_categories(name),brands(name),units_of_measure(abbreviation)')
+        .select('id,code,description,min_stock,avg_cost,profit_pct,sale_price_excl,sale_price_incl,tax_code_id,tax_codes(id,code,description,rate),product_categories(id,name),brands(id,name),units_of_measure(id,abbreviation)')
         .eq('is_active', true)
         .order('code')
         .limit(500),
       client.from('inventory_balances').select('product_id,quantity').limit(1000),
       client
         .from('customers')
-        .select('id,name,tax_number,telephone,email,current_balance,customer_addresses(address_line_1,is_primary)')
+        .select('id,customer_number,name,tax_number,telephone,email,current_balance,customer_addresses(address_line_1,is_primary)')
         .eq('active', true)
         .order('name')
         .limit(500),
       client
         .from('suppliers')
-        .select('id,name,tax_number,telephone,contact_person,current_balance,supplier_addresses(address_line_1,is_primary)')
+        .select('id,supplier_number,name,tax_number,telephone,contact_person,current_balance,supplier_addresses(address_line_1,is_primary)')
         .eq('active', true)
         .order('name')
         .limit(500),
       client
         .from('documents')
-        .select('id,display_number,document_date,due_date,status,subtotal,discount_total,net_total,tax_total,grand_total,amount_paid,outstanding_amount,salesperson_name,customer_id,supplier_id,customers(name,tax_number),suppliers(name,tax_number),payment_terms(code,name),document_types(code,name),document_lines(id,product_id,product_code_snapshot,description_snapshot,quantity,unit_price,discount_percentage,tax_rate_snapshot,total_amount)')
+        .select('id,display_number,document_date,due_date,status,subtotal,discount_total,net_total,tax_total,grand_total,amount_paid,outstanding_amount,salesperson_name,customer_id,supplier_id,customers(customer_number,name,tax_number),suppliers(supplier_number,name,tax_number),payment_terms(code,name),document_types(code,name),document_lines(id,product_id,product_code_snapshot,description_snapshot,quantity,unit_price,discount_percentage,tax_rate_snapshot,total_amount)')
         .order('document_date', { ascending: false })
         .limit(250),
       client
@@ -892,7 +432,7 @@ export async function loadAppData(): Promise<AppData> {
         .limit(1000),
       client
         .from('user_profiles')
-        .select('id,full_name,email,is_active,user_roles(roles(name))')
+        .select('id,full_name,email,phone,is_active,user_roles(roles(code,name))')
         .order('full_name')
         .limit(250),
       client
@@ -987,11 +527,14 @@ export async function loadAppData(): Promise<AppData> {
 
   const articles: Article[] = (productsResult.data ?? []).map((row: Row) => {
     const taxCode = relation(row.tax_codes);
+    const category = relation(row.product_categories);
+    const brand = relation(row.brands);
+    const unit = relation(row.units_of_measure);
     return {
       id: row.id,
       code: row.code,
       description: row.description,
-      unit: relation(row.units_of_measure)?.abbreviation ?? 'UN',
+      unit: unit?.abbreviation ?? 'UN',
       minStock: numberValue(row.min_stock),
       stock: stockByProduct.get(row.id) ?? 0,
       costPrice: numberValue(row.avg_cost),
@@ -1000,8 +543,11 @@ export async function loadAppData(): Promise<AppData> {
       sellPriceWithIva: numberValue(row.sale_price_incl),
       taxCodeId: row.tax_code_id ?? undefined,
       taxRate: numberValue(taxCode?.rate ?? 16),
-      category: categoryValue(relation(row.product_categories)?.name),
-      brand: relation(row.brands)?.name ?? undefined,
+      category: categoryValue(category?.name),
+      brand: brand?.name ?? undefined,
+      categoryId: category?.id ?? undefined,
+      brandId: brand?.id ?? undefined,
+      unitId: unit?.id ?? undefined,
     };
   });
 
@@ -1010,6 +556,7 @@ export async function loadAppData(): Promise<AppData> {
     const address = addresses.find((item) => item.is_primary) ?? addresses[0];
     return {
       id: row.id,
+      number: row.customer_number,
       name: row.name,
       nuit: row.tax_number ?? '',
       address: address?.address_line_1 ?? '',
@@ -1024,6 +571,7 @@ export async function loadAppData(): Promise<AppData> {
     const address = addresses.find((item) => item.is_primary) ?? addresses[0];
     return {
       id: row.id,
+      number: row.supplier_number,
       name: row.name,
       nuit: row.tax_number ?? '',
       address: address?.address_line_1 ?? '',
@@ -1044,7 +592,7 @@ export async function loadAppData(): Promise<AppData> {
       date: row.document_date,
       clientName: customer?.name ?? 'Cliente não identificado',
       clientNuit: customer?.tax_number ?? '',
-      clientAddress: '',
+      clientAddress: clients.find((client) => client.id === row.customer_id)?.address ?? '',
       paymentMethod: paymentTerm?.name ?? '',
       paymentTermCode: paymentTerm?.code ?? undefined,
       sellerName: row.salesperson_name ?? '',
@@ -1087,7 +635,7 @@ export async function loadAppData(): Promise<AppData> {
       typeName: documentType?.name ?? '',
       partyType: row.customer_id ? 'CUSTOMER' : 'SUPPLIER',
       partyId: row.customer_id ?? row.supplier_id ?? '',
-      partyCode: customer?.number ?? customer?.code ?? supplier?.number ?? supplier?.code ?? '',
+      partyCode: customer?.customer_number ?? supplier?.supplier_number ?? '',
       partyName: customer?.name ?? supplier?.name ?? '',
       status: row.status,
       netTotal: numberValue(row.net_total),
@@ -1098,15 +646,7 @@ export async function loadAppData(): Promise<AppData> {
     };
   });
 
-  // Attempt database deletion of initial seed STK- test records
-  try {
-    await client.from('stock_movements').delete().or('legacy_ref.ilike.STK-%,legacy_ref.eq.STK-001,legacy_ref.eq.STK-002');
-  } catch (_) {
-    // Ignore if client RLS prevents bulk delete
-  }
-
   const movements: StockMovement[] = (movementsResult.data ?? [])
-    .filter((row: Row) => !row.legacy_ref || !row.legacy_ref.toUpperCase().startsWith('STK-'))
     .map((row: Row) => {
       const product = relation(row.products) || articles.find((p: Article) => p.id === row.product_id);
       return {
@@ -1149,15 +689,20 @@ export async function loadAppData(): Promise<AppData> {
     status: row.status,
   }));
 
-  const users: UserSummary[] = (usersResult.data ?? []).map((row: Row) => ({
-    id: row.id,
-    fullName: row.full_name,
-    email: row.email,
-    active: row.is_active,
-    roles: ((row.user_roles ?? []) as Row[])
-      .map((userRole) => relation(userRole.roles)?.name)
-      .filter(Boolean),
-  }));
+  const users: UserSummary[] = (usersResult.data ?? []).map((row: Row) => {
+    const roles = ((row.user_roles ?? []) as Row[])
+      .map((userRole) => relation(userRole.roles)?.code)
+      .filter((code): code is string => Boolean(code));
+    return {
+      id: row.id,
+      fullName: row.full_name,
+      email: row.email,
+      active: row.is_active,
+      telephone: row.phone ?? '',
+      roles,
+      bundles: bundleCodesFromRoleCodes(roles),
+    };
+  });
 
   const paymentTerms: ReferenceOption[] = (paymentTermsResult.data ?? []).map((row: Row) => ({
     id: row.id,
