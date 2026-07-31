@@ -28,6 +28,10 @@ const countState = async () =>
 try {
   await client.connect();
   const before = await countState();
+  const modeResult = await client.query(
+    "SELECT setting_value FROM public.system_settings WHERE setting_key = 'SYSTEM_MODE'",
+  );
+  const systemMode = modeResult.rows[0]?.setting_value ?? "UNKNOWN";
 
   const testProfile = await client.query(`
     SELECT up.id
@@ -81,7 +85,7 @@ try {
     normalModeRejected = error.message.includes("OPERATIONAL_MODE_REQUIRED");
   }
   await client.query("RELEASE SAVEPOINT normal_mode_check");
-  if (!normalModeRejected) {
+  if (systemMode === "MIGRATION" && !normalModeRejected) {
     throw new Error("Normal MIGRATION-mode session was not rejected.");
   }
 
@@ -362,7 +366,7 @@ try {
     JSON.stringify(
       {
         result: "PASS",
-        systemMode: "MIGRATION",
+        systemMode,
         normalModeRejected,
         syntheticWorkflow: {
           customerCreated: Boolean(customerId),

@@ -44,6 +44,33 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
     if (e.key === 'F2') {
       e.preventDefault();
       e.currentTarget.requestSubmit();
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'BUTTON' && (target as HTMLButtonElement).type === 'submit') {
+        return;
+      }
+
+      e.preventDefault();
+      const form = e.currentTarget;
+      const focusable = Array.from(
+        form.querySelectorAll<HTMLElement>(
+          'select:not([disabled]), input:not([disabled]):not([readonly]), textarea:not([disabled]), button[type="submit"]'
+        )
+      ).filter((el) => el.offsetWidth > 0 && el.offsetHeight > 0);
+
+      const index = focusable.indexOf(target);
+      if (index > -1 && index < focusable.length - 1) {
+        const nextEl = focusable[index + 1];
+        nextEl.focus();
+        if (nextEl instanceof HTMLInputElement) {
+          nextEl.select?.();
+        }
+      } else {
+        form.requestSubmit();
+      }
     }
   };
 

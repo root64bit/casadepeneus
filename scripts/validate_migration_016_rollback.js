@@ -30,6 +30,12 @@ const forbiddenManager = [
 
 try {
   await client.connect();
+  const initialMode = await client.query(
+    "SELECT setting_value FROM public.system_settings WHERE setting_key='SYSTEM_MODE'",
+  );
+  const expectedSystemMode = initialMode.rows[0]?.setting_value;
+  if (!expectedSystemMode) throw new Error('SYSTEM_MODE is not configured.');
+
   await client.query('BEGIN');
   await client.query(sql);
 
@@ -69,7 +75,7 @@ try {
   const mode = await client.query(
     "SELECT setting_value FROM public.system_settings WHERE setting_key='SYSTEM_MODE'",
   );
-  if (mode.rows[0]?.setting_value !== 'MIGRATION') throw new Error('SYSTEM_MODE changed.');
+  if (mode.rows[0]?.setting_value !== expectedSystemMode) throw new Error('SYSTEM_MODE changed.');
 
   console.log(JSON.stringify({
     validation: 'PASS',
@@ -78,7 +84,7 @@ try {
     managerMissing: missing,
     managerForbidden: forbidden,
     functions: functions.rows,
-    systemMode: 'MIGRATION',
+    systemMode: expectedSystemMode,
     outcome: 'ROLLBACK',
   }, null, 2));
   await client.query('ROLLBACK');
