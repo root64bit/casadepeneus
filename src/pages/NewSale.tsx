@@ -133,8 +133,22 @@ export const NewSale: React.FC<NewSaleProps> = ({
 
   const loadLastDocument = () => {
     if (!documents || documents.length === 0) return false;
-    const lastDoc = documents[0];
-    const found = clients.find((c) => c.id === lastDoc.partyId);
+
+    // Filter documents matching current selected documentType (FT, VD, or GR)
+    const matchingDocs = documents.filter((d) => {
+      if (documentType === 'CASH_SALE') {
+        return d.typeCode === 'CASH_SALE' || d.displayNumber.startsWith('VD') || d.typeName.toLowerCase().includes('dinheiro');
+      }
+      if (documentType === 'CUSTOMER_DELIVERY_NOTE') {
+        return d.typeCode === 'CUSTOMER_DELIVERY_NOTE' || d.displayNumber.startsWith('GR') || d.typeName.toLowerCase().includes('guia');
+      }
+      return d.typeCode === 'CUSTOMER_INVOICE' || d.displayNumber.startsWith('FT') || d.typeName.toLowerCase().includes('factura') || d.typeName.toLowerCase().includes('fatura');
+    });
+
+    const targetDoc = matchingDocs[0] || documents[0];
+    if (!targetDoc) return false;
+
+    const found = clients.find((c) => c.id === targetDoc.partyId);
     if (found) {
       setClientCodeInput(found.number || found.code || '');
       setSelectedClientId(found.id);
@@ -181,15 +195,15 @@ export const NewSale: React.FC<NewSaleProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [posPhase, items, selectedClientId, totalFinalAmount, clients, documents]);
+  }, [posPhase, items, selectedClientId, totalFinalAmount, clients, documents, documentType]);
 
   const handleClientCodeChange = (codeStr: string) => {
     const clean = codeStr.trim().toLowerCase();
     if (!clean) return;
     const found = clients.find(
       (c) =>
-        c.number?.toLowerCase() === clean ||
-        c.code?.toLowerCase() === clean ||
+        (c.number && c.number.trim().toLowerCase() === clean) ||
+        (c.code && c.code.trim().toLowerCase() === clean) ||
         c.id.toLowerCase() === clean ||
         String(c.number) === clean ||
         c.name.toLowerCase().includes(clean)
@@ -199,6 +213,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
       setSelectedClientName(found.name);
       setClientNuit(found.nuit || '');
       setClientAddress(found.address || '');
+      setClientCodeInput(found.number || found.code || codeStr);
       if (documents?.some(d => d.partyId === found.id && d.outstandingAmount > 0)) {
         setShowClientInvoices(true);
       } else {
@@ -320,9 +335,9 @@ export const NewSale: React.FC<NewSaleProps> = ({
                 type="button"
                 onClick={loadLastDocument}
                 className="text-xs bg-[#003366] text-white px-2.5 py-1 rounded font-bold hover:bg-blue-800 transition-colors"
-                title="Puxar cliente e número do último documento registado"
+                title={`Puxar cliente do último documento de ${documentType === 'CASH_SALE' ? 'VD' : documentType === 'CUSTOMER_DELIVERY_NOTE' ? 'Guia de Remessa' : 'Factura'}`}
               >
-                F2 — Puxar Última Fatura
+                {`F2 — Puxar Última ${documentType === 'CASH_SALE' ? 'VD' : documentType === 'CUSTOMER_DELIVERY_NOTE' ? 'Guia' : 'Factura'}`}
               </button>
               {posPhase !== 'HEADER' && (
                 <button onClick={() => setPosPhase('HEADER')} className="text-xs text-[#006e25] font-bold hover:underline">
