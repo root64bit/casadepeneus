@@ -45,6 +45,7 @@ import {
   loadAppData,
   postStockMovement,
   createAndConfirmFinancialAdvice,
+  cancelFinancialAdvice,
 } from './lib/appData';
 import type { PartyInput } from './lib/appData';
 
@@ -540,6 +541,12 @@ function App() {
             sales={sales}
             onPrint={handleOpenPrintModal}
             onPrintRecord={setPrintDocument}
+            canCancelAdvice={permissions.includes('financial_adjustments.cancel')}
+            onCancelAdvice={async (docId, reason) => {
+              const idempotencyKey = crypto.randomUUID();
+              await cancelFinancialAdvice(docId, reason, idempotencyKey);
+              await refreshData();
+            }}
           />
         );
       case 'accounts':

@@ -376,7 +376,7 @@ export async function loadAppData(): Promise<AppData> {
     throw companyIdResult.error ?? new Error('Empresa do utilizador não definida.');
   }
 
-  const [contextResult, metricsResult, permissionsResult, modeResult, companyResult, productsResult, balancesResult, customersResult, suppliersResult, documentsResult, movementsResult, paymentsResult, ledgerResult, usersResult, paymentTermsResult, paymentMethodsResult, categoriesResult, brandsResult, unitsResult, taxCodesResult] =
+  const [contextResult, metricsResult, permissionsResult, modeResult, companyResult, productsResult, balancesResult, customersResult, suppliersResult, documentsResult, movementsResult, paymentsResult, ledgerResult, usersResult, paymentTermsResult, paymentMethodsResult, categoriesResult, brandsResult, unitsResult, taxCodesResult, supplierPurchasesRpcResult] =
     await Promise.all([
       client.rpc('get_current_user_context'),
       client.rpc('get_dashboard_metrics'),
@@ -451,6 +451,7 @@ export async function loadAppData(): Promise<AppData> {
       client.from('brands').select('id,name').order('name').limit(250),
       client.from('units_of_measure').select('id,name,abbreviation').order('name').limit(100),
       client.from('tax_codes').select('id,code,description,rate').eq('is_active', true).order('rate', { ascending: false }).limit(50),
+      client.rpc('get_supplier_total_purchases_summary'),
     ]);
 
   const criticalFailed = [
@@ -551,17 +552,14 @@ export async function loadAppData(): Promise<AppData> {
     };
   });
 
+  const rpcSupplierTotals = (supplierPurchasesRpcResult?.data as Row[]) ?? [];
+
   const suppliers: Supplier[] = (suppliersResult.data ?? []).map((row: Row) => {
     const addresses = (row.supplier_addresses ?? []) as Row[];
     const address = addresses.find((item) => item.is_primary) ?? addresses[0];
 
-    const supplierDocs = (documentsResult.data ?? []).filter(
-      (d: Row) =>
-        d.supplier_id === row.id &&
-        relation(d.document_types)?.code === 'SUPPLIER_INVOICE' &&
-        ['CONFIRMED', 'PARTIALLY_PAID', 'PAID'].includes(d.status)
-    );
-    const totalPurchasesCalc = supplierDocs.reduce((sum: number, d: Row) => sum + numberValue(d.grand_total), 0);
+    const rpcTotalRow = rpcSupplierTotals.find((r) => r.supplier_id === row.id);
+    const totalPurchasesCalc = rpcTotalRow ? numberValue(rpcTotalRow.total_purchases) : 0;
 
     return {
       id: row.id,
@@ -883,13 +881,13 @@ export async function createAndConfirmFinancialAdvice(payload: {
 export async function cancelFinancialAdvice(
   documentId: string,
   reason: string,
-  idempotencyKey?: string
+  idempotencyKey: string
 ): Promise<boolean> {
   const client = requireSupabase();
   const { data, error } = await client.rpc('cancel_financial_advice', {
     p_advice_document_id: documentId,
     p_cancellation_reason: reason,
-    p_idempotency_key: idempotencyKey || null,
+    p_idempotency_key: idempotencyKey,
   });
 
   if (error) throw new Error(error.message || 'Falha ao cancelar o aviso financeiro na base de dados.');
