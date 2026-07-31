@@ -48,12 +48,14 @@ export interface SaleInvoice {
   items: SaleItem[];
   subtotalBruto: number;
   descontoTotal: number;
+  subtotalLiquido?: number;
   ivaTotal: number;
   totalAmount: number;
   paidAmount: number;
   pendingAmount: number;
   status: 'Concluída' | 'Pendente' | 'Cancelada';
-  time: string;
+  time?: string;
+  notes?: string;
 }
 
 export interface StockMovement {
