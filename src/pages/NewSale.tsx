@@ -131,12 +131,31 @@ export const NewSale: React.FC<NewSaleProps> = ({
   const previousBalance = selectedClient?.pendingBalance ?? 0;
   const newAccumulatedBalance = previousBalance + totalFinalAmount;
 
+  const loadLastDocument = () => {
+    if (!documents || documents.length === 0) return false;
+    const lastDoc = documents[0];
+    const found = clients.find((c) => c.id === lastDoc.partyId);
+    if (found) {
+      setClientCodeInput(found.number || found.code || '');
+      setSelectedClientId(found.id);
+      setSelectedClientName(found.name);
+      setClientNuit(found.nuit || '');
+      setClientAddress(found.address || '');
+      if (documents?.some(d => d.partyId === found.id && d.outstandingAmount > 0)) {
+        setShowClientInvoices(true);
+      }
+      return true;
+    }
+    return false;
+  };
+
   // Keyboard Shortcuts based on current phase
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F2') {
         e.preventDefault();
         if (posPhase === 'HEADER') {
+          loadLastDocument();
           if (!selectedClientId && clients.length > 0) {
             setSelectedClientId(clients[0].id);
             setSelectedClientName(clients[0].name);
@@ -162,7 +181,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [posPhase, items, selectedClientId, totalFinalAmount, clients]);
+  }, [posPhase, items, selectedClientId, totalFinalAmount, clients, documents]);
 
   const handleClientCodeChange = (codeStr: string) => {
     const clean = codeStr.trim().toLowerCase();
@@ -296,11 +315,21 @@ export const NewSale: React.FC<NewSaleProps> = ({
             <h3 className="font-bold text-xs uppercase text-[#003366] dark:text-[#a7c8ff]">
               {`[ ${documentType === 'CUSTOMER_INVOICE' ? 'Factura a Cliente' : documentType === 'CASH_SALE' ? 'Venda a Dinheiro' : 'Guia de Remessa'} - Cabeçalho ]`}
             </h3>
-            {posPhase !== 'HEADER' && (
-              <button onClick={() => setPosPhase('HEADER')} className="text-xs text-[#006e25] font-bold hover:underline">
-                ✏ Alterar Cabeçalho
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={loadLastDocument}
+                className="text-xs bg-[#003366] text-white px-2.5 py-1 rounded font-bold hover:bg-blue-800 transition-colors"
+                title="Puxar cliente e número do último documento registado"
+              >
+                F2 — Puxar Última Fatura
               </button>
-            )}
+              {posPhase !== 'HEADER' && (
+                <button onClick={() => setPosPhase('HEADER')} className="text-xs text-[#006e25] font-bold hover:underline">
+                  ✏ Alterar Cabeçalho
+                </button>
+              )}
+            </div>
           </div>
           <div className="grid grid-cols-12 gap-3 text-xs">
             <div className="col-span-12 md:col-span-2">
