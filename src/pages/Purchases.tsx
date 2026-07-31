@@ -216,20 +216,24 @@ export const Purchases: React.FC<PurchasesProps> = ({
     }
   };
 
-  // Global Keyboard shortcuts: F2=Gravar, F5=Novo, F9=Imprimir
+  const resetForm = () => {
+    setItems([]);
+    setSupplierReference('');
+    setRequisitionNo('');
+    setQuantityStr('');
+    setUnitCostStr('');
+    setError('');
+  };
+
+  // Global Keyboard shortcuts: F2=Gravar, F5/ESC=Novo/Sair, F9=Imprimir
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F2') {
         e.preventDefault();
-        if (items.length > 0 && !saving) void saveInvoice();
-      } else if (e.key === 'F5') {
+        void saveInvoice();
+      } else if (e.key === 'F5' || e.key === 'Escape') {
         e.preventDefault();
-        setItems([]);
-        setSupplierReference('');
-        setRequisitionNo('');
-        setQuantityStr('');
-        setUnitCostStr('');
-        setError('');
+        resetForm();
       } else if (e.key === 'F9') {
         e.preventDefault();
         window.print();
@@ -237,7 +241,7 @@ export const Purchases: React.FC<PurchasesProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [items, saving]);
+  }, [items, saving, quantityStr, unitCostStr, articleId, supplierId, supplierReference]);
 
   return (
     <div className="space-y-6 pb-12">
@@ -356,12 +360,41 @@ export const Purchases: React.FC<PurchasesProps> = ({
       </section>
 
       {/* Bottom Status Bar */}
-      <div className="mt-4 rounded border border-[#c3c6d1] bg-[#e7e8e9] dark:border-[#43474f] dark:bg-[#282c2e] px-4 py-2 text-xs font-mono font-bold flex items-center justify-between">
-        <div className="flex items-center space-x-4 text-[#191c1d] dark:text-white">
-          <span>ESC=Sair</span>
-          <span className="rounded bg-[#003366] px-2 py-0.5 text-white">F2=Gravar</span>
-          <span>F5=Novo</span>
-          <span className="rounded bg-[#003366] px-2 py-0.5 text-white">F9=Imp</span>
+      <div className="mt-4 rounded border border-[#c3c6d1] bg-[#e7e8e9] dark:border-[#43474f] dark:bg-[#282c2e] px-4 py-2 text-xs font-mono font-bold flex items-center justify-between shadow-sm">
+        <div className="flex items-center space-x-3 text-[#191c1d] dark:text-white">
+          <button
+            type="button"
+            onClick={resetForm}
+            className="rounded border border-slate-300 bg-slate-100 dark:border-slate-600 dark:bg-slate-700 px-2.5 py-1 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors cursor-pointer"
+            title="Limpar formulário e cancelar entrada atual"
+          >
+            ESC=Sair
+          </button>
+          <button
+            type="button"
+            onClick={() => void saveInvoice()}
+            disabled={saving || (items.length === 0 && (!quantityStr || Number(quantityStr) <= 0))}
+            className="rounded bg-[#003366] px-3 py-1 text-white hover:bg-blue-800 disabled:opacity-50 transition-colors cursor-pointer"
+            title="Gravar factura de compra"
+          >
+            F2=Gravar
+          </button>
+          <button
+            type="button"
+            onClick={resetForm}
+            className="rounded border border-slate-300 bg-slate-100 dark:border-slate-600 dark:bg-slate-700 px-2.5 py-1 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors cursor-pointer"
+            title="Iniciar nova entrada de factura de compra"
+          >
+            F5=Novo
+          </button>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="rounded bg-[#003366] px-3 py-1 text-white hover:bg-blue-800 transition-colors cursor-pointer"
+            title="Imprimir ecrã"
+          >
+            F9=Imp
+          </button>
         </div>
         <div className="text-[#737780] text-[11px]">
           Fatura de Fornecedor | Itens: <b>{items.length}</b> | Total: <b className="text-[#191c1d] dark:text-white">{formatMZN(total)}</b>

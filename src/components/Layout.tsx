@@ -348,26 +348,9 @@ export const Layout: React.FC<LayoutProps> = ({
         </button>
       </header>
 
-      <main className="min-h-screen px-3 pb-20 pt-20 sm:px-5 lg:ml-[240px] lg:p-6 lg:pb-20 lg:pt-20">
+      <main className="min-h-screen px-3 pb-6 pt-20 sm:px-5 lg:ml-[240px] lg:p-6 lg:pb-6 lg:pt-20">
         {children}
       </main>
-
-      <footer className="fixed bottom-0 left-[240px] right-0 hidden h-10 items-center gap-5 bg-[#001e40] px-6 text-xs text-white lg:flex font-mono">
-        {has('sales.create') && (
-          <button onClick={() => navigate('sales')}>
-            Nova venda
-          </button>
-        )}
-        <button onClick={() => navigate('inventory')}>
-          <b>F3</b> Artigos
-        </button>
-        <button onClick={() => navigate('reports')}>
-          <b>F4</b> Relatórios
-        </button>
-        <span className="ml-auto truncate">
-          {companyName} · {displayMode}
-        </span>
-      </footer>
     </div>
   );
 };
