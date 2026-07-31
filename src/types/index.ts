@@ -62,6 +62,9 @@ export interface StockMovement {
   id: string;
   type: 'entrada' | 'saida';
   docRef: string;
+  sourceDocumentId?: string;
+  docTypeCode?: string;
+  docTypeName?: string;
   date: string;
   articleCode: string;
   articleDescription: string;

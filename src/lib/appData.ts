@@ -417,7 +417,7 @@ export async function loadAppData(): Promise<AppData> {
         .limit(250),
       client
         .from('stock_movements')
-        .select('id,movement_type,legacy_ref,created_at,quantity_in,quantity_out,unit_cost,products(code,description),warehouses(id,name),user_profiles(full_name)')
+        .select('id,movement_type,legacy_ref,reason,notes,source_document_id,created_at,quantity_in,quantity_out,unit_cost,products(code,description),warehouses(id,name),user_profiles(full_name),documents(id,display_number,document_types(code,name))')
         .order('created_at', { ascending: false })
         .limit(500),
       client
@@ -649,10 +649,22 @@ export async function loadAppData(): Promise<AppData> {
   const movements: StockMovement[] = (movementsResult.data ?? [])
     .map((row: Row) => {
       const product = relation(row.products) || articles.find((p: Article) => p.id === row.product_id);
+      const doc = relation(row.documents);
+      const docType = doc ? relation(doc.document_types) : null;
+      
+      const isEntrada = numberValue(row.quantity_in) > 0;
+      const computedRef = doc?.display_number 
+        || row.legacy_ref 
+        || row.reason 
+        || (isEntrada ? 'Entrada Directa' : 'Saída Directa');
+
       return {
         id: row.id,
-        type: numberValue(row.quantity_in) > 0 ? 'entrada' : 'saida',
-        docRef: row.legacy_ref ?? '—',
+        type: isEntrada ? 'entrada' : 'saida',
+        docRef: computedRef,
+        sourceDocumentId: row.source_document_id ?? doc?.id,
+        docTypeCode: docType?.code,
+        docTypeName: docType?.name,
         date: row.created_at,
         articleCode: product?.code ?? '',
         articleDescription: product?.description ?? '',
@@ -661,6 +673,8 @@ export async function loadAppData(): Promise<AppData> {
         operator: relation(row.user_profiles)?.full_name || 'Administrador Casa de Pneus',
         warehouseId: relation(row.warehouses)?.id ?? undefined,
         warehouseName: relation(row.warehouses)?.name ?? undefined,
+        reason: row.reason ?? undefined,
+        notes: row.notes ?? undefined,
         unitCost: numberValue(row.unit_cost),
       };
     });

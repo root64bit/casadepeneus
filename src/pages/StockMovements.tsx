@@ -218,39 +218,63 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
           <p className="p-8 text-center text-xs text-slate-500">Sem movimentos para apresentar.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[760px] w-full text-left text-xs">
+            <table className="min-w-[900px] w-full text-left text-xs">
               <thead>
                 <tr className="border-b bg-slate-50 uppercase font-bold dark:bg-slate-800">
                   <th className="p-3">Data / Hora</th>
                   <th className="p-3">Tipo</th>
                   <th className="p-3">Documento / Guia</th>
-                  <th className="p-3">Artigo</th>
+                  <th className="p-3">Armazém</th>
+                  <th className="p-3">Artigo (Extracto)</th>
                   <th className="p-3 text-right">Quantidade</th>
+                  <th className="p-3">Motivo / Notas</th>
                   <th className="p-3">Operador</th>
                 </tr>
               </thead>
               <tbody className="font-mono divide-y">
                 {[...movements]
                   .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                  .map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                      <td className="p-3 text-slate-600 dark:text-slate-400">
-                        {new Date(item.date).toLocaleString('pt-PT')}
-                      </td>
-                      <td className="p-3">
-                        <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-extrabold uppercase ${
-                          item.type === 'entrada'
-                            ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300'
-                            : 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-300 border border-red-300'
-                        }`}>
-                          {item.type}
-                        </span>
-                      </td>
-                      <td className="p-3 font-semibold">{item.docRef || '—'}</td>
-                      <td className="p-3 font-bold">
-                        {(() => {
-                          const matchedArt = articles.find((a) => a.code.toLowerCase() === item.articleCode?.toLowerCase());
-                          return matchedArt ? (
+                  .map((item) => {
+                    const matchedArt = articles.find((a) => a.code.toLowerCase() === item.articleCode?.toLowerCase());
+                    const matchedDoc = documents.find((d) => 
+                      (item.sourceDocumentId && d.id === item.sourceDocumentId) || 
+                      (item.docRef && d.displayNumber.toLowerCase() === item.docRef.toLowerCase())
+                    );
+                    const docDisplay = item.docRef || (item.type === 'entrada' ? 'Entrada Directa' : 'Saída Directa');
+
+                    return (
+                      <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                        <td className="p-3 text-slate-600 dark:text-slate-400">
+                          {new Date(item.date).toLocaleString('pt-PT')}
+                        </td>
+                        <td className="p-3">
+                          <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-extrabold uppercase ${
+                            item.type === 'entrada'
+                              ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300'
+                              : 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-300 border border-red-300'
+                          }`}>
+                            {item.type}
+                          </span>
+                        </td>
+                        <td className="p-3 font-semibold">
+                          {matchedDoc && onOpenDocument ? (
+                            <button
+                              type="button"
+                              onClick={() => onOpenDocument(matchedDoc)}
+                              className="text-[#000080] dark:text-yellow-300 font-extrabold hover:underline flex items-center gap-1"
+                              title="Clique para consultar este documento"
+                            >
+                              <span>🔗</span> {docDisplay}
+                            </button>
+                          ) : (
+                            <span className="font-bold text-slate-800 dark:text-slate-200">{docDisplay}</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-slate-600 dark:text-slate-400 font-sans">
+                          {item.warehouseName || 'Armazém Principal'}
+                        </td>
+                        <td className="p-3 font-bold">
+                          {matchedArt ? (
                             <button
                               type="button"
                               onClick={() => setLedgerArticle(matchedArt)}
@@ -261,17 +285,20 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                             </button>
                           ) : (
                             <span className="text-[#003366] dark:text-[#a7c8ff]">[{item.articleCode}] {item.articleDescription}</span>
-                          );
-                        })()}
-                      </td>
-                      <td className="p-3 text-right font-black text-sm">
-                        {item.quantity}
-                      </td>
-                      <td className="p-3 text-slate-600 dark:text-slate-400">
-                        {item.operator || '—'}
-                      </td>
-                    </tr>
-                  ))}
+                          )}
+                        </td>
+                        <td className="p-3 text-right font-black text-sm">
+                          {item.quantity}
+                        </td>
+                        <td className="p-3 text-slate-600 dark:text-slate-400 font-sans text-[11px]">
+                          {item.reason || item.notes || (item.type === 'entrada' ? 'Entrada Direta Manual' : 'Saída Direta Manual')}
+                        </td>
+                        <td className="p-3 text-slate-600 dark:text-slate-400">
+                          {item.operator || '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>
