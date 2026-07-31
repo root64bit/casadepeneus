@@ -67,16 +67,16 @@ export const Layout: React.FC<LayoutProps> = ({
   const navItems = useMemo(
     () =>
       [
-        { id: 'dashboard', label: 'Início', icon: 'home', visible: has('dashboard.read', 'products.view') },
-        { id: 'inventory', label: 'Artigos e Stock', icon: 'inventory_2', visible: has('products.read', 'products.view', 'stock.read', 'stock.view') },
-        { id: 'sales', label: 'Nova Venda', icon: 'sell', visible: has('sales.create') && has('sales.confirm') },
-        { id: 'purchases', label: 'Compras', icon: 'shopping_cart', visible: has('purchases.read', 'purchases.invoice.create') },
-        { id: 'movements', label: 'Entradas e Saídas', icon: 'swap_horiz', visible: has('stock.read', 'stock.view', 'stock.direct_entry', 'stock.direct_exit') },
-        { id: 'entities', label: 'Clientes e Fornecedores', icon: 'groups', visible: has('customers.read', 'customers.view', 'suppliers.read', 'suppliers.view') },
-        { id: 'documents', label: 'Documentos', icon: 'description', visible: has('documents.view', 'sales.read', 'purchases.read') },
-        { id: 'accounts', label: 'Pagamentos e Contas', icon: 'account_balance_wallet', visible: has('payments.read', 'payments.view', 'accounts.read') },
-        { id: 'reports', label: 'Relatórios', icon: 'analytics', visible: has('reports.read', 'reports.sales', 'reports.stock') },
-        { id: 'administration', label: 'Administração', icon: 'admin_panel_settings', visible: has('settings.manage', 'users.manage') },
+        { id: 'dashboard', label: 'Início', icon: 'home', visible: true },
+        { id: 'inventory', label: 'Artigos e Stock', icon: 'inventory_2', visible: true },
+        { id: 'sales', label: 'Nova Venda', icon: 'sell', visible: true },
+        { id: 'purchases', label: 'Compras', icon: 'shopping_cart', visible: true },
+        { id: 'movements', label: 'Entradas e Saídas', icon: 'swap_horiz', visible: true },
+        { id: 'entities', label: 'Clientes e Fornecedores', icon: 'groups', visible: true },
+        { id: 'documents', label: 'Documentos', icon: 'description', visible: true },
+        { id: 'accounts', label: 'Pagamentos e Contas', icon: 'account_balance_wallet', visible: true },
+        { id: 'reports', label: 'Relatórios', icon: 'analytics', visible: true },
+        { id: 'administration', label: 'Administração', icon: 'admin_panel_settings', visible: permissions.length === 0 || has('settings.manage', 'users.manage') },
       ].filter((item) => item.visible),
     [permissions],
   );
