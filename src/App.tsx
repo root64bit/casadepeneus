@@ -385,10 +385,6 @@ function App() {
         e.preventDefault();
         document.querySelector<HTMLInputElement>('input[placeholder*="Pesquisar"]')?.focus();
         break;
-      case 'F2':
-        e.preventDefault();
-        setActiveTab('sales');
-        break;
       case 'F3':
         e.preventDefault();
         setActiveTab('inventory');
@@ -417,7 +413,6 @@ function App() {
 
   const handleTriggerShortcut = (key: string) => {
     switch (key) {
-      case 'F2': setActiveTab('sales'); break;
       case 'F3': setActiveTab('inventory'); break;
       case 'F4': setActiveTab('reports'); break;
       case 'F9': window.print(); break;

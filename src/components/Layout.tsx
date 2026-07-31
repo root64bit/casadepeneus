@@ -354,8 +354,8 @@ export const Layout: React.FC<LayoutProps> = ({
 
       <footer className="fixed bottom-0 left-[240px] right-0 hidden h-10 items-center gap-5 bg-[#001e40] px-6 text-xs text-white lg:flex font-mono">
         {has('sales.create') && (
-          <button onClick={() => { navigate('sales'); onTriggerShortcut?.('F2'); }}>
-            <b>F2</b> Nova venda
+          <button onClick={() => navigate('sales')}>
+            Nova venda
           </button>
         )}
         <button onClick={() => navigate('inventory')}>

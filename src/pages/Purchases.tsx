@@ -115,7 +115,30 @@ export const Purchases: React.FC<PurchasesProps> = ({
   };
 
   const saveInvoice = async () => {
-    if (!supplierId || !supplierReference.trim() || items.length === 0) {
+    let currentItems = [...items];
+    const quantity = Number(quantityStr);
+    const unitCost = Number(unitCostStr);
+    const pendingArticle = articles.find((candidate) => candidate.id === articleId);
+
+    if (pendingArticle && quantity > 0 && !isNaN(quantity) && !isNaN(unitCost) && unitCost >= 0) {
+      const net = quantity * unitCost;
+      const newItem: PurchaseItem = {
+        articleId: pendingArticle.id,
+        code: pendingArticle.code,
+        description: pendingArticle.description,
+        quantity,
+        unitCost,
+        discountPercent: 0,
+        taxPercent: purchaseTaxRate,
+        total: Math.round(net * (1 + purchaseTaxRate / 100) * 100) / 100,
+      };
+      currentItems.push(newItem);
+      setItems(currentItems);
+      setQuantityStr('');
+      setUnitCostStr('');
+    }
+
+    if (!supplierId || !supplierReference.trim() || currentItems.length === 0) {
       setError('Selecione o fornecedor, indique a referência e adicione pelo menos um artigo.');
       return;
     }
@@ -127,7 +150,7 @@ export const Purchases: React.FC<PurchasesProps> = ({
         date,
         supplierInvoiceNumber: requisitionNo ? `${supplierReference} (Req: ${requisitionNo})` : supplierReference,
         paymentTermCode: term,
-        items,
+        items: currentItems,
       });
       setItems([]);
       setSupplierReference('');
@@ -296,7 +319,13 @@ export const Purchases: React.FC<PurchasesProps> = ({
           {error && <p role="alert" className="rounded bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
           <div className="flex items-center justify-end gap-4">
             <strong className="font-mono text-xl">{formatMZN(total)}</strong>
-            <button disabled={saving || items.length === 0} onClick={() => void saveInvoice()} className="rounded bg-[#006e25] px-5 py-3 text-xs font-bold uppercase text-white disabled:opacity-50">{saving ? 'A confirmar…' : 'Gravar Fatura (F2)'}</button>
+            <button
+              disabled={saving || (items.length === 0 && (!quantityStr || Number(quantityStr) <= 0))}
+              onClick={() => void saveInvoice()}
+              className="rounded bg-[#006e25] px-5 py-3 text-xs font-bold uppercase text-white disabled:opacity-50 hover:bg-green-700"
+            >
+              {saving ? 'A confirmar…' : 'Gravar Fatura (F2)'}
+            </button>
           </div>
         </section>
       )}
