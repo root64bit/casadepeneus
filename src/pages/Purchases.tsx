@@ -285,7 +285,16 @@ export const Purchases: React.FC<PurchasesProps> = ({
               <input value={requisitionNo} onChange={(event) => setRequisitionNo(event.target.value)} placeholder="Nº Requisição Casa de Pneus" className="mt-1 w-full rounded border p-2 font-mono dark:bg-[#282c2e]" />
             </label>
             <label className="text-xs font-bold uppercase">Condição
-              <select value={term} onChange={(event) => setTerm(event.target.value)} className="mt-1 w-full rounded border p-2 dark:bg-[#282c2e]">
+              <select
+                value={term}
+                onChange={(event) => setTerm(event.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                    e.stopPropagation();
+                  }
+                }}
+                className="mt-1 w-full rounded border p-2 dark:bg-[#282c2e]"
+              >
                 {paymentTerms.map((item) => <option key={item.id} value={item.code}>{item.name}</option>)}
               </select>
             </label>

@@ -158,28 +158,31 @@ export const NewSale: React.FC<NewSaleProps> = ({
   }, [posPhase, items, selectedClientId, totalFinalAmount, clients]);
 
   const handleClientCodeChange = (codeStr: string) => {
-    const found = clients.find((c) => c.number === codeStr.trim() || c.id === codeStr.trim());
+    const clean = codeStr.trim().toLowerCase();
+    if (!clean) return;
+    const found = clients.find(
+      (c) =>
+        c.number?.toLowerCase() === clean ||
+        c.code?.toLowerCase() === clean ||
+        c.id.toLowerCase() === clean ||
+        String(c.number) === clean ||
+        c.name.toLowerCase().includes(clean)
+    );
     if (found) {
       setSelectedClientId(found.id);
       setSelectedClientName(found.name);
-      setClientNuit(found.nuit);
-      setClientAddress(found.address);
+      setClientNuit(found.nuit || '');
+      setClientAddress(found.address || '');
       if (documents?.some(d => d.partyId === found.id && d.outstandingAmount > 0)) {
         setShowClientInvoices(true);
       } else {
         setShowClientInvoices(false);
       }
     } else {
-      const pontual = clients.find((c) => c.name.toLowerCase().includes('pontual')) || {
-        id: 'client-pontual',
-        name: 'Cliente Pontual',
-        nuit: '999999999',
-        address: 'Consumo Final',
-      };
-      setSelectedClientId(pontual.id);
-      setSelectedClientName(pontual.name);
-      setClientNuit(pontual.nuit ?? '');
-      setClientAddress(pontual.address ?? '');
+      setSelectedClientId('client-pontual');
+      setSelectedClientName('Cliente Pontual');
+      setClientNuit('');
+      setClientAddress('');
     }
   };
 
