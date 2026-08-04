@@ -505,127 +505,137 @@ export const NewSale: React.FC<NewSaleProps> = ({
         </div>
       )}
 
-      <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-4 rounded-lg shadow-sm">
-        <div className="grid grid-cols-12 gap-3 text-xs">
-          <div className="col-span-12 md:col-span-2">
-            <label className="block font-bold text-[#737780] uppercase mb-1">Data Emissão</label>
-            <input
-              type="date"
-              value={date}
-              disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring disabled:opacity-60"
-            />
-          </div>
-
-          <div className="col-span-12 md:col-span-2">
-            <label className="block font-bold text-[#737780] uppercase mb-1">Código Cliente</label>
-            <input
-              type="text"
-              placeholder="Ex: 5"
-              value={clientCodeInput}
-              disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
-              onChange={(e) => setClientCodeInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  lookupClientByCode(clientCodeInput);
-                  document.querySelector<HTMLInputElement>('input[placeholder*="Pesquisar artigo"]')?.focus();
-                }
-              }}
-              onBlur={() => lookupClientByCode(clientCodeInput)}
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring font-bold disabled:opacity-60"
-            />
-          </div>
-
-          <div className="col-span-12 md:col-span-3">
-            <label className="block font-bold text-[#737780] uppercase mb-1">Nome do Cliente *</label>
-            <input
-              type="text"
-              value={selectedClientName}
-              disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
-              onChange={(e) => setSelectedClientName(e.target.value)}
-              placeholder="Nome do Cliente"
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-bold border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring disabled:opacity-60"
-            />
-          </div>
-
-          <div className="col-span-12 md:col-span-2">
-            <label className="block font-bold text-[#737780] uppercase mb-1">NUIT</label>
-            <input
-              type="text"
-              value={clientNuit}
-              disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
-              onChange={(e) => setClientNuit(e.target.value)}
-              placeholder="NUIT (opcional)"
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring disabled:opacity-60"
-            />
-          </div>
-
-          <div className="col-span-12 md:col-span-3">
-            <label className="block font-bold text-[#737780] uppercase mb-1">Morada</label>
-            <input
-              type="text"
-              value={clientAddress}
-              disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
-              onChange={(e) => setClientAddress(e.target.value)}
-              placeholder="Morada (opcional)"
-              className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring disabled:opacity-60"
-            />
-          </div>
-
-          {documentType === 'CUSTOMER_INVOICE' && (
-            <div className="col-span-12 md:col-span-4">
-              <label className="block font-bold text-[#737780] uppercase mb-1">Condição de Pagamento</label>
-              <select
-                value={paymentSelection}
-                disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
-                onChange={(e) => setPaymentSelection(e.target.value)}
-                className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs font-bold text-[#003366] disabled:opacity-60"
-              >
-                {paymentTerms.map((term) => (
-                  <option key={term.id} value={`TERM:${term.code}`}>
-                    {term.name}
-                  </option>
-                ))}
-              </select>
+      <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-3 print:p-2 rounded-lg shadow-sm print:shadow-none space-y-2 print:space-y-1">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-xs print:text-[10px]">
+          {/* Left Column */}
+          <div className="space-y-2 print:space-y-1">
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-1">
+                <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[11px] print:text-[9px]">Data Emissão</label>
+                <input
+                  type="date"
+                  value={date}
+                  disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 print:p-1 text-xs print:text-[10px] focus-ring disabled:opacity-60"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[11px] print:text-[9px]">Código Cliente</label>
+                <input
+                  type="text"
+                  placeholder="Ex: 5"
+                  value={clientCodeInput}
+                  disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
+                  onChange={(e) => setClientCodeInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      lookupClientByCode(clientCodeInput);
+                      document.querySelector<HTMLInputElement>('input[placeholder*="Pesquisar artigo"]')?.focus();
+                    }
+                  }}
+                  onBlur={() => lookupClientByCode(clientCodeInput)}
+                  className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 print:p-1 text-xs print:text-[10px] focus-ring font-bold disabled:opacity-60"
+                />
+              </div>
             </div>
-          )}
 
-          {documentType === 'CASH_SALE' && (
-            <div className="col-span-12 md:col-span-4">
-              <label className="block font-bold text-[#737780] uppercase mb-1">Método de Pagamento</label>
-              <select
-                value={paymentSelection}
-                disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
-                onChange={(e) => setPaymentSelection(e.target.value)}
-                className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs font-bold text-[#006e25] disabled:opacity-60"
-              >
-                {paymentMethods.map((method) => (
-                  <option key={method.id} value={`METHOD:${method.code}`}>
-                    {method.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {documentType === 'CUSTOMER_DELIVERY_NOTE' && (
-            <div className="col-span-12 md:col-span-4">
-              <label className="block font-bold text-[#737780] uppercase mb-1">Local de Entrega / Expedição</label>
+            <div>
+              <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[11px] print:text-[9px]">Nome do Cliente *</label>
               <input
                 type="text"
-                value={deliveryLocation}
+                value={selectedClientName}
                 disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
-                onChange={(e) => setDeliveryLocation(e.target.value)}
-                placeholder="Ex: Armazém Central ou Destino do Cliente"
-                className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs focus-ring font-mono disabled:opacity-60"
+                onChange={(e) => setSelectedClientName(e.target.value)}
+                placeholder="Nome do Cliente"
+                className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-bold border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 print:p-1 text-xs print:text-[10px] focus-ring disabled:opacity-60"
               />
             </div>
-          )}
+          </div>
+
+          {/* Right Column */}
+          <div className="space-y-2 print:space-y-1">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[11px] print:text-[9px]">NUIT</label>
+                <input
+                  type="text"
+                  value={clientNuit}
+                  disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
+                  onChange={(e) => setClientNuit(e.target.value)}
+                  placeholder="NUIT (opcional)"
+                  className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 print:p-1 text-xs print:text-[10px] focus-ring disabled:opacity-60"
+                />
+              </div>
+              <div>
+                <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[11px] print:text-[9px]">Morada</label>
+                <input
+                  type="text"
+                  value={clientAddress}
+                  disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
+                  onChange={(e) => setClientAddress(e.target.value)}
+                  placeholder="Morada (opcional)"
+                  className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 print:p-1 text-xs print:text-[10px] focus-ring disabled:opacity-60"
+                />
+              </div>
+            </div>
+
+            <div>
+              {documentType === 'CUSTOMER_INVOICE' && (
+                <div>
+                  <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[11px] print:text-[9px]">Condição de Pagamento</label>
+                  <select
+                    value={paymentSelection}
+                    disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
+                    onChange={(e) => setPaymentSelection(e.target.value)}
+                    className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 print:p-1 text-xs print:text-[10px] font-bold text-[#003366] disabled:opacity-60"
+                  >
+                    {paymentTerms.map((term) => (
+                      <option key={term.id} value={`TERM:${term.code}`}>
+                        {term.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {documentType === 'CASH_SALE' && (
+                <div>
+                  <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[11px] print:text-[9px]">Método de Pagamento</label>
+                  <select
+                    value={paymentSelection}
+                    disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
+                    onChange={(e) => setPaymentSelection(e.target.value)}
+                    className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 print:p-1 text-xs print:text-[10px] font-bold text-[#006e25] disabled:opacity-60"
+                  >
+                    {paymentMethods.map((method) => (
+                      <option key={method.id} value={`METHOD:${method.code}`}>
+                        {method.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {documentType === 'CUSTOMER_DELIVERY_NOTE' && (
+                <div>
+                  <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[11px] print:text-[9px]">Local de Entrega / Expedição</label>
+                  <input
+                    type="text"
+                    value={deliveryLocation}
+                    disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
+                    onChange={(e) => setDeliveryLocation(e.target.value)}
+                    placeholder="Ex: Armazém Central ou Destino do Cliente"
+                    className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 print:p-1 text-xs print:text-[10px] focus-ring font-mono disabled:opacity-60"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
 
           {selectedClientId && documentType !== 'CUSTOMER_DELIVERY_NOTE' && (
-            <div className="col-span-12 bg-[#003366]/10 p-2.5 rounded border border-[#003366]/20 flex items-center justify-between text-xs font-mono">
+            <div className="col-span-1 md:col-span-2 bg-[#003366]/10 p-2 print:p-1 rounded border border-[#003366]/20 flex items-center justify-between text-xs print:text-[10px] font-mono">
               <div>
                 <span className="font-bold text-[#001e40] dark:text-white">Cliente Activo: {selectedClientName}</span>
                 {previousBalance > 0 && (
@@ -694,12 +704,12 @@ export const NewSale: React.FC<NewSaleProps> = ({
                 <th className="p-3 w-20 text-center">Desc %</th>
                 <th className="p-3 w-20 text-center">IVA %</th>
                 <th className="p-3 w-32 text-right">Total c/ IVA</th>
-                <th className="p-3 w-16 text-center">Acção</th>
+                <th className="p-3 w-16 text-center print:hidden">Acção</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f] font-mono">
               {docStatus !== 'CONFIRMED' && docStatus !== 'READ_ONLY' && (
-                <tr className="bg-[#0000aa]/10 dark:bg-[#282c2e] border-b-2 border-[#003366]">
+                <tr className="bg-[#0000aa]/10 dark:bg-[#282c2e] border-b-2 border-[#003366] print:hidden">
                   <td className="p-2" colSpan={2}>
                     <ArticleSearchSelect
                       articles={articles}
@@ -814,7 +824,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
                   <td className="p-3 text-center text-red-600">{item.discountPercent}%</td>
                   <td className="p-3 text-center font-bold text-[#003366]">{item.ivaPercent}%</td>
                   <td className="p-3 text-right font-bold text-[#006e25]">{formatMZN(item.total)}</td>
-                  <td className="p-3 text-center">
+                  <td className="p-3 text-center print:hidden">
                     {docStatus !== 'CONFIRMED' && docStatus !== 'READ_ONLY' && (
                       <button
                         type="button"
@@ -840,10 +850,10 @@ export const NewSale: React.FC<NewSaleProps> = ({
         </div>
       </section>
 
-      <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-4 rounded-lg shadow-sm space-y-4">
-        <div className="grid grid-cols-12 gap-4">
-          <div className="col-span-12 md:col-span-6 space-y-3 bg-[#f3f4f5] dark:bg-[#282c2e] p-3 rounded-lg border border-[#c3c6d1] dark:border-[#43474f]">
-            <div className="flex items-center space-x-3 text-xs">
+      <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-3 print:p-2 rounded-lg shadow-sm print:shadow-none space-y-3 print:space-y-1">
+        <div className="grid grid-cols-12 gap-3 print:gap-2">
+          <div className="col-span-12 md:col-span-6 space-y-2 print:space-y-1 bg-[#f3f4f5] dark:bg-[#282c2e] p-2.5 print:p-1.5 rounded-lg border border-[#c3c6d1] dark:border-[#43474f]">
+            <div className="flex items-center space-x-3 text-xs print:text-[10px]">
               <label className="font-bold uppercase text-[#191c1d] dark:text-white">% Desconto Geral:</label>
               <input
                 type="number"
@@ -852,26 +862,26 @@ export const NewSale: React.FC<NewSaleProps> = ({
                 value={generalDiscount}
                 disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
                 onChange={(e) => setGeneralDiscount(Number(e.target.value))}
-                className="w-20 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded p-1 text-center font-bold text-[#191c1d] dark:text-white disabled:opacity-60"
+                className="w-16 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded p-0.5 text-center font-bold text-[#191c1d] dark:text-white disabled:opacity-60"
               />
               <span className="font-bold text-[#191c1d] dark:text-white">Valor: {formatMZN(descontoGeralValor)}</span>
             </div>
 
             <div>
-              <label className="block font-bold uppercase text-[#191c1d] dark:text-white mb-1 text-xs">Observações / Garantias:</label>
+              <label className="block font-bold uppercase text-[#191c1d] dark:text-white mb-0.5 text-xs print:text-[10px]">Observações / Garantias:</label>
               <textarea
                 value={notes}
                 disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Observações da fatura ou termos de garantia dos pneus..."
-                className="w-full h-16 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs text-[#191c1d] dark:text-white focus:outline-none disabled:opacity-60"
+                className="w-full h-12 print:h-8 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 print:p-1 text-xs print:text-[10px] text-[#191c1d] dark:text-white focus:outline-none disabled:opacity-60"
               ></textarea>
             </div>
           </div>
 
-          <div className="col-span-12 md:col-span-6 grid grid-cols-2 gap-3">
-            <div className="border border-[#c3c6d1] dark:border-[#43474f] p-2 bg-[#f3f4f5] dark:bg-[#282c2e] text-[11px] font-mono space-y-1 rounded-lg">
-              <div className="border-b border-[#c3c6d1] dark:border-[#43474f] font-bold flex justify-between text-[#191c1d] dark:text-white uppercase text-[10px] pb-1">
+          <div className="col-span-12 md:col-span-6 grid grid-cols-2 gap-2 print:gap-1.5">
+            <div className="border border-[#c3c6d1] dark:border-[#43474f] p-2 print:p-1.5 bg-[#f3f4f5] dark:bg-[#282c2e] text-[11px] print:text-[10px] font-mono space-y-1 rounded-lg">
+              <div className="border-b border-[#c3c6d1] dark:border-[#43474f] font-bold flex justify-between text-[#191c1d] dark:text-white uppercase text-[10px] print:text-[9px] pb-0.5">
                 <span>CD</span>
                 <span>BASE IVA</span>
                 <span>TOTAL IVA</span>
@@ -888,7 +898,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
               </div>
             </div>
 
-            <div className="border border-[#c3c6d1] dark:border-[#43474f] p-3 bg-[#f3f4f5] dark:bg-[#282c2e] text-xs font-mono space-y-1.5 flex flex-col justify-between rounded-lg">
+            <div className="border border-[#c3c6d1] dark:border-[#43474f] p-2.5 print:p-1.5 bg-[#f3f4f5] dark:bg-[#282c2e] text-xs print:text-[10px] font-mono space-y-1 flex flex-col justify-between rounded-lg">
               <div className="flex justify-between text-[#191c1d] dark:text-white">
                 <span className="font-bold">ILIQUIDO:</span>
                 <span>{formatMZN(subtotalBruto)}</span>
@@ -901,9 +911,9 @@ export const NewSale: React.FC<NewSaleProps> = ({
                 <span>IVA:</span>
                 <span>{formatMZN(ivaTotal)}</span>
               </div>
-              <div className="pt-2 border-t border-[#c3c6d1] dark:border-[#43474f] flex justify-between items-center font-black text-[#191c1d] dark:text-white">
+              <div className="pt-1 border-t border-[#c3c6d1] dark:border-[#43474f] flex justify-between items-center font-black text-[#191c1d] dark:text-white">
                 <span>TOTAL:</span>
-                <span className="text-xl text-[#006e25] font-extrabold">{formatMZN(totalFinalAmount)}</span>
+                <span className="text-xl print:text-sm text-[#006e25] font-extrabold">{formatMZN(totalFinalAmount)}</span>
               </div>
             </div>
           </div>
