@@ -104,13 +104,26 @@ export const NewSale: React.FC<NewSaleProps> = ({
     const clean = query.trim().toLowerCase();
     if (!clean) return;
 
+    // Code 1 (or 01) is ALWAYS reserved for Cliente Pontual
+    if (clean === '1' || clean === '01') {
+      setSelectedClientId('client-pontual');
+      setSelectedClientName('Cliente Pontual');
+      setClientCodeInput('1');
+      setClientNuit('');
+      setClientAddress('');
+      setShowClientInvoices(false);
+      return;
+    }
+
     const found = clients.find(
       (c) =>
-        (c.number && c.number.trim().toLowerCase() === clean) ||
-        (c.code && c.code.trim().toLowerCase() === clean) ||
-        c.id.toLowerCase() === clean ||
-        String(c.number) === clean ||
-        c.name.toLowerCase().includes(clean)
+        c.number !== '1' &&
+        c.code !== '1' &&
+        ((c.number && c.number.trim().toLowerCase() === clean) ||
+          (c.code && c.code.trim().toLowerCase() === clean) ||
+          c.id.toLowerCase() === clean ||
+          String(c.number) === clean ||
+          c.name.toLowerCase().includes(clean))
     );
 
     if (found) {
@@ -129,6 +142,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
       setSelectedClientName('Cliente Pontual');
       setClientNuit('');
       setClientAddress('');
+      setShowClientInvoices(false);
     }
   };
 

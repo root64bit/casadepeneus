@@ -105,10 +105,21 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
     setSearchQuery('');
   };
 
+  // Helper to extract local YYYY-MM-DD from ISO or date string
+  const getLocalDateString = (isoOrDateStr: string): string => {
+    if (!isoOrDateStr) return '';
+    const d = new Date(isoOrDateStr);
+    if (isNaN(d.getTime())) return isoOrDateStr.substring(0, 10);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
   // Filtered movements based on date, type and search query
   const filteredMovements = useMemo(() => {
     return movements.filter((m) => {
-      const itemDate = m.date.substring(0, 10);
+      const itemDate = getLocalDateString(m.date);
       if (dateFrom && itemDate < dateFrom) return false;
       if (dateTo && itemDate > dateTo) return false;
       if (typeFilter !== 'ALL' && m.type !== typeFilter) return false;
@@ -119,7 +130,9 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
         const descMatch = m.articleDescription.toLowerCase().includes(q);
         const refMatch = m.docRef.toLowerCase().includes(q);
         const operatorMatch = m.operator.toLowerCase().includes(q);
-        if (!codeMatch && !descMatch && !refMatch && !operatorMatch) return false;
+        const typeMatch = m.type.toLowerCase().includes(q);
+        const qtyMatch = String(m.quantity).includes(q);
+        if (!codeMatch && !descMatch && !refMatch && !operatorMatch && !typeMatch && !qtyMatch) return false;
       }
       return true;
     });
