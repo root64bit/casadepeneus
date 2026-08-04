@@ -81,23 +81,16 @@ export const NewSale: React.FC<NewSaleProps> = ({
     setConfirmedSaleRecord(null);
     setSaveError('');
 
-    if (type === 'CASH_SALE') {
-      const pontual = clients.find((c) => c.name.toLowerCase().includes('pontual')) || clients[0];
-      if (pontual) {
-        setSelectedClientId(pontual.id);
-        setSelectedClientName(pontual.name);
-        setClientCodeInput(pontual.number || pontual.code || '');
-        setClientNuit('');
-        setClientAddress('');
-      }
-      if (receiptMethod) setPaymentSelection(`METHOD:${receiptMethod.code}`);
-    } else {
-      if (clients[0]) {
-        setSelectedClientId(clients[0].id);
-        setSelectedClientName(clients[0].name);
-        setClientCodeInput(clients[0].number || clients[0].code || '');
-      }
-    }
+    const pontualInDb = clients.find(
+      (c) => c.number === '1' || c.code === '1' || c.name.toLowerCase().includes('pontual') || c.name.toLowerCase().includes('final')
+    ) || clients[0];
+
+    setSelectedClientId(pontualInDb ? pontualInDb.id : 'client-pontual');
+    setSelectedClientName('Cliente Pontual');
+    setClientCodeInput('1');
+    setClientNuit('');
+    setClientAddress('');
+    if (receiptMethod) setPaymentSelection(`METHOD:${receiptMethod.code}`);
   };
 
   const lookupClientByCode = (query: string) => {
@@ -106,7 +99,11 @@ export const NewSale: React.FC<NewSaleProps> = ({
 
     // Code 1 (or 01) is ALWAYS reserved for Cliente Pontual
     if (clean === '1' || clean === '01') {
-      setSelectedClientId('client-pontual');
+      const pontualInDb = clients.find(
+        (c) => c.number === '1' || c.code === '1' || c.name.toLowerCase().includes('pontual') || c.name.toLowerCase().includes('final')
+      ) || clients[0];
+
+      setSelectedClientId(pontualInDb ? pontualInDb.id : 'client-pontual');
       setSelectedClientName('Cliente Pontual');
       setClientCodeInput('1');
       setClientNuit('');
@@ -138,7 +135,11 @@ export const NewSale: React.FC<NewSaleProps> = ({
         setShowClientInvoices(false);
       }
     } else {
-      setSelectedClientId('client-pontual');
+      const pontualInDb = clients.find(
+        (c) => c.number === '1' || c.code === '1' || c.name.toLowerCase().includes('pontual')
+      ) || clients[0];
+
+      setSelectedClientId(pontualInDb ? pontualInDb.id : 'client-pontual');
       setSelectedClientName('Cliente Pontual');
       setClientNuit('');
       setClientAddress('');

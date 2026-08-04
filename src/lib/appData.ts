@@ -208,11 +208,33 @@ export async function createCustomerSale(
   const client = requireSupabase();
   const idempotencyKey = crypto.randomUUID();
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId);
-  if (!isUuid) throw new Error('Cliente da venda inválido. Atualize a lista e tente novamente.');
+  let targetCustomerId = customerId;
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetCustomerId);
+  if (!isUuid) {
+    const { data: dbCustomers } = await client
+      .from('customers')
+      .select('id,customer_number,name')
+      .eq('active', true)
+      .limit(50);
+
+    const pontualCustomer = (dbCustomers || []).find(
+      (c) =>
+        c.customer_number === '1' ||
+        c.name.toLowerCase().includes('pontual') ||
+        c.name.toLowerCase().includes('final') ||
+        c.name.toLowerCase().includes('geral')
+    ) || dbCustomers?.[0];
+
+    if (pontualCustomer?.id) {
+      targetCustomerId = pontualCustomer.id;
+    } else {
+      throw new Error('Cliente da venda inválido. Registe pelo menos um cliente no sistema.');
+    }
+  }
 
   const { data, error } = await client.rpc('create_and_confirm_customer_sale', {
-    p_customer_id: customerId,
+    p_customer_id: targetCustomerId,
     p_document_date: sale.date,
     p_payment_term_code: sale.paymentTermCode ?? 'DINHEIRO',
     p_items: sale.items.map((item) => ({
