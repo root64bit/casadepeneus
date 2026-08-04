@@ -55,6 +55,46 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'entrada' | 'saida'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Total Available Stock in System
+  const totalStockInSystem = useMemo(() => {
+    return articles.reduce((acc, art) => acc + (art.stock || 0), 0);
+  }, [articles]);
+
+  // Calculate running balance (saldo) for each movement per article
+  const movementsWithSaldo = useMemo(() => {
+    const movementsByArticle: Record<string, StockMovement[]> = {};
+    movements.forEach((m) => {
+      if (!movementsByArticle[m.articleCode]) {
+        movementsByArticle[m.articleCode] = [];
+      }
+      movementsByArticle[m.articleCode].push(m);
+    });
+
+    const mapWithSaldo = new Map<string, number>();
+
+    Object.entries(movementsByArticle).forEach(([code, articleMovs]) => {
+      const matchedArt = articles.find((a) => a.code === code);
+      const currentStock = matchedArt?.stock ?? 0;
+
+      // Sort descending (newest first)
+      const sortedDesc = [...articleMovs].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+
+      let running = currentStock;
+      sortedDesc.forEach((m) => {
+        mapWithSaldo.set(m.id, running);
+        if (m.type === 'entrada') {
+          running -= m.quantity;
+        } else {
+          running += m.quantity;
+        }
+      });
+    });
+
+    return mapWithSaldo;
+  }, [movements, articles]);
+
   // Clear Filters
   const handleClearFilters = () => {
     setDateFrom('');
@@ -84,20 +124,23 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
   }, [movements, dateFrom, dateTo, typeFilter, searchQuery]);
 
   const exportMovementsToCSV = () => {
-    const headers = ['Data / Hora', 'Tipo', 'Documento / Guia', 'Armazém', 'Código Artigo', 'Descrição Artigo', 'Quantidade', 'Motivo / Notas', 'Operador'];
+    const headers = ['Data', 'Tipo', 'Documento / Guia', 'Código Artigo', 'Descrição Artigo', 'Entrada (Qtd)', 'Saída (Qtd)', 'Saldo Final'];
     const sorted = [...filteredMovements].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
-    const rows = sorted.map((item) => [
-      `"${new Date(item.date).toLocaleString('pt-PT').replace(/"/g, '""')}"`,
-      item.type.toUpperCase(),
-      `"${(item.docRef || (item.type === 'entrada' ? 'Entrada Directa' : 'Saída Directa')).replace(/"/g, '""')}"`,
-      `"${(item.warehouseName || 'Armazém Principal').replace(/"/g, '""')}"`,
-      `"${item.articleCode.replace(/"/g, '""')}"`,
-      `"${item.articleDescription.replace(/"/g, '""')}"`,
-      item.quantity.toFixed(3),
-      `"${(item.reason || item.notes || (item.type === 'entrada' ? 'Entrada Direta Manual' : 'Saída Direta Manual')).replace(/"/g, '""')}"`,
-      `"${(item.operator || 'Administrador').replace(/"/g, '""')}"`,
-    ]);
+    const rows = sorted.map((item) => {
+      const saldo = movementsWithSaldo.get(item.id) ?? 0;
+      const formattedDate = new Date(item.date).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      return [
+        `"${formattedDate}"`,
+        item.type.toUpperCase(),
+        `"${(item.docRef || (item.type === 'entrada' ? 'Entrada Directa' : 'Saída Directa')).replace(/"/g, '""')}"`,
+        `"${item.articleCode.replace(/"/g, '""')}"`,
+        `"${item.articleDescription.replace(/"/g, '""')}"`,
+        item.type === 'entrada' ? item.quantity.toFixed(3) : '0',
+        item.type === 'saida' ? item.quantity.toFixed(3) : '0',
+        saldo.toFixed(3),
+      ];
+    });
 
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
     const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' });
@@ -279,13 +322,18 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
     <div className="space-y-6 font-sans">
       {(canPostEntry || canPostExit) && (
         <section className="rounded-lg border border-[#c3c6d1] bg-white p-4 shadow-sm dark:border-[#43474f] dark:bg-[#1f2325] sm:p-5 space-y-4 print:hidden">
-          <div className="flex items-center justify-between border-b pb-2 border-[#c3c6d1] dark:border-[#43474f]">
+          <div className="flex flex-wrap items-center justify-between border-b pb-2 border-[#c3c6d1] dark:border-[#43474f] gap-2">
             <h2 className="text-sm font-black text-primary dark:text-blue-200 uppercase flex items-center gap-2">
               📦 Registar Guia de {type === 'entrada' ? 'Entrada' : 'Saída'} de Stock (até 99 itens)
             </h2>
-            <span className="text-xs font-bold text-slate-500">
-              Artigos na Guia: <b className="text-primary font-mono text-sm">{guideItems.length} / 99</b>
-            </span>
+            <div className="flex items-center space-x-3">
+              <span className="rounded bg-emerald-100 dark:bg-emerald-950/60 px-2.5 py-1 text-xs font-bold text-emerald-800 dark:text-emerald-300 border border-emerald-300">
+                Stock Total Disponível: <b>{totalStockInSystem} UN</b>
+              </span>
+              <span className="text-xs font-bold text-slate-500">
+                Artigos na Guia: <b className="text-primary font-mono text-sm">{guideItems.length} / 99</b>
+              </span>
+            </div>
           </div>
 
           {/* Header Controls (Operação, Nº da Guia, Observações, Operador) */}
@@ -513,10 +561,10 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
         <div className="flex flex-wrap items-center justify-between border-b bg-slate-100 px-4 py-3 dark:bg-slate-800 gap-2">
           <div className="flex items-center space-x-3">
             <h2 className="text-xs font-black uppercase text-slate-800 dark:text-slate-200">
-              Histórico de movimentos de stock ({filteredMovements.length})
+              Histórico de Movimentos de Stock ({filteredMovements.length})
             </h2>
-            <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
-              ● Dados em tempo real (Supabase)
+            <span className="rounded bg-emerald-100 dark:bg-emerald-950/60 px-2.5 py-1 text-[11px] font-bold text-emerald-800 dark:text-emerald-300 border border-emerald-300">
+              Stock Disponível Total: <b>{totalStockInSystem} UN</b>
             </span>
           </div>
 
@@ -587,7 +635,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Código, descrição, guia ou operador..."
+                placeholder="Código, descrição ou guia..."
                 className="p-1.5 border rounded text-xs w-64 dark:bg-[#1f2325]"
               />
             </div>
@@ -618,14 +666,13 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
             <table className="w-full text-xs font-mono">
               <thead className="bg-[#f3f4f5] dark:bg-[#282c2e] text-[11px] uppercase font-bold text-slate-700 dark:text-slate-300 border-b border-[#c3c6d1] dark:border-[#43474f]">
                 <tr>
-                  <th className="p-3 text-left">Data / Hora</th>
+                  <th className="p-3 text-left">Data</th>
                   <th className="p-3 text-left">Tipo</th>
                   <th className="p-3 text-left">Documento / Guia</th>
-                  <th className="p-3 text-left">Armazém</th>
                   <th className="p-3 text-left">Artigo (Código & Descrição)</th>
-                  <th className="p-3 text-right">Qtd.</th>
-                  <th className="p-3 text-left">Motivo / Notas</th>
-                  <th className="p-3 text-left">Operador</th>
+                  <th className="p-3 text-right text-emerald-700 dark:text-emerald-400">Entrada</th>
+                  <th className="p-3 text-right text-red-600 dark:text-red-400">Saída</th>
+                  <th className="p-3 text-right text-blue-700 dark:text-blue-400">Saldo</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f]">
@@ -637,11 +684,19 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                       (d) => d.displayNumber && item.docRef && item.docRef.includes(d.displayNumber)
                     );
                     const docDisplay = item.docRef || (item.type === 'entrada' ? 'Entrada Directa' : 'Saída Directa');
+                    const saldo = movementsWithSaldo.get(item.id) ?? (matchedArt?.stock ?? 0);
+                    
+                    // Format date only (no time: 04/08/2026)
+                    const formattedDate = new Date(item.date).toLocaleDateString('pt-PT', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                    });
 
                     return (
                       <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                        <td className="p-3 text-slate-600 dark:text-slate-400">
-                          {new Date(item.date).toLocaleString('pt-PT')}
+                        <td className="p-3 text-slate-600 dark:text-slate-400 font-bold">
+                          {formattedDate}
                         </td>
                         <td className="p-3">
                           <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-extrabold uppercase ${
@@ -666,9 +721,6 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                             <span className="font-bold text-slate-800 dark:text-slate-200">{docDisplay}</span>
                           )}
                         </td>
-                        <td className="p-3 text-slate-600 dark:text-slate-400 font-sans">
-                          {item.warehouseName || 'Armazém Principal'}
-                        </td>
                         <td className="p-3 font-bold">
                           {matchedArt ? (
                             <button
@@ -683,14 +735,14 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                             <span className="text-[#003366] dark:text-[#a7c8ff]">[{item.articleCode}] {item.articleDescription}</span>
                           )}
                         </td>
-                        <td className="p-3 text-right font-black text-sm">
-                          {item.quantity}
+                        <td className="p-3 text-right font-black text-sm text-emerald-700 dark:text-emerald-400">
+                          {item.type === 'entrada' ? item.quantity : '—'}
                         </td>
-                        <td className="p-3 text-slate-600 dark:text-slate-400 font-sans text-[11px]">
-                          {item.reason || item.notes || (item.type === 'entrada' ? 'Entrada Direta Manual' : 'Saída Direta Manual')}
+                        <td className="p-3 text-right font-black text-sm text-red-600 dark:text-red-400">
+                          {item.type === 'saida' ? item.quantity : '—'}
                         </td>
-                        <td className="p-3 text-slate-600 dark:text-slate-400">
-                          {item.operator || '—'}
+                        <td className="p-3 text-right font-black text-sm text-[#003366] dark:text-[#a7c8ff] bg-blue-50/50 dark:bg-blue-950/20">
+                          {saldo}
                         </td>
                       </tr>
                     );
