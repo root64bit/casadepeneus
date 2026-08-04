@@ -18,6 +18,7 @@ import { Purchases } from './pages/Purchases';
 import { Accounts } from './pages/Accounts';
 import { Administration } from './pages/Administration';
 import { StitchConnection } from './pages/StitchConnection';
+import { Quotation } from './pages/Quotation';
 import {
   Article,
   CompanyProfile,
@@ -39,6 +40,7 @@ import {
   createCustomer,
   createCustomerPayment,
   createCustomerSale,
+  createQuotation,
   createSupplier,
   createSupplierInvoice,
   createSupplierPayment,
@@ -61,6 +63,7 @@ const tabAccess: Record<string, string[]> = {
   dashboard: ['dashboard.read', 'products.view'],
   inventory: ['products.read', 'products.view', 'stock.read', 'stock.view'],
   sales: ['sales.create'],
+  quotation: ['sales.create', 'sales.read', 'dashboard.read'],
   purchases: ['purchases.read', 'purchases.invoice.create'],
   movements: ['stock.read', 'stock.view', 'stock.direct_entry', 'stock.direct_exit'],
   entities: ['customers.read', 'customers.view', 'suppliers.read', 'suppliers.view'],
@@ -239,6 +242,14 @@ function App() {
     const savedSale = await createCustomerSale(sale, sale.clientId);
     await refreshData();
     return savedSale;
+  };
+
+  const handleCreateQuotation = async (quotation: SaleInvoice): Promise<SaleInvoice> => {
+    if (!quotation.clientId) throw new Error('Cliente da cotação não identificado.');
+
+    const savedQuotation = await createQuotation(quotation, quotation.clientId);
+    await refreshData();
+    return savedQuotation;
   };
 
   const handleAddMovement = async (mov: StockMovement) => {
@@ -464,6 +475,17 @@ function App() {
             operatorName={userContext?.fullName ?? ''}
             paymentTerms={paymentTerms}
             paymentMethods={paymentMethods}
+          />
+        );
+      case 'quotation':
+        return (
+          <Quotation
+            articles={articles}
+            clients={clients}
+            documents={documents}
+            onCreateQuotation={handleCreateQuotation}
+            onOpenPrintModal={handleOpenPrintModal}
+            operatorName={userContext?.fullName ?? ''}
           />
         );
       case 'purchases':

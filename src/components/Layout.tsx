@@ -70,6 +70,7 @@ export const Layout: React.FC<LayoutProps> = ({
         { id: 'dashboard', label: 'Início', icon: 'home', visible: true },
         { id: 'inventory', label: 'Artigos e Stock', icon: 'inventory_2', visible: true },
         { id: 'sales', label: 'Nova Venda', icon: 'sell', visible: true },
+        { id: 'quotation', label: 'Cotação', icon: 'request_quote', visible: true },
         { id: 'purchases', label: 'Compras', icon: 'shopping_cart', visible: true },
         { id: 'movements', label: 'Entradas e Saídas', icon: 'swap_horiz', visible: true },
         { id: 'entities', label: 'Clientes e Fornecedores', icon: 'groups', visible: true },

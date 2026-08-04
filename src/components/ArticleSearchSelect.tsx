@@ -11,6 +11,7 @@ interface ArticleSearchSelectProps {
   className?: string;
   placeholder?: string;
   searchByCodeOnly?: boolean;
+  disabled?: boolean;
 }
 
 export const ArticleSearchSelect: React.FC<ArticleSearchSelectProps> = ({
@@ -22,6 +23,7 @@ export const ArticleSearchSelect: React.FC<ArticleSearchSelectProps> = ({
   className = '',
   placeholder = 'Pesquisar por código ou descrição…',
   searchByCodeOnly = false,
+  disabled = false,
 }) => {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -136,6 +138,7 @@ export const ArticleSearchSelect: React.FC<ArticleSearchSelectProps> = ({
         <input
           ref={inputRef}
           type="text"
+          disabled={disabled}
           value={isOpen ? query : (selectedArticle ? `[${selectedArticle.code}] ${selectedArticle.description}` : '')}
           onChange={(e) => { setQuery(e.target.value); setIsOpen(true); }}
           onFocus={() => { setQuery(''); setIsOpen(true); }}

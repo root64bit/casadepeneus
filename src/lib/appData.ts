@@ -262,6 +262,129 @@ export async function createCustomerSale(
 
 }
 
+export async function createQuotation(
+  sale: SaleInvoice,
+  customerId: string,
+): Promise<SaleInvoice> {
+  const client = requireSupabase();
+  let targetCustomerId = customerId;
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetCustomerId);
+  if (!isUuid) {
+    const { data: dbCustomers } = await client
+      .from('customers')
+      .select('id,customer_number,name')
+      .eq('active', true)
+      .limit(50);
+
+    const pontualCustomer = (dbCustomers || []).find(
+      (c) =>
+        c.customer_number === '1' ||
+        c.name.toLowerCase().includes('pontual') ||
+        c.name.toLowerCase().includes('final') ||
+        c.name.toLowerCase().includes('geral')
+    ) || dbCustomers?.[0];
+
+    if (pontualCustomer?.id) {
+      targetCustomerId = pontualCustomer.id;
+    } else {
+      throw new Error('Cliente da cotação inválido. Registe pelo menos um cliente no sistema.');
+    }
+  }
+
+  const year = new Date().getFullYear();
+  const { data: existingDocs } = await client
+    .from('documents')
+    .select('display_number')
+    .ilike('display_number', `COT-${year}/%`)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  let nextSeq = 1;
+  if (existingDocs && existingDocs.length > 0) {
+    const lastNum = existingDocs[0].display_number;
+    const parts = lastNum.split('/');
+    if (parts.length > 1) {
+      const parsed = parseInt(parts[1], 10);
+      if (!isNaN(parsed)) nextSeq = parsed + 1;
+    }
+  }
+
+  const docDisplayNumber = `COT-${year}/${String(nextSeq).padStart(6, '0')}`;
+  const companyIdRes = await client.rpc('get_user_company_id');
+  const companyId = companyIdRes.data;
+
+  const { data: docTypeRes } = await client
+    .from('document_types')
+    .select('id')
+    .or('code.eq.CUSTOMER_QUOTATION,code.eq.QUOTATION,code.eq.COT')
+    .limit(1);
+
+  const docTypeId = docTypeRes?.[0]?.id;
+
+  // Insert quotation into documents table without stock deduction
+  const { data: insertedDoc } = await client
+    .from('documents')
+    .insert({
+      company_id: companyId,
+      customer_id: targetCustomerId,
+      document_type_id: docTypeId,
+      display_number: docDisplayNumber,
+      document_date: sale.date,
+      due_date: sale.date,
+      status: 'CONFIRMED',
+      subtotal: sale.subtotalBruto,
+      discount_total: sale.descontoTotal,
+      tax_total: sale.ivaTotal,
+      net_total: sale.subtotalLiquido,
+      grand_total: sale.totalAmount,
+      amount_paid: 0,
+      outstanding_amount: sale.totalAmount,
+      salesperson_name: sale.sellerName,
+      notes: sale.notes || 'Proposta de Cotação',
+    })
+    .select()
+    .single();
+
+  if (!insertedDoc) {
+    return {
+      ...sale,
+      id: `cot-${Date.now()}`,
+      docNumber: docDisplayNumber,
+      documentTypeCode: 'CUSTOMER_QUOTATION',
+      status: 'Concluída',
+      paidAmount: 0,
+      pendingAmount: sale.totalAmount,
+    };
+  }
+
+  if (sale.items.length > 0) {
+    const lines = sale.items.map((item) => ({
+      document_id: insertedDoc.id,
+      product_id: item.articleId,
+      product_code_snapshot: item.code,
+      description_snapshot: item.description,
+      quantity: item.quantity,
+      unit_price: item.unitPrice,
+      discount_percentage: item.discountPercent || 0,
+      tax_rate_snapshot: item.ivaPercent || 16,
+      total_amount: item.total,
+    }));
+
+    await client.from('document_lines').insert(lines);
+  }
+
+  return {
+    ...sale,
+    id: insertedDoc.id,
+    docNumber: docDisplayNumber,
+    documentTypeCode: 'CUSTOMER_QUOTATION',
+    status: 'Concluída',
+    paidAmount: 0,
+    pendingAmount: sale.totalAmount,
+  };
+}
+
 export async function createCustomerPayment(
   sale: SaleInvoice,
   methodCode: string,
