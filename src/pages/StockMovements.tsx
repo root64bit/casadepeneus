@@ -46,6 +46,8 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
   const [ledgerArticle, setLedgerArticle] = useState<Article | null>(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
+  const guideNumberRef = useRef<HTMLInputElement>(null);
+  const notesRef = useRef<HTMLInputElement>(null);
   const qtyInputRef = useRef<HTMLInputElement>(null);
   const priceInputRef = useRef<HTMLInputElement>(null);
 
@@ -343,6 +345,13 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
               <select
                 value={type}
                 onChange={(event) => setType(event.target.value as 'entrada' | 'saida')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    guideNumberRef.current?.focus();
+                    guideNumberRef.current?.select();
+                  }
+                }}
                 className="mt-1 w-full rounded border border-[#c3c6d1] dark:border-[#43474f] p-2 dark:bg-[#282c2e] font-bold"
               >
                 {canPostEntry && <option value="entrada">Entrada direta por Guia</option>}
@@ -353,9 +362,18 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
             <label className="font-bold text-xs uppercase text-[#737780]">
               Número da Guia
               <input
+                ref={guideNumberRef}
                 type="text"
                 value={guideNumber}
                 onChange={(event) => setGuideNumber(event.target.value)}
+                onFocus={(e) => e.target.select()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    notesRef.current?.focus();
+                    notesRef.current?.select();
+                  }
+                }}
                 placeholder="Ex: GUIA-2026/001"
                 className="mt-1 w-full rounded border border-[#c3c6d1] dark:border-[#43474f] p-2 font-mono uppercase dark:bg-[#282c2e]"
               />
@@ -369,9 +387,21 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
             <label className="font-bold text-xs uppercase text-[#737780]">
               Observações
               <input
+                ref={notesRef}
                 maxLength={500}
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
+                onFocus={(e) => e.target.select()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const searchInput = document.querySelector<HTMLInputElement>('input[placeholder*="Código do Artigo"]');
+                    if (searchInput) {
+                      searchInput.focus();
+                      searchInput.select?.();
+                    }
+                  }
+                }}
                 placeholder="Notas da guia..."
                 className="mt-1 w-full rounded border border-[#c3c6d1] dark:border-[#43474f] p-2 dark:bg-[#282c2e]"
               />
