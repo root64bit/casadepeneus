@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-import type { Article, Client, DocumentRecord, SaleInvoice, SaleItem, ReferenceOption } from '../types';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import type { Article, Client, DocumentRecord, SaleInvoice, SaleItem } from '../types';
 import { ArticleSearchSelect } from '../components/ArticleSearchSelect';
 import { formatMZN } from '../stitch/stitchConfig';
 
 interface QuotationProps {
   articles: Article[];
   clients: Client[];
+  sales?: SaleInvoice[];
   documents?: DocumentRecord[];
   onCreateQuotation: (quotation: SaleInvoice) => Promise<SaleInvoice>;
   onOpenPrintModal: (doc: SaleInvoice) => void;
@@ -15,6 +16,7 @@ interface QuotationProps {
 export const Quotation: React.FC<QuotationProps> = ({
   articles,
   clients,
+  sales = [],
   documents = [],
   onCreateQuotation,
   onOpenPrintModal,
@@ -48,6 +50,11 @@ export const Quotation: React.FC<QuotationProps> = ({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [confirmedQuotationRecord, setConfirmedQuotationRecord] = useState<SaleInvoice | null>(null);
+
+  // Filters for Quotation History List
+  const [historyDateFilter, setHistoryDateFilter] = useState('');
+  const [historyNameFilter, setHistoryNameFilter] = useState('');
+  const [historyCodeFilter, setHistoryCodeFilter] = useState('');
 
   // Refs for fast Enter navigation
   const qtyInputRef = useRef<HTMLInputElement>(null);
@@ -284,8 +291,136 @@ export const Quotation: React.FC<QuotationProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [items, saving, docStatus, confirmedQuotationRecord, selectedClientId, selectedClientName, date, notes]);
 
+  // Extract all Quotations from sales and documents props
+  const quotationHistory = useMemo(() => {
+    const list: Array<{
+      id: string;
+      docNumber: string;
+      date: string;
+      clientId?: string;
+      clientName: string;
+      clientNuit: string;
+      clientAddress: string;
+      totalAmount: number;
+      status: string;
+      items: SaleItem[];
+      sellerName: string;
+      rawSale?: SaleInvoice;
+      rawDoc?: DocumentRecord;
+    }> = [];
+
+    const seenIds = new Set<string>();
+
+    // From sales prop
+    sales.forEach((s) => {
+      if (s.documentTypeCode === 'CUSTOMER_QUOTATION' || s.docNumber.startsWith('COT-')) {
+        seenIds.add(s.id);
+        seenIds.add(s.docNumber);
+        list.push({
+          id: s.id,
+          docNumber: s.docNumber,
+          date: s.date,
+          clientId: s.clientId,
+          clientName: s.clientName,
+          clientNuit: s.clientNuit || '',
+          clientAddress: s.clientAddress || '',
+          totalAmount: s.totalAmount,
+          status: s.status || 'Emitida',
+          items: s.items || [],
+          sellerName: s.sellerName || '',
+          rawSale: s,
+        });
+      }
+    });
+
+    // From documents prop
+    documents.forEach((d) => {
+      const isCotation =
+        d.typeCode === 'CUSTOMER_QUOTATION' ||
+        d.displayNumber.startsWith('COT-') ||
+        (d.typeName && d.typeName.toLowerCase().includes('cotação'));
+
+      if (isCotation && !seenIds.has(d.id) && !seenIds.has(d.displayNumber)) {
+        const clientObj = clients.find((c) => c.id === d.partyId);
+        list.push({
+          id: d.id,
+          docNumber: d.displayNumber,
+          date: d.date,
+          clientId: d.partyId,
+          clientName: d.partyName || clientObj?.name || 'Cliente Pontual',
+          clientNuit: clientObj?.nuit || '',
+          clientAddress: clientObj?.address || '',
+          totalAmount: d.grandTotal,
+          status: 'Emitida',
+          items: [],
+          sellerName: operatorName,
+          rawDoc: d,
+        });
+      }
+    });
+
+    return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [sales, documents, clients]);
+
+  // Filtered Quotation History by Date, Name/Nuit, or Code/DocNo
+  const filteredQuotations = useMemo(() => {
+    return quotationHistory.filter((item) => {
+      // 1. Date Filter
+      if (historyDateFilter && item.date.substring(0, 10) !== historyDateFilter) {
+        return false;
+      }
+
+      // 2. Name Filter
+      if (historyNameFilter.trim()) {
+        const q = historyNameFilter.trim().toLowerCase();
+        const matchName = item.clientName.toLowerCase().includes(q);
+        const matchNuit = item.clientNuit.toLowerCase().includes(q);
+        if (!matchName && !matchNuit) return false;
+      }
+
+      // 3. Code Filter (Doc Number or Article Code)
+      if (historyCodeFilter.trim()) {
+        const q = historyCodeFilter.trim().toLowerCase();
+        const matchDocNo = item.docNumber.toLowerCase().includes(q);
+        const matchItemCode = item.items.some((i) => i.code.toLowerCase().includes(q));
+        if (!matchDocNo && !matchItemCode) return false;
+      }
+
+      return true;
+    });
+  }, [quotationHistory, historyDateFilter, historyNameFilter, historyCodeFilter]);
+
+  const handlePrintQuotationFromHistory = (item: (typeof quotationHistory)[0]) => {
+    if (item.rawSale) {
+      onOpenPrintModal(item.rawSale);
+    } else {
+      const saleFormat: SaleInvoice = {
+        id: item.id,
+        clientId: item.clientId || 'client-pontual',
+        documentTypeCode: 'CUSTOMER_QUOTATION',
+        docNumber: item.docNumber,
+        date: item.date,
+        clientName: item.clientName,
+        clientNuit: item.clientNuit,
+        clientAddress: item.clientAddress,
+        paymentMethod: 'CASH',
+        sellerName: item.sellerName || operatorName,
+        items: item.items,
+        subtotalBruto: item.totalAmount,
+        descontoTotal: 0,
+        subtotalLiquido: item.totalAmount,
+        ivaTotal: 0,
+        totalAmount: item.totalAmount,
+        paidAmount: 0,
+        pendingAmount: item.totalAmount,
+        status: 'Concluída',
+      };
+      onOpenPrintModal(saleFormat);
+    }
+  };
+
   return (
-    <div className="space-y-4 font-sans pb-16">
+    <div className="space-y-6 font-sans pb-16">
       {/* Header Banner */}
       <header className="flex flex-wrap items-center justify-between border-b pb-2 border-[#c3c6d1] dark:border-[#43474f] gap-2">
         <div>
@@ -602,6 +737,120 @@ export const Quotation: React.FC<QuotationProps> = ({
           ⚠️ {saveError}
         </div>
       )}
+
+      {/* SECTION: Histórico de Cotações Emitidas */}
+      <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-4 rounded-lg shadow-sm space-y-3 print:hidden">
+        <div className="flex flex-wrap items-center justify-between border-b border-[#c3c6d1] dark:border-[#43474f] pb-2 gap-2">
+          <h3 className="font-bold text-xs uppercase text-[#003366] dark:text-[#a7c8ff] flex items-center gap-1.5">
+            <span>📑</span> Histórico de Cotações Emitidas ({filteredQuotations.length})
+          </h3>
+          {(historyDateFilter || historyNameFilter || historyCodeFilter) && (
+            <button
+              type="button"
+              onClick={() => {
+                setHistoryDateFilter('');
+                setHistoryNameFilter('');
+                setHistoryCodeFilter('');
+              }}
+              className="text-xs font-bold text-red-600 hover:underline"
+            >
+              🧹 Limpar Filtros
+            </button>
+          )}
+        </div>
+
+        {/* Filters Bar */}
+        <div className="grid grid-cols-12 gap-3 text-xs">
+          <div className="col-span-12 sm:col-span-4 md:col-span-3">
+            <label className="block font-bold text-[#737780] uppercase mb-1 text-[11px]">Filtrar por Data</label>
+            <input
+              type="date"
+              value={historyDateFilter}
+              onChange={(e) => setHistoryDateFilter(e.target.value)}
+              className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs font-mono"
+            />
+          </div>
+
+          <div className="col-span-12 sm:col-span-4 md:col-span-4">
+            <label className="block font-bold text-[#737780] uppercase mb-1 text-[11px]">Filtrar por Nome do Cliente</label>
+            <input
+              type="text"
+              placeholder="Pesquisar por nome de cliente ou NUIT..."
+              value={historyNameFilter}
+              onChange={(e) => setHistoryNameFilter(e.target.value)}
+              className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs"
+            />
+          </div>
+
+          <div className="col-span-12 sm:col-span-4 md:col-span-5">
+            <label className="block font-bold text-[#737780] uppercase mb-1 text-[11px]">Filtrar por Código / N.º Cotação</label>
+            <input
+              type="text"
+              placeholder="Ex: COT-2026/000001 ou código do artigo..."
+              value={historyCodeFilter}
+              onChange={(e) => setHistoryCodeFilter(e.target.value)}
+              className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs font-mono"
+            />
+          </div>
+        </div>
+
+        {/* Quotations Table */}
+        <div className="overflow-x-auto rounded border border-[#c3c6d1] dark:border-[#43474f]">
+          <table className="w-full text-left text-xs font-mono border-collapse">
+            <thead className="bg-[#e7e8e9] dark:bg-[#282c2e] text-[#191c1d] dark:text-[#e1e2e4] font-bold uppercase border-b border-[#c3c6d1]">
+              <tr>
+                <th className="p-2.5">N.º Cotação</th>
+                <th className="p-2.5">Data</th>
+                <th className="p-2.5">Cliente</th>
+                <th className="p-2.5 text-right">Total (MT)</th>
+                <th className="p-2.5 text-center">Estado</th>
+                <th className="p-2.5 text-center">Ação</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f]">
+              {filteredQuotations.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-slate-400 font-sans italic">
+                    Nenhuma cotação encontrada para os filtros aplicados.
+                  </td>
+                </tr>
+              ) : (
+                filteredQuotations.map((item) => (
+                  <tr key={item.id} className="hover:bg-[#f3f4f5] dark:hover:bg-[#282c2e] transition-colors">
+                    <td className="p-2.5 font-bold text-[#003366] dark:text-[#a7c8ff]">
+                      {item.docNumber}
+                    </td>
+                    <td className="p-2.5 text-slate-600 dark:text-slate-400">
+                      {item.date}
+                    </td>
+                    <td className="p-2.5 font-sans font-semibold">
+                      {item.clientName}
+                      {item.clientNuit ? <span className="text-slate-400 text-[10px] ml-1.5">(NUIT: {item.clientNuit})</span> : null}
+                    </td>
+                    <td className="p-2.5 text-right font-black text-[#006e25]">
+                      {formatMZN(item.totalAmount)}
+                    </td>
+                    <td className="p-2.5 text-center font-sans">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-blue-100 text-blue-900 border border-blue-300 uppercase">
+                        {item.status}
+                      </span>
+                    </td>
+                    <td className="p-2.5 text-center">
+                      <button
+                        type="button"
+                        onClick={() => handlePrintQuotationFromHistory(item)}
+                        className="px-3 py-1 bg-[#003366] text-white font-bold rounded text-[11px] hover:bg-blue-900 flex items-center gap-1 mx-auto"
+                      >
+                        <span>🖨</span> Imprimir / Consultar
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       {/* Action Footer Bar */}
       <footer className="fixed bottom-0 left-0 right-0 z-30 bg-[#e7e8e9] dark:bg-[#282c2e] border-t border-[#c3c6d1] dark:border-[#43474f] p-3 shadow-lg flex items-center justify-between print:hidden lg:left-[240px]">

@@ -482,6 +482,7 @@ function App() {
           <Quotation
             articles={articles}
             clients={clients}
+            sales={sales}
             documents={documents}
             onCreateQuotation={handleCreateQuotation}
             onOpenPrintModal={handleOpenPrintModal}
