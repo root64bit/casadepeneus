@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Article, StockMovement, DocumentRecord } from '../types';
+import { Article, StockMovement, DocumentRecord, SaleInvoice } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
 import { ArticleLedgerModal } from '../components/ArticleLedgerModal';
 
 interface InventoryProps {
   articles: Article[];
   movements?: StockMovement[];
+  sales?: SaleInvoice[];
   documents?: DocumentRecord[];
   globalSearch: string;
   onOpenNewArticleModal: () => void;
@@ -20,6 +21,7 @@ interface InventoryProps {
 export const Inventory: React.FC<InventoryProps> = ({
   articles,
   movements = [],
+  sales = [],
   documents = [],
   globalSearch,
   onOpenNewArticleModal,
@@ -338,6 +340,7 @@ export const Inventory: React.FC<InventoryProps> = ({
         article={ledgerArticle}
         articles={articles}
         movements={movements}
+        sales={sales}
         documents={documents}
         onOpenDocument={onOpenDocument}
         canViewCost={canViewCost}

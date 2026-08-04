@@ -1,5 +1,5 @@
 import React, { useMemo, useEffect, useState } from 'react';
-import type { Article, StockMovement, DocumentRecord } from '../types';
+import type { Article, StockMovement, DocumentRecord, SaleInvoice } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
 import { fetchStockMovementExtract, type StockExtractResult } from '../lib/appData';
 
@@ -9,6 +9,7 @@ interface ArticleLedgerModalProps {
   article: Article | null;
   articles: Article[];
   movements: StockMovement[];
+  sales?: SaleInvoice[];
   documents?: DocumentRecord[];
   onSelectArticleId?: (id: string) => void;
   onOpenDocument?: (doc: DocumentRecord) => void;
@@ -46,6 +47,7 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
   article,
   articles,
   movements,
+  sales = [],
   documents = [],
   onSelectArticleId,
   onOpenDocument,
@@ -114,7 +116,7 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
   const { articleMovements, initialBalance, totals } = useMemo(() => {
     if (!article) return { articleMovements: [], initialBalance: 0, totals: { entradasQty: 0, saidasQty: 0, entradasVal: 0, saidasVal: 0 } };
 
-    if (serverExtract) {
+    if (serverExtract && serverExtract.movements.length > 0) {
       const mapped = serverExtract.movements.map((m) => {
         const matchedDoc = documents.find(
           (d) => (m.source_document_id && d.id === m.source_document_id) || d.displayNumber.toLowerCase() === m.doc_ref.toLowerCase()
@@ -149,10 +151,54 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
       };
     }
 
+    // Article matching helper (ID, Code, or Numeric equivalence)
+    const isArticleMatch = (mId?: string, mCode?: string) => {
+      if (!article) return false;
+      if (mId && article.id && mId === article.id) return true;
+      if (!mCode) return false;
+      const cleanM = mCode.trim().toLowerCase();
+      const cleanA = article.code.trim().toLowerCase();
+      if (cleanM === cleanA) return true;
+      const numM = parseInt(cleanM.replace(/\D/g, ''), 10);
+      const numA = parseInt(cleanA.replace(/\D/g, ''), 10);
+      if (!isNaN(numM) && !isNaN(numA) && numM === numA) return true;
+      return false;
+    };
+
+    // Explicit movements matching this article
+    const explicitMovs = movements.filter((m) => isArticleMatch(undefined, m.articleCode));
+
+    // Derive additional exit movements from sales if missing from explicit movements
+    const derivedSalesMovs: StockMovement[] = [];
+    sales.forEach((sale) => {
+      if (sale.status === 'Cancelada') return;
+      sale.items.forEach((item) => {
+        if (isArticleMatch(item.articleId, item.code)) {
+          const alreadyExists = explicitMovs.some(
+            (em) => em.docRef && sale.docNumber && em.docRef.includes(sale.docNumber)
+          );
+          if (!alreadyExists) {
+            derivedSalesMovs.push({
+              id: `sale-mov-${sale.id}-${item.code}`,
+              type: 'saida',
+              docRef: sale.docNumber,
+              date: sale.date,
+              articleCode: article.code,
+              articleDescription: article.description,
+              quantity: item.quantity,
+              entityName: sale.clientName || 'Cliente Pontual',
+              operator: sale.sellerName || 'Sistema',
+              unitCost: item.unitPrice,
+            });
+          }
+        }
+      });
+    });
+
     // Fallback: All movements for this specific article from props
-    const allArticleMovs = movements
-      .filter((m) => m.articleCode?.toLowerCase() === article.code.toLowerCase())
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const allArticleMovs = [...explicitMovs, ...derivedSalesMovs].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
 
     // Calculate Saldo Anterior ao Período (movements strictly before dateFrom)
     let priorBal = 0;

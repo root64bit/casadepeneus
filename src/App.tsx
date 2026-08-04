@@ -446,6 +446,7 @@ function App() {
           <Inventory
             articles={articles}
             movements={movements}
+            sales={sales}
             documents={documents}
             globalSearch={globalSearch}
             onOpenNewArticleModal={handleOpenNewArticleModal}
