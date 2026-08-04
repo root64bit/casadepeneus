@@ -153,9 +153,19 @@ export function Documents({
                     <td className="p-3 font-mono font-bold text-[#003366] dark:text-[#a7c8ff]">
                       {document.displayNumber}
                     </td>
-                    <td className="p-3">{document.date}</td>
-                    <td className="p-3 font-bold">{document.typeName || document.typeCode}</td>
-                    <td className="p-3">{document.partyName}</td>
+                    <td className="p-3 font-bold">
+                      {document.typeCode === 'CUSTOMER_INVOICE'
+                        ? 'Factura (FT)'
+                        : document.typeCode === 'CASH_SALE'
+                        ? 'Venda a Dinheiro (VD)'
+                        : document.typeCode === 'CUSTOMER_DELIVERY_NOTE'
+                        ? 'Guia de Remessa (GR)'
+                        : document.typeCode === 'SUPPLIER_INVOICE'
+                        ? 'Factura de Fornecedor'
+                        : document.typeCode === 'CUSTOMER_CREDIT_NOTE'
+                        ? 'Nota de Crédito (NC)'
+                        : document.typeName || document.typeCode}
+                    </td>
                     <td className="p-3 text-right font-mono font-bold">{formatMZN(document.grandTotal)}</td>
                     <td className="p-3 text-right font-mono text-[#006e25]">{formatMZN(document.paidAmount)}</td>
                     <td className="p-3 text-right font-mono text-[#ba1a1a]">{formatMZN(document.outstandingAmount)}</td>

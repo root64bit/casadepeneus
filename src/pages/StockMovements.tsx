@@ -726,7 +726,15 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                     const matchedDoc = documents.find(
                       (d) => d.displayNumber && item.docRef && item.docRef.includes(d.displayNumber)
                     );
-                    const docDisplay = item.docRef || (item.type === 'entrada' ? 'Entrada Directa' : 'Saída Directa');
+                    const docDisplayRaw = item.docRef || (item.type === 'entrada' ? 'Entrada Directa por Guia' : 'Saída Directa por Guia');
+                    const docDisplay = docDisplayRaw
+                      .replace(/CUSTOMER_INVOICE/g, 'Factura FT')
+                      .replace(/CASH_SALE/g, 'Venda a Dinheiro VD')
+                      .replace(/CUSTOMER_DELIVERY_NOTE/g, 'Guia de Remessa GR')
+                      .replace(/SUPPLIER_INVOICE/g, 'Factura Fornecedor')
+                      .replace(/CUSTOMER_RECEIPT/g, 'Recibo')
+                      .replace(/CUSTOMER_CREDIT_NOTE/g, 'Nota de Crédito NC')
+                      .replace(/CREDIT_NOTE/g, 'Nota de Crédito NC');
                     const saldo = movementsWithSaldo.get(item.id) ?? (matchedArt?.stock ?? 0);
                     
                     // Format date only (no time: 04/08/2026)

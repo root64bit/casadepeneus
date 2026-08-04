@@ -15,6 +15,31 @@ interface ArticleLedgerModalProps {
   canViewCost?: boolean;
 }
 
+function formatDocTypeName(code?: string, fallbackName?: string): string {
+  if (!code && !fallbackName) return 'Documento';
+  const c = (code || fallbackName || '').toUpperCase();
+  if (c.includes('CUSTOMER_INVOICE') || c === 'FT' || c === 'INVOICE' || c.includes('FACTURA')) return 'Factura (FT)';
+  if (c.includes('CASH_SALE') || c === 'VD' || c.includes('VENDA A DINHEIRO')) return 'Venda a Dinheiro (VD)';
+  if (c.includes('CUSTOMER_DELIVERY_NOTE') || c === 'GR' || c.includes('DELIVERY_NOTE') || c.includes('GUIA DE REMESSA')) return 'Guia de Remessa (GR)';
+  if (c.includes('SUPPLIER_INVOICE') || c.includes('FACTURA DE FORNECEDOR')) return 'Factura de Fornecedor';
+  if (c.includes('CUSTOMER_RECEIPT') || c.includes('PAYMENT') || c === 'RECIBO') return 'Recibo';
+  if (c.includes('CREDIT_NOTE') || c === 'NC' || c.includes('NOTA DE CRÉDITO')) return 'Nota de Crédito (NC)';
+  return fallbackName || code || 'Documento';
+}
+
+function formatDocRefName(docRef?: string): string {
+  if (!docRef) return '—';
+  let formatted = docRef;
+  formatted = formatted.replace(/CUSTOMER_INVOICE/g, 'Factura FT');
+  formatted = formatted.replace(/CASH_SALE/g, 'Venda a Dinheiro VD');
+  formatted = formatted.replace(/CUSTOMER_DELIVERY_NOTE/g, 'Guia de Remessa GR');
+  formatted = formatted.replace(/SUPPLIER_INVOICE/g, 'Factura Fornecedor');
+  formatted = formatted.replace(/CUSTOMER_RECEIPT/g, 'Recibo');
+  formatted = formatted.replace(/CUSTOMER_CREDIT_NOTE/g, 'Nota de Crédito NC');
+  formatted = formatted.replace(/CREDIT_NOTE/g, 'Nota de Crédito NC');
+  return formatted;
+}
+
 export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
   isOpen,
   onClose,
@@ -33,6 +58,9 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
+    if (article) {
+      setSearchCodeQuery(article.code);
+    }
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -44,37 +72,29 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, article, onClose]);
 
   const [serverExtract, setServerExtract] = useState<StockExtractResult | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Sync search input with selected article code
-  useEffect(() => {
-    if (article) setSearchCodeQuery(article.code);
-  }, [article]);
-
-  // Load RPC extract whenever article, dates or movement type change
   useEffect(() => {
     if (!isOpen || !article) return;
-    let active = true;
+    let cancelled = false;
     setLoading(true);
-
-    fetchStockMovementExtract(article.id, dateFrom, dateTo, movementTypeFilter)
+    fetchStockMovementExtract(article.id, dateFrom || undefined, dateTo || undefined)
       .then((res) => {
-        if (active) setServerExtract(res);
+        if (!cancelled) setServerExtract(res);
       })
       .catch(() => {
-        // Fallback to local props if RPC call fails or offline
+        if (!cancelled) setServerExtract(null);
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (!cancelled) setLoading(false);
       });
-
     return () => {
-      active = false;
+      cancelled = true;
     };
-  }, [isOpen, article, dateFrom, dateTo, movementTypeFilter]);
+  }, [isOpen, article, dateFrom, dateTo]);
 
   // Handle article lookup on Enter
   const handleCodeSearchEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -104,8 +124,8 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
           rawDate: m.created_at,
           formattedDate: new Date(m.created_at).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' }),
           formattedTime: new Date(m.created_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' }),
-          docRef: m.doc_ref,
-          docType: m.doc_type_name,
+          docRef: formatDocRefName(m.doc_ref),
+          docType: formatDocTypeName(m.doc_type_code, m.doc_type_name),
           movementType: m.movement_direction,
           entradas: m.quantity_in,
           saidas: m.quantity_out,
