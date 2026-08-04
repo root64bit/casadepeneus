@@ -410,7 +410,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
 
   return (
     <div className="space-y-4 pb-12 font-sans">
-      <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-3 rounded-lg shadow-sm flex flex-wrap items-center justify-between gap-3">
+      <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-3 rounded-lg shadow-sm flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex items-center space-x-2">
           <button
             type="button"
@@ -920,7 +920,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
         </div>
 
         {docStatus === 'CONFIRMING' && (
-          <div className="bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-400 p-4 rounded-lg flex flex-wrap items-center justify-between gap-4 shadow-md font-sans">
+          <div className="bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-400 p-4 rounded-lg flex flex-wrap items-center justify-between gap-4 shadow-md font-sans print:hidden">
             <div>
               <h4 className="font-black text-amber-900 dark:text-amber-200 text-sm uppercase">
                 Confirmar Emissão de {documentType === 'CASH_SALE' ? 'Venda a Dinheiro' : documentType === 'CUSTOMER_DELIVERY_NOTE' ? 'Guia de Remessa' : 'Factura'}
@@ -949,9 +949,9 @@ export const NewSale: React.FC<NewSaleProps> = ({
           </div>
         )}
 
-        <div className="flex justify-between items-center pt-2 border-t border-[#c3c6d1] dark:border-[#43474f]">
+        <div className="flex justify-between items-center pt-2 border-t border-[#c3c6d1] dark:border-[#43474f] print:hidden">
           {saveError && (
-            <p role="alert" className="rounded bg-red-100 p-2 text-xs font-bold text-red-800">
+            <p role="alert" className="rounded bg-red-100 p-2 text-xs font-bold text-red-800 print:hidden">
               {saveError}
             </p>
           )}
@@ -1010,7 +1010,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
         </div>
       </section>
 
-      <div className="flex flex-col gap-2 rounded border-t border-[#c3c6d1] bg-[#e7e8e9] px-3 py-2 text-xs font-mono font-bold text-[#191c1d] shadow-sm dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white sm:flex-row sm:items-center sm:justify-between sm:px-6">
+      <div className="flex flex-col gap-2 rounded border-t border-[#c3c6d1] bg-[#e7e8e9] px-3 py-2 text-xs font-mono font-bold text-[#191c1d] shadow-sm dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white sm:flex-row sm:items-center sm:justify-between sm:px-6 print:hidden">
         <div className="flex flex-wrap items-center gap-3 sm:gap-6">
           <span>ESC=Sair</span>
           <button type="button" onClick={() => setDocStatus('CONFIRMING')} className="hover:underline">

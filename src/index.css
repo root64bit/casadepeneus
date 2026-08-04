@@ -229,6 +229,8 @@ textarea {
   footer,
   button,
   .no-print,
+  .print\:hidden,
+  [role="alert"],
   nav,
   [data-screen-only] {
     display: none !important;
