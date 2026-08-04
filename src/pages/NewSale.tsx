@@ -303,10 +303,16 @@ export const NewSale: React.FC<NewSaleProps> = ({
   };
 
   const handleDuplicateToNewDocument = () => {
+    if (items.length === 0) {
+      setSaveError('Este documento não tem itens para copiar.');
+      return;
+    }
     setDocStatus('PREPARATION');
     setDocNumber('A atribuir ao confirmar');
+    setDate(new Date().toISOString().split('T')[0]);
     setConfirmedSaleRecord(null);
     setSaveError('');
+    alert(`Documento copiado com sucesso! Foram carregados ${items.length} artigo(s) para um novo rascunho de venda.`);
   };
 
   const subtotalBruto = items.reduce((acc, item) => acc + item.unitPrice * item.quantity, 0);
