@@ -116,6 +116,7 @@ export const Purchases: React.FC<PurchasesProps> = ({
     ]);
     setQuantityStr('');
     setUnitCostStr('');
+    setArticleId('');
 
     setTimeout(() => {
       const searchInput = document.querySelector<HTMLInputElement>('input[placeholder*="Pesquisar artigo"]');
