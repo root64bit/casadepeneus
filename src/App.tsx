@@ -462,6 +462,7 @@ function App() {
           <NewSale
             articles={articles}
             clients={clients}
+            sales={sales}
             documents={documents}
             onCompleteSale={handleCompleteSale}
             onOpenPrintModal={handleOpenPrintModal}

@@ -6,6 +6,7 @@ import { ArticleSearchSelect } from '../components/ArticleSearchSelect';
 interface NewSaleProps {
   articles: Article[];
   clients: Client[];
+  sales?: SaleInvoice[];
   onCompleteSale: (sale: SaleInvoice) => Promise<SaleInvoice>;
   onOpenPrintModal: (sale: SaleInvoice) => void;
   canReceivePayment: boolean;
@@ -18,6 +19,7 @@ interface NewSaleProps {
 export const NewSale: React.FC<NewSaleProps> = ({
   articles,
   clients,
+  sales = [],
   onCompleteSale,
   onOpenPrintModal,
   canReceivePayment,
@@ -207,6 +209,42 @@ export const NewSale: React.FC<NewSaleProps> = ({
   };
 
   const loadLastDocumentInConsultationMode = () => {
+    // Look up in sales array first for full items
+    const matchingSales = sales.filter((s) => {
+      if (documentType === 'CASH_SALE') {
+        return s.documentTypeCode === 'CASH_SALE' || s.docNumber.startsWith('VD');
+      }
+      if (documentType === 'CUSTOMER_DELIVERY_NOTE') {
+        return s.documentTypeCode === 'CUSTOMER_DELIVERY_NOTE' || s.docNumber.startsWith('GR');
+      }
+      return s.documentTypeCode === 'CUSTOMER_INVOICE' || s.docNumber.startsWith('FT');
+    });
+
+    const targetSale = matchingSales[0];
+
+    if (targetSale) {
+      const found = clients.find((c) => c.id === targetSale.clientId);
+      if (found) {
+        setClientCodeInput(found.number || found.code || '');
+        setSelectedClientId(found.id);
+        setSelectedClientName(targetSale.clientName || found.name);
+        setClientNuit(targetSale.clientNuit || found.nuit || '');
+        setClientAddress(targetSale.clientAddress || found.address || '');
+      } else {
+        setSelectedClientName(targetSale.clientName);
+        setClientNuit(targetSale.clientNuit || '');
+        setClientAddress(targetSale.clientAddress || '');
+      }
+
+      setDocNumber(targetSale.docNumber);
+      setDate(targetSale.date);
+      setItems(targetSale.items || []);
+      setDocStatus('READ_ONLY');
+      setSaveError('');
+      setConfirmedSaleRecord(targetSale);
+      return true;
+    }
+
     if (!documents || documents.length === 0) {
       setSaveError('Nenhum documento anterior encontrado na base de dados.');
       return false;
@@ -229,7 +267,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
     if (found) {
       setClientCodeInput(found.number || found.code || '');
       setSelectedClientId(found.id);
-      setSelectedClientName(found.name);
+      setSelectedClientName(targetDoc.partyName || found.name);
       setClientNuit(found.nuit || '');
       setClientAddress(found.address || '');
     }
