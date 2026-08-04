@@ -47,10 +47,11 @@ export const NewSale: React.FC<NewSaleProps> = ({
   const [deliveryLocation, setDeliveryLocation] = useState('');
 
   const [items, setItems] = useState<SaleItem[]>([]);
-  const [selectedArticleId, setSelectedArticleId] = useState<string>(articles[0]?.id || '');
+  const [selectedArticleId, setSelectedArticleId] = useState<string>('');
   const [inputQty, setInputQty] = useState<number>(1);
   const [inputDiscount, setInputDiscount] = useState<number>(0);
   const [inputIva, setInputIva] = useState<number>(articles[0]?.taxRate ?? 16);
+  const [inputUnitPrice, setInputUnitPrice] = useState<number>(0);
 
   const [generalDiscount, setGeneralDiscount] = useState<number>(0);
   const [notes, setNotes] = useState<string>('');
@@ -60,6 +61,9 @@ export const NewSale: React.FC<NewSaleProps> = ({
   const [confirmedSaleRecord, setConfirmedSaleRecord] = useState<SaleInvoice | null>(null);
 
   const qtyInputRef = useRef<HTMLInputElement>(null);
+  const unitPriceInputRef = useRef<HTMLInputElement>(null);
+  const discountInputRef = useRef<HTMLInputElement>(null);
+  const ivaInputRef = useRef<HTMLInputElement>(null);
 
   const confirmResetIfNeeded = (): boolean => {
     if (items.length > 0 && docStatus !== 'CONFIRMED' && docStatus !== 'READ_ONLY') {
@@ -131,7 +135,19 @@ export const NewSale: React.FC<NewSaleProps> = ({
   const handleArticleSelect = (id: string) => {
     setSelectedArticleId(id);
     const art = articles.find((a) => a.id === id);
-    if (art) setInputIva(art.taxRate ?? 16);
+    if (art) {
+      setInputIva(art.taxRate ?? 16);
+      setInputUnitPrice(art.sellPrice);
+    }
+  };
+
+  const handleAfterArticleSelect = () => {
+    setTimeout(() => {
+      if (qtyInputRef.current) {
+        qtyInputRef.current.focus();
+        qtyInputRef.current.select();
+      }
+    }, 40);
   };
 
   const handleAddItem = () => {
@@ -140,7 +156,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
     const art = articles.find((a) => a.id === selectedArticleId);
     if (!art || inputQty <= 0) return;
 
-    const basePrice = art.sellPrice;
+    const basePrice = inputUnitPrice > 0 ? inputUnitPrice : art.sellPrice;
     const discountedPrice = basePrice * (1 - inputDiscount / 100);
     const itemTotalWithIva = discountedPrice * inputQty * (1 + inputIva / 100);
 
@@ -149,7 +165,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
       code: art.code,
       description: art.description,
       quantity: inputQty,
-      unitPrice: art.sellPrice,
+      unitPrice: basePrice,
       discountPercent: inputDiscount,
       ivaPercent: inputIva,
       total: Math.round(itemTotalWithIva * 100) / 100,
@@ -158,10 +174,16 @@ export const NewSale: React.FC<NewSaleProps> = ({
     setItems((current) => [...current, newItem]);
     setInputQty(1);
     setInputDiscount(0);
+    setSelectedArticleId('');
+    setInputUnitPrice(0);
 
     setTimeout(() => {
-      document.querySelector<HTMLInputElement>('input[placeholder*="Pesquisar artigo"]')?.focus();
-    }, 50);
+      const searchInput = document.querySelector<HTMLInputElement>('input[placeholder*="Pesquisar artigo"]');
+      if (searchInput) {
+        searchInput.focus();
+        searchInput.select();
+      }
+    }, 40);
   };
 
   const handleRemoveItem = (index: number) => {
@@ -683,8 +705,9 @@ export const NewSale: React.FC<NewSaleProps> = ({
                       articles={articles}
                       selectedArticleId={selectedArticleId}
                       onSelect={handleArticleSelect}
+                      onAfterSelect={handleAfterArticleSelect}
                       renderLabel={(a) => `[${a.code}] ${a.description} - ${a.sellPrice.toFixed(2)} MZN (Existência: ${a.stock})`}
-                      placeholder="Pesquisar artigo por código ou descrição…"
+                      placeholder="Pesquisar artigo por código ou descrição… (Enter para seleccionar)"
                     />
                   </td>
                   <td className="p-2 text-center font-bold text-[#006e25]">
@@ -697,49 +720,81 @@ export const NewSale: React.FC<NewSaleProps> = ({
                       min="1"
                       value={inputQty}
                       onChange={(e) => setInputQty(Number(e.target.value))}
+                      onFocus={(e) => e.target.select()}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
                           handleAddItem();
                         }
                       }}
-                      className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-center text-xs font-bold bg-yellow-100 text-black"
+                      className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-center text-xs font-bold bg-yellow-100 text-black focus:ring-2 focus:ring-[#003366]"
                     />
                   </td>
                   <td className="p-2 text-right font-bold text-gray-700 dark:text-white">
-                    {articles.find(a => a.id === selectedArticleId)?.sellPrice.toFixed(2)}
+                    <input
+                      ref={unitPriceInputRef}
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={inputUnitPrice || (articles.find(a => a.id === selectedArticleId)?.sellPrice ?? 0)}
+                      onChange={(e) => setInputUnitPrice(Number(e.target.value))}
+                      onFocus={(e) => e.target.select()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddItem();
+                        }
+                      }}
+                      className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-right text-xs font-bold text-[#001e40] dark:text-white focus:ring-2 focus:ring-[#003366]"
+                    />
                   </td>
                   <td className="p-2">
                     <input
+                      ref={discountInputRef}
                       type="number"
                       min="0"
                       max="100"
                       value={inputDiscount}
                       onChange={(e) => setInputDiscount(Number(e.target.value))}
-                      className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-center text-xs text-red-600"
+                      onFocus={(e) => e.target.select()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddItem();
+                        }
+                      }}
+                      className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-center text-xs font-bold text-red-600 focus:ring-2 focus:ring-[#003366]"
                     />
                   </td>
                   <td className="p-2">
                     <input
+                      ref={ivaInputRef}
                       type="number"
                       min="0"
                       max="100"
                       step="0.01"
                       value={inputIva}
                       onChange={(e) => setInputIva(Number(e.target.value))}
-                      className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-center text-xs font-bold text-[#003366]"
+                      onFocus={(e) => e.target.select()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddItem();
+                        }
+                      }}
+                      className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-center text-xs font-bold text-[#003366] focus:ring-2 focus:ring-[#003366]"
                     />
                   </td>
                   <td className="p-2 text-right font-extrabold text-[#006e25]">
                     {(
-                      ((articles.find(a => a.id === selectedArticleId)?.sellPrice || 0) * (1 - inputDiscount / 100)) * inputQty * (1 + inputIva / 100)
+                      ((inputUnitPrice > 0 ? inputUnitPrice : (articles.find(a => a.id === selectedArticleId)?.sellPrice || 0)) * (1 - inputDiscount / 100)) * inputQty * (1 + inputIva / 100)
                     ).toFixed(2)}
                   </td>
                   <td className="p-2 text-center">
                     <button
                       type="button"
                       onClick={handleAddItem}
-                      className="rounded bg-[#003366] px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-800"
+                      className="rounded bg-[#003366] px-3 py-1.5 text-xs font-extrabold text-white hover:bg-blue-800 focus:ring-2 focus:ring-blue-400 uppercase tracking-wider"
                     >
                       + Add
                     </button>

@@ -5,6 +5,7 @@ interface ArticleSearchSelectProps {
   articles: Article[];
   selectedArticleId: string;
   onSelect: (articleId: string) => void;
+  onAfterSelect?: () => void;
   /** Extra info shown per option, e.g., price or stock. Default shows code + description + stock. */
   renderLabel?: (article: Article) => string;
   className?: string;
@@ -16,6 +17,7 @@ export const ArticleSearchSelect: React.FC<ArticleSearchSelectProps> = ({
   articles,
   selectedArticleId,
   onSelect,
+  onAfterSelect,
   renderLabel,
   className = '',
   placeholder = 'Pesquisar por código ou descrição…',
@@ -72,10 +74,19 @@ export const ArticleSearchSelect: React.FC<ArticleSearchSelectProps> = ({
     setQuery('');
     setIsOpen(false);
     inputRef.current?.blur();
+    if (onAfterSelect) onAfterSelect();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!isOpen && (e.key === 'ArrowDown' || e.key === 'Enter')) {
+      if (e.key === 'Enter' && query.trim()) {
+        const topMatch = filtered[0];
+        if (topMatch) {
+          e.preventDefault();
+          selectArticle(topMatch);
+          return;
+        }
+      }
       e.preventDefault();
       setIsOpen(true);
       return;
