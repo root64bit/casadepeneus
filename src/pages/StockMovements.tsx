@@ -131,13 +131,28 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
 
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
-        const codeMatch = m.articleCode.toLowerCase().includes(q);
+        const codeLower = m.articleCode.trim().toLowerCase();
+
+        // 1. Exact code check: if query matches exact code, exact match takes precedence!
+        if (codeLower === q) return true;
+
+        // 2. If searching for numeric code (e.g. "1"), check exact code or numeric match (e.g. code "1", "001", "ART-1")
+        const isShortNumber = /^\d+$/.test(q);
+        if (isShortNumber) {
+          const numQ = parseInt(q, 10);
+          const numCode = parseInt(codeLower.replace(/\D/g, ''), 10);
+          const matchesNumericCode = !isNaN(numCode) && numCode === numQ && (codeLower === q || codeLower === String(numQ) || codeLower.endsWith(`-${numQ}`) || codeLower.endsWith(`/${numQ}`));
+          const docRefMatchesNum = m.docRef.toLowerCase().includes(q);
+          return matchesNumericCode || docRefMatchesNum;
+        }
+
+        // 3. General query matching: code, description, document reference or operator
+        const codeMatch = codeLower.includes(q);
         const descMatch = m.articleDescription.toLowerCase().includes(q);
         const refMatch = m.docRef.toLowerCase().includes(q);
         const operatorMatch = m.operator.toLowerCase().includes(q);
-        const typeMatch = m.type.toLowerCase().includes(q);
-        const qtyMatch = String(m.quantity).includes(q);
-        if (!codeMatch && !descMatch && !refMatch && !operatorMatch && !typeMatch && !qtyMatch) return false;
+
+        return codeMatch || descMatch || refMatch || operatorMatch;
       }
       return true;
     });
