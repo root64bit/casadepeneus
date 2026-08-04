@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { Article, Client, DocumentRecord, SaleInvoice, SaleItem } from '../types';
 import { ArticleSearchSelect } from '../components/ArticleSearchSelect';
+import { Pagination } from '../components/Pagination';
 import { formatMZN } from '../stitch/stitchConfig';
 
 interface QuotationProps {
@@ -46,17 +47,25 @@ export const Quotation: React.FC<QuotationProps> = ({
   const [generalDiscount, setGeneralDiscount] = useState(0);
   const [notes, setNotes] = useState('');
 
-  // Processing state
+  // Processing state & SessionCreatedQuotations
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [confirmedQuotationRecord, setConfirmedQuotationRecord] = useState<SaleInvoice | null>(null);
+  const [sessionQuotations, setSessionQuotations] = useState<SaleInvoice[]>([]);
 
-  // Filters for Quotation History List
+  // History Table Filters & Pagination
   const [historyDateFilter, setHistoryDateFilter] = useState('');
   const [historyNameFilter, setHistoryNameFilter] = useState('');
   const [historyCodeFilter, setHistoryCodeFilter] = useState('');
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState(15);
 
-  // Refs for fast Enter navigation
+  // Refs for fast Enter key field navigation
+  const validityInputRef = useRef<HTMLInputElement>(null);
+  const clientCodeInputRef = useRef<HTMLInputElement>(null);
+  const clientNameInputRef = useRef<HTMLInputElement>(null);
+  const clientNuitInputRef = useRef<HTMLInputElement>(null);
+  const clientAddressInputRef = useRef<HTMLInputElement>(null);
   const qtyInputRef = useRef<HTMLInputElement>(null);
   const unitPriceInputRef = useRef<HTMLInputElement>(null);
   const discountInputRef = useRef<HTMLInputElement>(null);
@@ -239,6 +248,9 @@ export const Quotation: React.FC<QuotationProps> = ({
       setConfirmedQuotationRecord(savedQuotation);
       setDocStatus('CONFIRMED');
 
+      // Add to session list so it appears in table below immediately
+      setSessionQuotations((prev) => [savedQuotation, ...prev]);
+
       if (shouldPrint) {
         onOpenPrintModal(savedQuotation);
       }
@@ -291,7 +303,7 @@ export const Quotation: React.FC<QuotationProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [items, saving, docStatus, confirmedQuotationRecord, selectedClientId, selectedClientName, date, notes]);
 
-  // Extract all Quotations from sales and documents props
+  // Extract all Quotations from sessionQuotations, sales, and documents props
   const quotationHistory = useMemo(() => {
     const list: Array<{
       id: string;
@@ -311,29 +323,51 @@ export const Quotation: React.FC<QuotationProps> = ({
 
     const seenIds = new Set<string>();
 
-    // From sales prop
+    // 1. From sessionQuotations (instantly created in this session)
+    sessionQuotations.forEach((s) => {
+      seenIds.add(s.id);
+      seenIds.add(s.docNumber);
+      list.push({
+        id: s.id,
+        docNumber: s.docNumber,
+        date: s.date,
+        clientId: s.clientId,
+        clientName: s.clientName,
+        clientNuit: s.clientNuit || '',
+        clientAddress: s.clientAddress || '',
+        totalAmount: s.totalAmount,
+        status: s.status || 'Emitida',
+        items: s.items || [],
+        sellerName: s.sellerName || operatorName,
+        rawSale: s,
+      });
+    });
+
+    // 2. From sales prop
     sales.forEach((s) => {
       if (s.documentTypeCode === 'CUSTOMER_QUOTATION' || s.docNumber.startsWith('COT-')) {
-        seenIds.add(s.id);
-        seenIds.add(s.docNumber);
-        list.push({
-          id: s.id,
-          docNumber: s.docNumber,
-          date: s.date,
-          clientId: s.clientId,
-          clientName: s.clientName,
-          clientNuit: s.clientNuit || '',
-          clientAddress: s.clientAddress || '',
-          totalAmount: s.totalAmount,
-          status: s.status || 'Emitida',
-          items: s.items || [],
-          sellerName: s.sellerName || '',
-          rawSale: s,
-        });
+        if (!seenIds.has(s.id) && !seenIds.has(s.docNumber)) {
+          seenIds.add(s.id);
+          seenIds.add(s.docNumber);
+          list.push({
+            id: s.id,
+            docNumber: s.docNumber,
+            date: s.date,
+            clientId: s.clientId,
+            clientName: s.clientName,
+            clientNuit: s.clientNuit || '',
+            clientAddress: s.clientAddress || '',
+            totalAmount: s.totalAmount,
+            status: s.status || 'Emitida',
+            items: s.items || [],
+            sellerName: s.sellerName || operatorName,
+            rawSale: s,
+          });
+        }
       }
     });
 
-    // From documents prop
+    // 3. From documents prop
     documents.forEach((d) => {
       const isCotation =
         d.typeCode === 'CUSTOMER_QUOTATION' ||
@@ -360,35 +394,35 @@ export const Quotation: React.FC<QuotationProps> = ({
     });
 
     return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [sales, documents, clients]);
+  }, [sessionQuotations, sales, documents, clients, operatorName]);
 
   // Filtered Quotation History by Date, Name/Nuit, or Code/DocNo
   const filteredQuotations = useMemo(() => {
     return quotationHistory.filter((item) => {
-      // 1. Date Filter
       if (historyDateFilter && item.date.substring(0, 10) !== historyDateFilter) {
         return false;
       }
-
-      // 2. Name Filter
       if (historyNameFilter.trim()) {
         const q = historyNameFilter.trim().toLowerCase();
         const matchName = item.clientName.toLowerCase().includes(q);
         const matchNuit = item.clientNuit.toLowerCase().includes(q);
         if (!matchName && !matchNuit) return false;
       }
-
-      // 3. Code Filter (Doc Number or Article Code)
       if (historyCodeFilter.trim()) {
         const q = historyCodeFilter.trim().toLowerCase();
         const matchDocNo = item.docNumber.toLowerCase().includes(q);
         const matchItemCode = item.items.some((i) => i.code.toLowerCase().includes(q));
         if (!matchDocNo && !matchItemCode) return false;
       }
-
       return true;
     });
   }, [quotationHistory, historyDateFilter, historyNameFilter, historyCodeFilter]);
+
+  // Paginated Quotations
+  const paginatedQuotations = useMemo(() => {
+    const start = (historyPage - 1) * historyPageSize;
+    return filteredQuotations.slice(start, start + historyPageSize);
+  }, [filteredQuotations, historyPage, historyPageSize]);
 
   const handlePrintQuotationFromHistory = (item: (typeof quotationHistory)[0]) => {
     if (item.rawSale) {
@@ -428,7 +462,7 @@ export const Quotation: React.FC<QuotationProps> = ({
             📋 Emissão de Proposta de Cotação
           </h2>
           <p className="text-xs text-[#737780] font-mono">
-            Documento de orçamento sem afetação de stock físico.
+            Documento de orçamento sem afetação de stock físico. (Pressione F2 para gravar a qualquer momento)
           </p>
         </div>
         <div className="flex items-center space-x-2">
@@ -441,7 +475,7 @@ export const Quotation: React.FC<QuotationProps> = ({
         </div>
       </header>
 
-      {/* Header Form */}
+      {/* Header Form - Fast Enter key navigation */}
       <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-3 print:p-2 rounded-lg shadow-sm space-y-2">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-xs">
           {/* Left Column */}
@@ -454,24 +488,40 @@ export const Quotation: React.FC<QuotationProps> = ({
                   value={date}
                   disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
                   onChange={(e) => setDate(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      validityInputRef.current?.focus();
+                      validityInputRef.current?.select();
+                    }
+                  }}
                   className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 text-xs focus-ring disabled:opacity-60"
                 />
               </div>
               <div className="col-span-1">
                 <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[11px]">Validade (Dias)</label>
                 <input
+                  ref={validityInputRef}
                   type="number"
                   min="1"
                   max="180"
                   value={validityDays}
                   disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
                   onChange={(e) => setValidityDays(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      clientCodeInputRef.current?.focus();
+                      clientCodeInputRef.current?.select();
+                    }
+                  }}
                   className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 text-xs text-center font-bold"
                 />
               </div>
               <div className="col-span-1">
                 <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[11px]">Código Cliente</label>
                 <input
+                  ref={clientCodeInputRef}
                   type="text"
                   placeholder="Ex: 1"
                   value={clientCodeInput}
@@ -481,7 +531,8 @@ export const Quotation: React.FC<QuotationProps> = ({
                     if (e.key === 'Enter') {
                       e.preventDefault();
                       lookupClientByCode(clientCodeInput);
-                      document.querySelector<HTMLInputElement>('input[placeholder*="Pesquisar artigo"]')?.focus();
+                      clientNameInputRef.current?.focus();
+                      clientNameInputRef.current?.select();
                     }
                   }}
                   onBlur={() => lookupClientByCode(clientCodeInput)}
@@ -493,10 +544,18 @@ export const Quotation: React.FC<QuotationProps> = ({
             <div>
               <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[11px]">Nome do Cliente *</label>
               <input
+                ref={clientNameInputRef}
                 type="text"
                 value={selectedClientName}
                 disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
                 onChange={(e) => setSelectedClientName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    clientNuitInputRef.current?.focus();
+                    clientNuitInputRef.current?.select();
+                  }
+                }}
                 placeholder="Nome do Cliente"
                 className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-bold border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 text-xs focus-ring disabled:opacity-60"
               />
@@ -509,10 +568,18 @@ export const Quotation: React.FC<QuotationProps> = ({
               <div>
                 <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[11px]">NUIT</label>
                 <input
+                  ref={clientNuitInputRef}
                   type="text"
                   value={clientNuit}
                   disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
                   onChange={(e) => setClientNuit(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      clientAddressInputRef.current?.focus();
+                      clientAddressInputRef.current?.select();
+                    }
+                  }}
                   placeholder="NUIT (opcional)"
                   className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-mono border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 text-xs focus-ring disabled:opacity-60"
                 />
@@ -531,10 +598,21 @@ export const Quotation: React.FC<QuotationProps> = ({
             <div>
               <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[11px]">Morada</label>
               <input
+                ref={clientAddressInputRef}
                 type="text"
                 value={clientAddress}
                 disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
                 onChange={(e) => setClientAddress(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const searchInput = document.querySelector<HTMLInputElement>('input[placeholder*="Pesquisar artigo"]');
+                    if (searchInput) {
+                      searchInput.focus();
+                      searchInput.select();
+                    }
+                  }
+                }}
                 placeholder="Morada do Cliente (opcional)"
                 className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 text-xs focus-ring disabled:opacity-60"
               />
@@ -543,10 +621,10 @@ export const Quotation: React.FC<QuotationProps> = ({
         </div>
       </section>
 
-      {/* Item Entry Row */}
+      {/* Item Entry Row - Fast Enter Navigation */}
       <section className="bg-[#0000aa]/5 dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-3 rounded-lg shadow-sm space-y-2 print:hidden">
         <span className="text-[11px] font-bold uppercase text-[#003366] dark:text-[#a7c8ff] block">
-          + Inserir Artigo na Cotação
+          + Inserir Artigo na Cotação (Pressione Enter para mudar de campo)
         </span>
 
         <div className="grid grid-cols-12 gap-2 items-end">
@@ -738,7 +816,7 @@ export const Quotation: React.FC<QuotationProps> = ({
         </div>
       )}
 
-      {/* SECTION: Histórico de Cotações Emitidas */}
+      {/* SECTION: Histórico de Cotações Emitidas com Paginação */}
       <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-4 rounded-lg shadow-sm space-y-3 print:hidden">
         <div className="flex flex-wrap items-center justify-between border-b border-[#c3c6d1] dark:border-[#43474f] pb-2 gap-2">
           <h3 className="font-bold text-xs uppercase text-[#003366] dark:text-[#a7c8ff] flex items-center gap-1.5">
@@ -751,6 +829,7 @@ export const Quotation: React.FC<QuotationProps> = ({
                 setHistoryDateFilter('');
                 setHistoryNameFilter('');
                 setHistoryCodeFilter('');
+                setHistoryPage(1);
               }}
               className="text-xs font-bold text-red-600 hover:underline"
             >
@@ -766,7 +845,10 @@ export const Quotation: React.FC<QuotationProps> = ({
             <input
               type="date"
               value={historyDateFilter}
-              onChange={(e) => setHistoryDateFilter(e.target.value)}
+              onChange={(e) => {
+                setHistoryDateFilter(e.target.value);
+                setHistoryPage(1);
+              }}
               className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs font-mono"
             />
           </div>
@@ -777,7 +859,10 @@ export const Quotation: React.FC<QuotationProps> = ({
               type="text"
               placeholder="Pesquisar por nome de cliente ou NUIT..."
               value={historyNameFilter}
-              onChange={(e) => setHistoryNameFilter(e.target.value)}
+              onChange={(e) => {
+                setHistoryNameFilter(e.target.value);
+                setHistoryPage(1);
+              }}
               className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs"
             />
           </div>
@@ -788,7 +873,10 @@ export const Quotation: React.FC<QuotationProps> = ({
               type="text"
               placeholder="Ex: COT-2026/000001 ou código do artigo..."
               value={historyCodeFilter}
-              onChange={(e) => setHistoryCodeFilter(e.target.value)}
+              onChange={(e) => {
+                setHistoryCodeFilter(e.target.value);
+                setHistoryPage(1);
+              }}
               className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-2 text-xs font-mono"
             />
           </div>
@@ -808,14 +896,14 @@ export const Quotation: React.FC<QuotationProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f]">
-              {filteredQuotations.length === 0 ? (
+              {paginatedQuotations.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="p-8 text-center text-slate-400 font-sans italic">
                     Nenhuma cotação encontrada para os filtros aplicados.
                   </td>
                 </tr>
               ) : (
-                filteredQuotations.map((item) => (
+                paginatedQuotations.map((item) => (
                   <tr key={item.id} className="hover:bg-[#f3f4f5] dark:hover:bg-[#282c2e] transition-colors">
                     <td className="p-2.5 font-bold text-[#003366] dark:text-[#a7c8ff]">
                       {item.docNumber}
@@ -850,6 +938,16 @@ export const Quotation: React.FC<QuotationProps> = ({
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Bar */}
+        <Pagination
+          currentPage={historyPage}
+          totalItems={filteredQuotations.length}
+          pageSize={historyPageSize}
+          onPageChange={setHistoryPage}
+          onPageSizeChange={setHistoryPageSize}
+          pageSizeOptions={[15, 25, 50, 100]}
+        />
       </section>
 
       {/* Action Footer Bar */}

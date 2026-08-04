@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import type { SaleInvoice, DocumentRecord, Article, Client } from '../types';
+import { Pagination } from '../components/Pagination';
 import { formatMZN } from '../stitch/stitchConfig';
 
 interface ReportsProps {
@@ -27,6 +28,10 @@ export const Reports: React.FC<ReportsProps> = ({
   const [codeFrom, setCodeFrom] = useState('');
   const [codeTo, setCodeTo] = useState('');
   const [articleSearchQuery, setArticleSearchQuery] = useState('');
+
+  // Pagination
+  const [reportsPage, setReportsPage] = useState(1);
+  const [reportsPageSize, setReportsPageSize] = useState(25);
 
   // Clear all filters
   const handleClearFilters = () => {
@@ -252,21 +257,33 @@ export const Reports: React.FC<ReportsProps> = ({
                   </td>
                 </tr>
               ) : (
-                salesByArticle.map((art) => {
-                  const avgPrice = art.quantity > 0 ? art.netTotal / art.quantity : 0;
+                salesByArticle
+                  .slice((reportsPage - 1) * reportsPageSize, reportsPage * reportsPageSize)
+                  .map((art) => {
+                    const avgPrice = art.quantity > 0 ? art.netTotal / art.quantity : 0;
 
-                  return (
-                    <tr key={art.code} className="hover:bg-[#f3f4f5] dark:hover:bg-[#282c2e]">
-                      <td className="p-3 font-bold text-[#003366] dark:text-[#a7c8ff]">{art.code}</td>
-                      <td className="p-3 font-sans font-semibold text-slate-800 dark:text-white">{art.description}</td>
-                      <td className="p-3 text-center font-extrabold text-emerald-700 dark:text-emerald-400">{art.quantity.toFixed(3)} UN</td>
-                      <td className="p-3 text-right font-bold">{formatMZN(avgPrice)}</td>
-                    </tr>
-                  );
-                })
+                    return (
+                      <tr key={art.code} className="hover:bg-[#f3f4f5] dark:hover:bg-[#282c2e]">
+                        <td className="p-3 font-bold text-[#003366] dark:text-[#a7c8ff]">{art.code}</td>
+                        <td className="p-3 font-sans font-semibold text-slate-800 dark:text-white">{art.description}</td>
+                        <td className="p-3 text-center font-extrabold text-emerald-700 dark:text-emerald-400">{art.quantity.toFixed(3)} UN</td>
+                        <td className="p-3 text-right font-bold">{formatMZN(avgPrice)}</td>
+                      </tr>
+                    );
+                  })
               )}
             </tbody>
           </table>
+
+          {/* Pagination Controls */}
+          <Pagination
+            currentPage={reportsPage}
+            totalItems={salesByArticle.length}
+            pageSize={reportsPageSize}
+            onPageChange={setReportsPage}
+            onPageSizeChange={setReportsPageSize}
+            pageSizeOptions={[15, 25, 50, 100]}
+          />
         </div>
       </section>
 

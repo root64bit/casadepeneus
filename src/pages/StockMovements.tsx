@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { AccessScope, Article, StockMovement, DocumentRecord } from '../types';
 import { ArticleSearchSelect } from '../components/ArticleSearchSelect';
 import { ArticleLedgerModal } from '../components/ArticleLedgerModal';
+import { Pagination } from '../components/Pagination';
 import { formatMZN } from '../stitch/stitchConfig';
 
 export interface GuideLineItem {
@@ -39,6 +40,10 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
   
   // Batch guide items (up to 99 items per guide)
   const [guideItems, setGuideItems] = useState<GuideLineItem[]>([]);
+
+  // History Pagination
+  const [movementsPage, setMovementsPage] = useState(1);
+  const [movementsPageSize, setMovementsPageSize] = useState(25);
   
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -721,6 +726,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
               <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f]">
                 {[...filteredMovements]
                   .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                  .slice((movementsPage - 1) * movementsPageSize, movementsPage * movementsPageSize)
                   .map((item) => {
                     const matchedArt = articles.find((a) => a.code === item.articleCode);
                     const matchedDoc = documents.find(
@@ -800,6 +806,16 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                   })}
               </tbody>
             </table>
+
+            {/* Pagination Controls */}
+            <Pagination
+              currentPage={movementsPage}
+              totalItems={filteredMovements.length}
+              pageSize={movementsPageSize}
+              onPageChange={setMovementsPage}
+              onPageSizeChange={setMovementsPageSize}
+              pageSizeOptions={[15, 25, 50, 100]}
+            />
           </div>
         )}
       </section>
