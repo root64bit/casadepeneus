@@ -132,7 +132,8 @@ export const Reports: React.FC<ReportsProps> = ({
         const taxRate = artObj ? (artObj.taxRate ?? 16) : 16;
         const costPriceWithIva = costPrice * (1 + taxRate / 100);
         const avgPrice = item.quantity > 0 ? item.netTotal / item.quantity : 0;
-        const pvrValue = avgPrice * (1 + (customMarginPct || 0) / 100) / (1 + (customIvaPct || 0) / 100);
+        // Formula: (PVP - Margem%) / (1 + IVA%) => (avgPrice * (1 - Margem%/100)) / (1 + IVA%/100)
+        const pvrValue = (avgPrice * (1 - (customMarginPct || 0) / 100)) / (1 + (customIvaPct || 0) / 100);
 
         return {
           ...item,
@@ -164,7 +165,7 @@ export const Reports: React.FC<ReportsProps> = ({
     const headers = ['Código', 'Descrição', 'Qtd Vendida'];
     if (canViewCost) headers.push('Preço Custo c/IVA (MZN)');
     if (showPvpColumn) headers.push('Preço Médio PVP (MZN)');
-    if (showPvrColumn) headers.push(`PVR (${customMarginPct}% / IVA ${customIvaPct}%) (MZN)`);
+    if (showPvrColumn) headers.push(`PVR (-${customMarginPct}% / IVA ${customIvaPct}%) (MZN)`);
 
     const rows = salesByArticle.map((a) => {
       const row = [
@@ -280,7 +281,7 @@ export const Reports: React.FC<ReportsProps> = ({
         <div className="bg-[#0000aa]/5 dark:bg-[#282c2e] p-3 rounded-lg border border-[#c3c6d1] dark:border-[#43474f] space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs font-bold uppercase text-[#003366] dark:text-[#a7c8ff] flex items-center gap-1.5">
-              <span>🧮</span> Cálculo Personalizado PVR: <code>[ PVP × (1 + Margem%) / (1 + IVA%) ]</code>
+              <span>🧮</span> Cálculo Personalizado PVR: <code>[ (PVP - Margem%) / (1 + IVA%) ]</code>
             </span>
             <div className="flex items-center space-x-2">
               <button
@@ -332,9 +333,9 @@ export const Reports: React.FC<ReportsProps> = ({
             </div>
 
             <div className="col-span-12 sm:col-span-6 text-slate-600 dark:text-slate-300 font-mono text-[11px]">
-              Exemplo: 100 MT × (1 + {customMarginPct}%) / (1 + {customIvaPct}%) ={' '}
+              Exemplo: (100 MT - {customMarginPct}%) / (1 + {customIvaPct}%) ={' '}
               <b className="text-[#006e25] font-black">
-                {formatMZN(100 * (1 + (customMarginPct || 0) / 100) / (1 + (customIvaPct || 0) / 100))}
+                {formatMZN((100 * (1 - (customMarginPct || 0) / 100)) / (1 + (customIvaPct || 0) / 100))}
               </b>
             </div>
           </div>
@@ -359,7 +360,7 @@ export const Reports: React.FC<ReportsProps> = ({
                 {showPvpColumn && <th className="p-3 text-right">Preço Médio (PVP)</th>}
                 {showPvrColumn && (
                   <th className="p-3 text-right text-[#003366] dark:text-[#a7c8ff]">
-                    PVR ({customMarginPct}% / IVA {customIvaPct}%)
+                    PVR (-{customMarginPct}% / IVA {customIvaPct}%)
                   </th>
                 )}
               </tr>
