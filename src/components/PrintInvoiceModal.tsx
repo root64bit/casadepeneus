@@ -96,15 +96,22 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
         {/* Printable Area matching official invoice/quotation structure */}
         <div className="p-8 font-sans space-y-3 max-h-[85vh] overflow-y-auto print:max-h-none print:p-0 print:space-y-2 text-xs">
           
-          {/* Top Address Banner Header */}
-          <div className="text-center border-b border-black pb-1 text-[11px] print:text-[10px]">
-            Maputo - Av. Karl Marx, no. 1772, R/C, Cel: 87 580 5555, Email: casadepneus.mz@gmail.com
+          {/* Top Address Banner Header matching Image 3 Model */}
+          <div className="text-center font-serif text-lg print:text-base font-black tracking-wide text-black uppercase">
+            Casa de Pneus, Lda
+          </div>
+          <div className="text-center border-b border-black pb-1.5 text-[11px] print:text-[10px] text-gray-800 font-medium">
+            Maputo - Av. Karl Marx, no 1772, R/C, Cel: 87 580 5555, Email: casadepneus.mz@gmail.com
           </div>
 
           {/* Company Contacts & Client Information Box */}
           <div className="grid grid-cols-12 gap-4 items-start pt-1 text-[11px] print:text-[10px]">
             {/* Left Block: Company Details & Bank Accounts */}
             <div className="col-span-7 space-y-1">
+              <div className="flex gap-4">
+                <span className="font-bold">NUIT:</span>
+                <span>400 064 253</span>
+              </div>
               <div className="flex gap-4">
                 <span className="font-bold">CEL:</span>
                 <span>87 580 5555</span>
@@ -152,7 +159,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
               <p className="text-[11px] print:text-[10px]">Data doc.: {formattedDate}</p>
             </div>
             <div className="text-right text-[11px] print:text-[10px]">
-              <p>- Vencimento: {isQuotation ? '15 dias' : 'Pronto pag.'}</p>
+              <p>- Validade: {isQuotation ? '7 dias' : 'Pronto pag.'}</p>
             </div>
           </div>
 
@@ -168,7 +175,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
             <span className="col-span-2">MT</span>
             <span className="col-span-2">00,00</span>
             <span className="col-span-2">00,00</span>
-            <span className="col-span-3 font-sans font-medium">{isQuotation ? '15 dias' : 'Pronto pag.'}</span>
+            <span className="col-span-3 font-sans font-medium">{isQuotation ? 'pronto pagamento' : 'Pronto pag.'}</span>
             <span className="col-span-3 font-sans font-medium">{invoice.sellerName || 'usuario'}</span>
           </div>
 
@@ -249,6 +256,10 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
                 <span className="font-bold">{formatMZN(invoice.subtotalBruto)}</span>
               </div>
               <div className="flex justify-between">
+                <span>Mão-de-obra</span>
+                <span>0,00</span>
+              </div>
+              <div className="flex justify-between">
                 <span>Total descontos</span>
                 <span>{formatMZN(invoice.descontoTotal)}</span>
               </div>
@@ -257,7 +268,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
                 <span>{formatMZN(invoice.ivaTotal)}</span>
               </div>
               <div className="flex justify-between text-sm print:text-xs font-black border-t border-black pt-1">
-                <span>Total (MT)</span>
+                <span>Total [MT]</span>
                 <span>{formatMZN(invoice.totalAmount)}</span>
               </div>
             </div>
@@ -268,9 +279,12 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
             Total Extenso: <span className="underline italic lowercase font-normal">{numberToExtensoMZN(invoice.totalAmount)}</span>
           </div>
 
-          {/* Promotional Free Service Banner Box */}
-          <div className="border border-dashed border-black rounded p-2 text-center font-bold uppercase text-xs tracking-wider my-2">
-            MONTAGEM & BALANCEAMENTO GRATUÍTO
+          {/* Promotional Free Service Banners matching Image 3 Model */}
+          <div className="border border-black rounded p-3 text-center font-bold uppercase text-sm print:text-xs tracking-wider my-3 max-w-lg mx-auto">
+            OFERTA DE NITROGÉNIO
+          </div>
+          <div className="text-center text-[10px] print:text-[9px] font-bold uppercase tracking-widest text-gray-700 pt-1">
+            MONTAGEM/BALANCEAMENTO GRATUITO
           </div>
         </div>
       </div>

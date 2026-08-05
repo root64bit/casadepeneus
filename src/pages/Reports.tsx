@@ -29,10 +29,11 @@ export const Reports: React.FC<ReportsProps> = ({
   const [codeTo, setCodeTo] = useState('');
   const [articleSearchQuery, setArticleSearchQuery] = useState('');
 
-  // Custom PVR / PVP Calculation Formula Inputs
+  // Custom PVR / PVP Calculation Formula Inputs & Column Toggles
   const [customMarginPct, setCustomMarginPct] = useState<number>(25); // Default 25% fixo/customizável
   const [customIvaPct, setCustomIvaPct] = useState<number>(16);      // Default 16% IVA fixo/customizável
-  const [showPvrColumn, setShowPvrColumn] = useState<boolean>(true);  // Ver/Esconder coluna
+  const [showPvpColumn, setShowPvpColumn] = useState<boolean>(true);  // Ver/Esconder coluna PVP
+  const [showPvrColumn, setShowPvrColumn] = useState<boolean>(true);  // Ver/Esconder coluna PVR
 
   // Pagination
   const [reportsPage, setReportsPage] = useState(1);
@@ -124,30 +125,56 @@ export const Reports: React.FC<ReportsProps> = ({
       });
     });
 
-    return Array.from(map.values()).sort((a, b) => b.quantity - a.quantity);
-  }, [filteredSales, codeFrom, codeTo, articleSearchQuery]);
+    return Array.from(map.values())
+      .map((item) => {
+        const artObj = articles.find((a) => a.code.trim().toLowerCase() === item.code.trim().toLowerCase());
+        const costPrice = artObj ? artObj.costPrice : 0;
+        const taxRate = artObj ? (artObj.taxRate ?? 16) : 16;
+        const costPriceWithIva = costPrice * (1 + taxRate / 100);
+        const avgPrice = item.quantity > 0 ? item.netTotal / item.quantity : 0;
+        const pvrValue = avgPrice * (1 + (customMarginPct || 0) / 100) / (1 + (customIvaPct || 0) / 100);
+
+        return {
+          ...item,
+          costPriceWithIva,
+          costTotalWithIva: costPriceWithIva * item.quantity,
+          avgPrice,
+          pvrValue,
+        };
+      })
+      .sort((a, b) => b.quantity - a.quantity);
+  }, [filteredSales, articles, codeFrom, codeTo, articleSearchQuery, customMarginPct, customIvaPct]);
+
+  // Total Summary Row Calculations
+  const totals = useMemo(() => {
+    return salesByArticle.reduce(
+      (acc, item) => {
+        acc.totalQty += item.quantity;
+        acc.totalCostWithIva += item.costTotalWithIva;
+        acc.totalPvp += item.netTotal;
+        acc.totalPvr += item.pvrValue * item.quantity;
+        return acc;
+      },
+      { totalQty: 0, totalCostWithIva: 0, totalPvp: 0, totalPvr: 0 }
+    );
+  }, [salesByArticle]);
 
   // CSV Export Function
   const exportCsv = () => {
-    const headers = ['Código', 'Descrição', 'Qtd Vendida', 'Preço Médio (MZN)'];
-    if (showPvrColumn) {
-      headers.push(`PVR (${customMarginPct}% / IVA ${customIvaPct}%)`);
-    }
+    const headers = ['Código', 'Descrição', 'Qtd Vendida'];
+    if (canViewCost) headers.push('Preço Custo c/IVA (MZN)');
+    if (showPvpColumn) headers.push('Preço Médio PVP (MZN)');
+    if (showPvrColumn) headers.push(`PVR (${customMarginPct}% / IVA ${customIvaPct}%) (MZN)`);
 
     const rows = salesByArticle.map((a) => {
-      const avgPrice = a.quantity > 0 ? a.netTotal / a.quantity : 0;
-      const pvrValue = avgPrice * (1 + (customMarginPct || 0) / 100) / (1 + (customIvaPct || 0) / 100);
-
       const row = [
         a.code,
         `"${a.description.replace(/"/g, '""')}"`,
         a.quantity.toFixed(3),
-        avgPrice.toFixed(2),
       ];
-
-      if (showPvrColumn) {
-        row.push(pvrValue.toFixed(2));
-      }
+      if (canViewCost) row.push(a.costPriceWithIva.toFixed(2));
+      if (showPvpColumn) row.push(a.avgPrice.toFixed(2));
+      if (showPvrColumn) row.push(a.pvrValue.toFixed(2));
 
       return row;
     });
@@ -174,7 +201,7 @@ export const Reports: React.FC<ReportsProps> = ({
             </h2>
           </div>
           <p className="text-xs text-slate-500 mt-1 font-mono">
-            Vendas discriminadas por artigo com intervalo de códigos e cálculo personalizável de PVR.
+            Vendas discriminadas por artigo com intervalo de códigos, preços de custo c/IVA e cálculo de PVR.
           </p>
         </div>
       </section>
@@ -251,21 +278,34 @@ export const Reports: React.FC<ReportsProps> = ({
 
         {/* Custom PVR / PVP Calculation Formula Panel */}
         <div className="bg-[#0000aa]/5 dark:bg-[#282c2e] p-3 rounded-lg border border-[#c3c6d1] dark:border-[#43474f] space-y-2">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs font-bold uppercase text-[#003366] dark:text-[#a7c8ff] flex items-center gap-1.5">
               <span>🧮</span> Cálculo Personalizado PVR: <code>[ PVP × (1 + Margem%) / (1 + IVA%) ]</code>
             </span>
-            <button
-              type="button"
-              onClick={() => setShowPvrColumn(!showPvrColumn)}
-              className={`px-3 py-1 rounded text-xs font-bold flex items-center gap-1 transition-colors ${
-                showPvrColumn
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
-              }`}
-            >
-              {showPvrColumn ? '👁️ Coluna PVR Visível' : '🙈 Coluna PVR Oculta'}
-            </button>
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={() => setShowPvpColumn(!showPvpColumn)}
+                className={`px-3 py-1 rounded text-xs font-bold flex items-center gap-1 transition-colors ${
+                  showPvpColumn
+                    ? 'bg-slate-700 text-white hover:bg-slate-800'
+                    : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                }`}
+              >
+                {showPvpColumn ? '👁️ Coluna PVP Visível' : '🙈 Coluna PVP Oculta'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPvrColumn(!showPvrColumn)}
+                className={`px-3 py-1 rounded text-xs font-bold flex items-center gap-1 transition-colors ${
+                  showPvrColumn
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                }`}
+              >
+                {showPvrColumn ? '👁️ Coluna PVR Visível' : '🙈 Coluna PVR Oculta'}
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-12 gap-3 text-xs items-center">
@@ -315,7 +355,8 @@ export const Reports: React.FC<ReportsProps> = ({
                 <th className="p-3">Código</th>
                 <th className="p-3">Descrição do Artigo</th>
                 <th className="p-3 text-center">Qtd Vendida</th>
-                <th className="p-3 text-right">Preço Médio (PVP)</th>
+                {canViewCost && <th className="p-3 text-right">Preço Custo c/IVA</th>}
+                {showPvpColumn && <th className="p-3 text-right">Preço Médio (PVP)</th>}
                 {showPvrColumn && (
                   <th className="p-3 text-right text-[#003366] dark:text-[#a7c8ff]">
                     PVR ({customMarginPct}% / IVA {customIvaPct}%)
@@ -326,7 +367,7 @@ export const Reports: React.FC<ReportsProps> = ({
             <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f]">
               {salesByArticle.length === 0 ? (
                 <tr>
-                  <td colSpan={showPvrColumn ? 5 : 4} className="p-8 text-center text-slate-400 font-sans italic">
+                  <td colSpan={3 + (canViewCost ? 1 : 0) + (showPvpColumn ? 1 : 0) + (showPvrColumn ? 1 : 0)} className="p-8 text-center text-slate-400 font-sans italic">
                     Nenhum artigo vendido no período ou intervalo de códigos seleccionado.
                   </td>
                 </tr>
@@ -334,18 +375,20 @@ export const Reports: React.FC<ReportsProps> = ({
                 salesByArticle
                   .slice((reportsPage - 1) * reportsPageSize, reportsPage * reportsPageSize)
                   .map((art) => {
-                    const avgPrice = art.quantity > 0 ? art.netTotal / art.quantity : 0;
-                    const pvrValue = avgPrice * (1 + (customMarginPct || 0) / 100) / (1 + (customIvaPct || 0) / 100);
-
                     return (
                       <tr key={art.code} className="hover:bg-[#f3f4f5] dark:hover:bg-[#282c2e]">
                         <td className="p-3 font-bold text-[#003366] dark:text-[#a7c8ff]">{art.code}</td>
                         <td className="p-3 font-sans font-semibold text-slate-800 dark:text-white">{art.description}</td>
                         <td className="p-3 text-center font-extrabold text-emerald-700 dark:text-emerald-400">{art.quantity.toFixed(3)} UN</td>
-                        <td className="p-3 text-right font-bold">{formatMZN(avgPrice)}</td>
+                        {canViewCost && (
+                          <td className="p-3 text-right font-bold text-amber-800 dark:text-amber-300">
+                            {formatMZN(art.costPriceWithIva)}
+                          </td>
+                        )}
+                        {showPvpColumn && <td className="p-3 text-right font-bold">{formatMZN(art.avgPrice)}</td>}
                         {showPvrColumn && (
                           <td className="p-3 text-right font-black text-[#006e25]">
-                            {formatMZN(pvrValue)}
+                            {formatMZN(art.pvrValue)}
                           </td>
                         )}
                       </tr>
@@ -353,6 +396,34 @@ export const Reports: React.FC<ReportsProps> = ({
                   })
               )}
             </tbody>
+            {/* TOTALS ROW AT BOTTOM */}
+            {salesByArticle.length > 0 && (
+              <tfoot className="bg-[#001e40] text-white font-bold border-t-2 border-[#003366]">
+                <tr>
+                  <td colSpan={2} className="p-3 font-sans uppercase font-black">
+                    TOTAL GERAL ({salesByArticle.length} ARTIGOS)
+                  </td>
+                  <td className="p-3 text-center font-extrabold text-emerald-300">
+                    {totals.totalQty.toFixed(3)} UN
+                  </td>
+                  {canViewCost && (
+                    <td className="p-3 text-right font-bold text-amber-300">
+                      {formatMZN(totals.totalCostWithIva)}
+                    </td>
+                  )}
+                  {showPvpColumn && (
+                    <td className="p-3 text-right font-bold text-white">
+                      {formatMZN(totals.totalPvp)}
+                    </td>
+                  )}
+                  {showPvrColumn && (
+                    <td className="p-3 text-right font-black text-emerald-400">
+                      {formatMZN(totals.totalPvr)}
+                    </td>
+                  )}
+                </tr>
+              </tfoot>
+            )}
           </table>
 
           {/* Pagination Controls */}

@@ -738,7 +738,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
               </thead>
               <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f]">
                 {[...filteredMovements]
-                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                  .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
                   .slice((movementsPage - 1) * movementsPageSize, movementsPage * movementsPageSize)
                   .map((item) => {
                     const matchedArt = articles.find((a) => a.code === item.articleCode);

@@ -890,6 +890,7 @@ export const Quotation: React.FC<QuotationProps> = ({
                 <th className="p-2.5">N.º Cotação</th>
                 <th className="p-2.5">Data</th>
                 <th className="p-2.5">Cliente</th>
+                <th className="p-2.5">Operador</th>
                 <th className="p-2.5 text-right">Total (MT)</th>
                 <th className="p-2.5 text-center">Estado</th>
                 <th className="p-2.5 text-center">Ação</th>
@@ -898,7 +899,7 @@ export const Quotation: React.FC<QuotationProps> = ({
             <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f]">
               {paginatedQuotations.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-400 font-sans italic">
+                  <td colSpan={7} className="p-8 text-center text-slate-400 font-sans italic">
                     Nenhuma cotação encontrada para os filtros aplicados.
                   </td>
                 </tr>
@@ -914,6 +915,9 @@ export const Quotation: React.FC<QuotationProps> = ({
                     <td className="p-2.5 font-sans font-semibold">
                       {item.clientName}
                       {item.clientNuit ? <span className="text-slate-400 text-[10px] ml-1.5">(NUIT: {item.clientNuit})</span> : null}
+                    </td>
+                    <td className="p-2.5 font-sans text-slate-700 dark:text-slate-300 font-medium text-xs">
+                      {item.sellerName || operatorName || 'Operador'}
                     </td>
                     <td className="p-2.5 text-right font-black text-[#006e25]">
                       {formatMZN(item.totalAmount)}

@@ -208,6 +208,39 @@ export const NewSale: React.FC<NewSaleProps> = ({
     setItems((current) => current.filter((_, i) => i !== index));
   };
 
+  // Helper to calculate the next sequence document number for a given document type
+  const getNextDocNumberForType = (type: 'CUSTOMER_INVOICE' | 'CASH_SALE' | 'CUSTOMER_DELIVERY_NOTE'): string => {
+    let prefix = 'A/';
+    if (type === 'CASH_SALE') prefix = 'VD/';
+    if (type === 'CUSTOMER_DELIVERY_NOTE') prefix = 'GR/';
+
+    let maxSeq = 0;
+    sales.forEach((s) => {
+      if (s.docNumber && s.docNumber.startsWith(prefix)) {
+        const parts = s.docNumber.split('/');
+        if (parts[1]) {
+          const num = parseInt(parts[1], 10);
+          if (!isNaN(num) && num > maxSeq) maxSeq = num;
+        }
+      }
+    });
+
+    if (documents) {
+      documents.forEach((d) => {
+        if (d.displayNumber && d.displayNumber.startsWith(prefix)) {
+          const parts = d.displayNumber.split('/');
+          if (parts[1]) {
+            const num = parseInt(parts[1], 10);
+            if (!isNaN(num) && num > maxSeq) maxSeq = num;
+          }
+        }
+      });
+    }
+
+    const nextSeq = maxSeq + 1;
+    return `${prefix}${String(nextSeq).padStart(6, '0')}`;
+  };
+
   const loadLastDocumentInConsultationMode = () => {
     // Look up in sales array first for full items
     const matchingSales = sales.filter((s) => {
@@ -217,7 +250,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
       if (documentType === 'CUSTOMER_DELIVERY_NOTE') {
         return s.documentTypeCode === 'CUSTOMER_DELIVERY_NOTE' || s.docNumber.startsWith('GR');
       }
-      return s.documentTypeCode === 'CUSTOMER_INVOICE' || s.docNumber.startsWith('FT');
+      return s.documentTypeCode === 'CUSTOMER_INVOICE' || s.docNumber.startsWith('A/') || s.docNumber.startsWith('FT');
     });
 
     const targetSale = matchingSales[0];
@@ -236,12 +269,14 @@ export const NewSale: React.FC<NewSaleProps> = ({
         setClientAddress(targetSale.clientAddress || '');
       }
 
-      setDocNumber(targetSale.docNumber);
-      setDate(targetSale.date);
+      const nextNum = getNextDocNumberForType(documentType);
+      setDocNumber(nextNum);
+      setDate(new Date().toISOString().split('T')[0]);
       setItems(targetSale.items || []);
-      setDocStatus('READ_ONLY');
+      setDocStatus('PREPARATION');
       setSaveError('');
-      setConfirmedSaleRecord(targetSale);
+      setConfirmedSaleRecord(null);
+      alert(`Último documento (${targetSale.docNumber}) carregado com sucesso! ${targetSale.items.length} artigo(s) prontos em novo rascunho de venda.`);
       return true;
     }
 
@@ -257,7 +292,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
       if (documentType === 'CUSTOMER_DELIVERY_NOTE') {
         return d.typeCode === 'CUSTOMER_DELIVERY_NOTE' || d.displayNumber.startsWith('GR') || d.typeName.toLowerCase().includes('guia');
       }
-      return d.typeCode === 'CUSTOMER_INVOICE' || d.displayNumber.startsWith('FT') || d.typeName.toLowerCase().includes('factura') || d.typeName.toLowerCase().includes('fatura');
+      return d.typeCode === 'CUSTOMER_INVOICE' || d.displayNumber.startsWith('A/') || d.displayNumber.startsWith('FT') || d.typeName.toLowerCase().includes('factura') || d.typeName.toLowerCase().includes('fatura');
     });
 
     const targetDoc = matchingDocs[0] || documents[0];
@@ -272,47 +307,14 @@ export const NewSale: React.FC<NewSaleProps> = ({
       setClientAddress(found.address || '');
     }
 
-    setDocNumber(targetDoc.displayNumber);
-    setDate(targetDoc.date);
-    setDocStatus('READ_ONLY');
-    setSaveError('');
-
-    const consultSale: SaleInvoice = {
-      id: targetDoc.id,
-      clientId: targetDoc.partyId,
-      docNumber: targetDoc.displayNumber,
-      date: targetDoc.date,
-      clientName: targetDoc.partyName || selectedClientName,
-      clientNuit: found?.nuit || '',
-      clientAddress: found?.address || '',
-      paymentMethod: 'CASH',
-      sellerName: operatorName,
-      items: [],
-      subtotalBruto: targetDoc.netTotal,
-      descontoTotal: 0,
-      subtotalLiquido: targetDoc.netTotal,
-      ivaTotal: targetDoc.taxTotal,
-      totalAmount: targetDoc.grandTotal,
-      paidAmount: targetDoc.paidAmount,
-      pendingAmount: targetDoc.outstandingAmount,
-      status: targetDoc.status === 'CONFIRMED' ? 'Concluída' : 'Pendente',
-    };
-
-    setConfirmedSaleRecord(consultSale);
-    return true;
-  };
-
-  const handleDuplicateToNewDocument = () => {
-    if (items.length === 0) {
-      setSaveError('Este documento não tem itens para copiar.');
-      return;
-    }
-    setDocStatus('PREPARATION');
-    setDocNumber('A atribuir ao confirmar');
+    const nextNum = getNextDocNumberForType(documentType);
+    setDocNumber(nextNum);
     setDate(new Date().toISOString().split('T')[0]);
-    setConfirmedSaleRecord(null);
+    setDocStatus('PREPARATION');
     setSaveError('');
-    alert(`Documento copiado com sucesso! Foram carregados ${items.length} artigo(s) para um novo rascunho de venda.`);
+    setConfirmedSaleRecord(null);
+    alert(`Último documento (${targetDoc.displayNumber}) carregado em novo rascunho.`);
+    return true;
   };
 
   const subtotalBruto = items.reduce((acc, item) => acc + item.unitPrice * item.quantity, 0);
@@ -433,9 +435,14 @@ export const NewSale: React.FC<NewSaleProps> = ({
           void handleSaveAndConfirm(false);
         } else if (docStatus === 'PREPARATION') {
           if (items.length > 0) {
+            if (docNumber === 'A atribuir ao confirmar' || !docNumber) {
+              setDocNumber(getNextDocNumberForType(documentType));
+            }
             setDocStatus('CONFIRMING');
           } else {
-            setSaveError('Adicione pelo menos 1 artigo antes de gravar com F2.');
+            const nextCode = getNextDocNumberForType(documentType);
+            setDocNumber(nextCode);
+            setSaveError(`Próximo número atribuído (${nextCode}). Adicione pelo menos 1 artigo para emitir.`);
           }
         }
       } else if (e.key === 'F3') {
@@ -549,20 +556,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
         </div>
       </section>
 
-      {docStatus === 'READ_ONLY' && (
-        <div className="bg-purple-50 border border-purple-300 p-3 rounded-lg flex items-center justify-between text-xs font-mono">
-          <span className="font-bold text-purple-900">
-            📄 DOCUMENTO EM CONSULTA (#{docNumber}) — MODO LEITURA (Sem novos lançamentos ou saídas de stock)
-          </span>
-          <button
-            type="button"
-            onClick={handleDuplicateToNewDocument}
-            className="bg-purple-700 text-white px-3 py-1 rounded font-bold hover:bg-purple-800"
-          >
-            Copiar para Novo Documento
-          </button>
-        </div>
-      )}
+
 
       <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-3 print:p-2 rounded-lg shadow-sm print:shadow-none space-y-2 print:space-y-1">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-xs print:text-[10px]">
