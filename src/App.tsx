@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Session } from '@supabase/supabase-js';
+import { createClient, type Session } from '@supabase/supabase-js';
 import { Layout } from './components/Layout';
 import { AuthGate } from './components/AuthGate';
 import { PartyModal } from './components/PartyModal';
@@ -347,41 +347,81 @@ function App() {
   const handleCreateUser = async (userData: {
     fullName: string;
     email: string;
+    password?: string;
     bundles: string[];
     permissions: string[];
     telephone?: string;
   }) => {
     try {
+      if (!userData.password || userData.password.length < 6) {
+        throw new Error('A palavra-passe deve ter pelo menos 6 caracteres.');
+      }
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const tempAuthClient = createClient(supabaseUrl, supabaseKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+
+      const { data: authData, error: authErr } = await tempAuthClient.auth.signUp({
+        email: userData.email,
+        password: userData.password,
+        options: {
+          data: {
+            full_name: userData.fullName,
+          },
+        },
+      });
+
+      if (authErr) throw new Error(`Erro ao registar credenciais: ${authErr.message}`);
+      const newUserId = authData.user?.id;
+      if (!newUserId) throw new Error('Não foi possível obter o ID de autenticação do novo utilizador.');
+
       const companyIdResult = await supabase!.rpc('get_user_company_id');
       const companyId = companyIdResult.data;
       if (!companyId) throw new Error('Empresa do utilizador não encontrada.');
 
-      const { data: newUser, error: createErr } = await supabase!
-        .from('user_profiles')
-        .insert({
-          company_id: companyId,
-          full_name: userData.fullName,
-          email: userData.email,
-          phone: userData.telephone || null,
-          is_active: true,
-        })
-        .select('id')
-        .single();
+      const username = userData.email.split('@')[0].toLowerCase();
+      const primaryRole = userData.bundles && userData.bundles.length > 0 ? userData.bundles[0] : 'MANAGER_LIMITED';
 
-      if (createErr) throw new Error(createErr.message);
+      const { error: rpcErr } = await supabase!.rpc('admin_create_user_profile', {
+        p_user_id: newUserId,
+        p_username: username,
+        p_full_name: userData.fullName,
+        p_email: userData.email,
+        p_phone: userData.telephone || null,
+        p_role_code: primaryRole,
+      });
 
-      if (newUser?.id && userData.bundles) {
+      if (rpcErr) {
+        const { error: insertErr } = await supabase!
+          .from('user_profiles')
+          .insert({
+            id: newUserId,
+            company_id: companyId,
+            username: username,
+            full_name: userData.fullName,
+            email: userData.email,
+            phone: userData.telephone || null,
+            is_active: true,
+          });
+        if (insertErr) throw new Error(insertErr.message);
+      }
+
+      if (userData.bundles && userData.bundles.length > 0) {
         for (const bCode of userData.bundles) {
           const roleRes = await supabase!.from('roles').select('id').eq('code', bCode).maybeSingle();
           if (roleRes.data?.id) {
-            await supabase!.from('user_roles').insert({ user_id: newUser.id, role_id: roleRes.data.id });
+            await supabase!.from('user_roles').insert({ user_id: newUserId, role_id: roleRes.data.id });
           }
         }
       }
 
       await refreshData();
     } catch (cause) {
-      setDataError(cause instanceof Error ? cause.message : 'Falha ao criar utilizador.');
+      const msg = cause instanceof Error ? cause.message : 'Falha ao criar utilizador.';
+      setDataError(msg);
+      throw new Error(msg);
     }
   };
 

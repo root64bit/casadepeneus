@@ -17,6 +17,7 @@ interface AdministrationProps {
   onCreateUser?: (userData: {
     fullName: string;
     email: string;
+    password?: string;
     bundles: string[];
     permissions: string[];
     telephone?: string;
@@ -41,6 +42,7 @@ export function Administration({
   // Form State
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [telephone, setTelephone] = useState('');
   const [selectedBundles, setSelectedBundles] = useState<string[]>(['VENDAS_CAIXA']);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -74,6 +76,7 @@ export function Administration({
     setEditingUser(null);
     setFullName('');
     setEmail('');
+    setPassword('');
     setTelephone('');
     setSelectedBundles(['VENDAS_CAIXA']);
     setCustomAdditions([]);
@@ -89,6 +92,7 @@ export function Administration({
     setEditingUser(user);
     setFullName(user.fullName);
     setEmail(user.email);
+    setPassword('');
     setTelephone(user.telephone || '');
     setSelectedBundles(user.bundles && user.bundles.length > 0 ? user.bundles : user.roles.length > 0 ? user.roles : ['VENDAS_CAIXA']);
     setCustomAdditions([]);
@@ -132,6 +136,10 @@ export function Administration({
       setFormError('Por favor introduza um email válido.');
       return;
     }
+    if (!editingUser && (!password || password.length < 6)) {
+      setFormError('Por favor introduza uma palavra-passe inicial com pelo menos 6 caracteres.');
+      return;
+    }
     if (selectedBundles.length === 0) {
       setFormError('Por favor selecione pelo menos um Pacote de Responsabilidades.');
       return;
@@ -164,11 +172,12 @@ export function Administration({
         await onCreateUser({
           fullName,
           email,
+          password,
           bundles: selectedBundles,
           permissions: effectivePermissionsPreview,
           telephone,
         });
-        setFormSuccess('Novo utilizador criado com sucesso! Credenciais temporárias geradas.');
+        setFormSuccess('Novo utilizador criado com sucesso! As credenciais foram ativadas.');
       } else {
         await onUpdateUser(
           { id: '', fullName, email, active: true, roles: selectedBundles },
@@ -449,7 +458,7 @@ export function Administration({
 
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Basic Fields */}
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <label htmlFor="admin-full-name" className="block text-xs font-bold uppercase text-slate-600 mb-1">
                     Nome Completo *
@@ -479,6 +488,23 @@ export function Administration({
                     className="w-full rounded-md border bg-slate-50 px-3 py-2 text-xs font-mono"
                   />
                 </div>
+                {!editingUser && (
+                  <div>
+                    <label htmlFor="admin-password" className="block text-xs font-bold uppercase text-slate-600 mb-1">
+                      Palavra-passe Inicial *
+                    </label>
+                    <input
+                      id="admin-password"
+                      type="password"
+                      required
+                      minLength={6}
+                      placeholder="Mínimo 6 caracteres"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full rounded-md border bg-slate-50 px-3 py-2 text-xs font-mono"
+                    />
+                  </div>
+                )}
                 <div>
                   <label htmlFor="admin-telephone" className="block text-xs font-bold uppercase text-slate-600 mb-1">
                     Contacto Telefónico
