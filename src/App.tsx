@@ -185,11 +185,20 @@ function App() {
     if (!userContext || activeTab === 'unauthorized') return;
     const required = tabAccess[activeTab];
     if (!required || !required.some((code) => permissions.includes(code))) {
-      void supabase?.rpc('record_access_denied', {
-        p_route: window.location.pathname,
-        p_reason: `Missing permission for ${activeTab}`,
+      const allowedTab = Object.keys(tabAccess).find((tab) => {
+        const reqs = tabAccess[tab];
+        return reqs && reqs.some((c) => permissions.includes(c));
       });
-      setActiveTab('unauthorized');
+
+      if (allowedTab) {
+        setActiveTab(allowedTab);
+      } else {
+        void supabase?.rpc('record_access_denied', {
+          p_route: window.location.pathname,
+          p_reason: `Missing permission for ${activeTab}`,
+        });
+        setActiveTab('unauthorized');
+      }
     }
   }, [activeTab, permissions, userContext]);
 
