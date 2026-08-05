@@ -726,8 +726,11 @@ export async function loadAppData(): Promise<AppData> {
     .map((row: Row) => {
     const customer = relation(row.customers);
     const paymentTerm = relation(row.payment_terms);
+    const docType = relation(row.document_types);
+    const docTypeCode = docType?.code ?? (row.display_number?.startsWith('COT') ? 'CUSTOMER_QUOTATION' : 'CUSTOMER_INVOICE');
     return {
       id: row.id,
+      documentTypeCode: docTypeCode,
       docNumber: row.display_number ?? 'Rascunho',
       date: row.document_date,
       clientName: customer?.name ?? 'Cliente não identificado',

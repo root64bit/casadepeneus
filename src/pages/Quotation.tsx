@@ -345,7 +345,15 @@ export const Quotation: React.FC<QuotationProps> = ({
 
     // 2. From sales prop
     sales.forEach((s) => {
-      if (s.documentTypeCode === 'CUSTOMER_QUOTATION' || s.docNumber.startsWith('COT-')) {
+      const isCotation =
+        s.documentTypeCode === 'CUSTOMER_QUOTATION' ||
+        s.documentTypeCode === 'QUOTATION' ||
+        s.documentTypeCode === 'COT' ||
+        s.docNumber.startsWith('COT') ||
+        s.docNumber.startsWith('CO/') ||
+        s.docNumber.toLowerCase().includes('cota');
+
+      if (isCotation) {
         if (!seenIds.has(s.id) && !seenIds.has(s.docNumber)) {
           seenIds.add(s.id);
           seenIds.add(s.docNumber);
@@ -371,8 +379,11 @@ export const Quotation: React.FC<QuotationProps> = ({
     documents.forEach((d) => {
       const isCotation =
         d.typeCode === 'CUSTOMER_QUOTATION' ||
-        d.displayNumber.startsWith('COT-') ||
-        (d.typeName && d.typeName.toLowerCase().includes('cotação'));
+        d.typeCode === 'QUOTATION' ||
+        d.typeCode === 'COT' ||
+        d.displayNumber.startsWith('COT') ||
+        d.displayNumber.startsWith('CO/') ||
+        (d.typeName && (d.typeName.toLowerCase().includes('cotação') || d.typeName.toLowerCase().includes('cotacao')));
 
       if (isCotation && !seenIds.has(d.id) && !seenIds.has(d.displayNumber)) {
         const clientObj = clients.find((c) => c.id === d.partyId);
