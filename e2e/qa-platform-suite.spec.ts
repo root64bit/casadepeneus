@@ -49,6 +49,16 @@ test.describe('Casa de Pneus — Full Platform End-to-End QA Suite', () => {
     await expect(page.locator('nav >> text=Artigos e Stock')).toHaveCount(0);
     await expect(page.locator('nav >> text=Relatórios')).toHaveCount(0);
     await expect(page.locator('nav >> text=Administração')).toHaveCount(0);
+
+    // Verify Nova Venda Document Restrictions for Cashier
+    await page.click('text=Nova Venda');
+    await expect(page.locator('button:has-text("Factura (Restrito)")')).toBeDisabled();
+    await expect(page.locator('button:has-text("VD (Restrito)")')).toBeDisabled();
+    await expect(page.locator('button:has-text("Guia de Remessa")')).toBeEnabled();
+
+    // Verify Cotação Access for Cashier
+    await page.click('text=Cotação');
+    await expect(page.locator('text=Histórico de Cotações Emitidas').first()).toBeVisible();
   });
 
   test('03. Nova Venda Document Selector & Walk-In Customer Sequence', async ({ page }) => {

@@ -14,6 +14,7 @@ interface NewSaleProps {
   paymentTerms: ReferenceOption[];
   paymentMethods: ReferenceOption[];
   documents?: DocumentRecord[];
+  permissions?: string[];
 }
 
 export const NewSale: React.FC<NewSaleProps> = ({
@@ -27,8 +28,19 @@ export const NewSale: React.FC<NewSaleProps> = ({
   paymentTerms,
   paymentMethods,
   documents,
+  permissions = [],
 }) => {
-  const [documentType, setDocumentType] = useState<'CUSTOMER_INVOICE' | 'CASH_SALE' | 'CUSTOMER_DELIVERY_NOTE'>('CUSTOMER_INVOICE');
+  const isGuiaOnlyUser = permissions.length > 0 && !permissions.includes('settings.manage') && !permissions.includes('products.view');
+
+  const [documentType, setDocumentType] = useState<'CUSTOMER_INVOICE' | 'CASH_SALE' | 'CUSTOMER_DELIVERY_NOTE'>(
+    isGuiaOnlyUser ? 'CUSTOMER_DELIVERY_NOTE' : 'CUSTOMER_INVOICE'
+  );
+
+  useEffect(() => {
+    if (isGuiaOnlyUser && documentType !== 'CUSTOMER_DELIVERY_NOTE') {
+      setDocumentType('CUSTOMER_DELIVERY_NOTE');
+    }
+  }, [isGuiaOnlyUser, documentType]);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [docNumber, setDocNumber] = useState('A atribuir ao confirmar');
   const [docStatus, setDocStatus] = useState<'PREPARATION' | 'CONFIRMING' | 'CONFIRMED' | 'READ_ONLY'>('PREPARATION');
@@ -75,6 +87,11 @@ export const NewSale: React.FC<NewSaleProps> = ({
   };
 
   const handleSelectDocumentType = (type: 'CUSTOMER_INVOICE' | 'CASH_SALE' | 'CUSTOMER_DELIVERY_NOTE') => {
+    if (isGuiaOnlyUser && type !== 'CUSTOMER_DELIVERY_NOTE') {
+      setSaveError('Acesso Restrito: O Operador de Caixa apenas pode emitir Guia de Remessa.');
+      return;
+    }
+
     if (!confirmResetIfNeeded()) return;
 
     setDocumentType(type);
@@ -480,25 +497,33 @@ export const NewSale: React.FC<NewSaleProps> = ({
         <div className="flex items-center space-x-2">
           <button
             type="button"
+            disabled={isGuiaOnlyUser}
             onClick={() => handleSelectDocumentType('CUSTOMER_INVOICE')}
             className={`px-4 py-2 rounded-md font-extrabold text-xs uppercase transition-all ${
-              documentType === 'CUSTOMER_INVOICE'
-                ? 'bg-[#003366] text-white shadow-md'
-                : 'bg-[#f3f4f5] dark:bg-[#282c2e] text-[#737780] hover:text-[#191c1d] dark:hover:text-white'
+              isGuiaOnlyUser
+                ? 'opacity-40 cursor-not-allowed bg-slate-200 dark:bg-slate-800 text-slate-400'
+                : documentType === 'CUSTOMER_INVOICE'
+                  ? 'bg-[#003366] text-white shadow-md'
+                  : 'bg-[#f3f4f5] dark:bg-[#282c2e] text-[#737780] hover:text-[#191c1d] dark:hover:text-white'
             }`}
+            title={isGuiaOnlyUser ? 'Apenas o Administrador pode emitir Faturas' : ''}
           >
-            Factura
+            {isGuiaOnlyUser ? '🔐 Factura (Restrito)' : 'Factura'}
           </button>
           <button
             type="button"
+            disabled={isGuiaOnlyUser}
             onClick={() => handleSelectDocumentType('CASH_SALE')}
             className={`px-4 py-2 rounded-md font-extrabold text-xs uppercase transition-all ${
-              documentType === 'CASH_SALE'
-                ? 'bg-[#006e25] text-white shadow-md'
-                : 'bg-[#f3f4f5] dark:bg-[#282c2e] text-[#737780] hover:text-[#191c1d] dark:hover:text-white'
+              isGuiaOnlyUser
+                ? 'opacity-40 cursor-not-allowed bg-slate-200 dark:bg-slate-800 text-slate-400'
+                : documentType === 'CASH_SALE'
+                  ? 'bg-[#006e25] text-white shadow-md'
+                  : 'bg-[#f3f4f5] dark:bg-[#282c2e] text-[#737780] hover:text-[#191c1d] dark:hover:text-white'
             }`}
+            title={isGuiaOnlyUser ? 'Apenas o Administrador pode emitir Vendas a Dinheiro' : ''}
           >
-            Venda a Dinheiro (VD)
+            {isGuiaOnlyUser ? '🔐 VD (Restrito)' : 'Venda a Dinheiro (VD)'}
           </button>
           <button
             type="button"

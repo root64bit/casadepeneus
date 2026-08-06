@@ -215,12 +215,12 @@ export async function createCustomerSale(
     const { data: dbCustomers } = await client
       .from('customers')
       .select('id,customer_number,name')
-      .eq('active', true)
-      .limit(50);
+      .limit(100);
 
     const pontualCustomer = (dbCustomers || []).find(
       (c) =>
         c.customer_number === '1' ||
+        c.customer_number === 'CL-001' ||
         c.name.toLowerCase().includes('pontual') ||
         c.name.toLowerCase().includes('final') ||
         c.name.toLowerCase().includes('geral')
@@ -274,12 +274,12 @@ export async function createQuotation(
     const { data: dbCustomers } = await client
       .from('customers')
       .select('id,customer_number,name')
-      .eq('active', true)
-      .limit(50);
+      .limit(100);
 
     const pontualCustomer = (dbCustomers || []).find(
       (c) =>
         c.customer_number === '1' ||
+        c.customer_number === 'CL-001' ||
         c.name.toLowerCase().includes('pontual') ||
         c.name.toLowerCase().includes('final') ||
         c.name.toLowerCase().includes('geral')

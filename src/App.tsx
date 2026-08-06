@@ -526,6 +526,7 @@ function App() {
             operatorName={userContext?.fullName ?? ''}
             paymentTerms={paymentTerms}
             paymentMethods={paymentMethods}
+            permissions={permissions}
           />
         );
       case 'quotation':
