@@ -24,7 +24,7 @@ async function fixCashierPermissions() {
     INSERT INTO public.role_permissions (role_id, permission_id)
     SELECT '${roleId}', p.id
     FROM public.permissions p
-    WHERE p.code IN ('sales.create', 'sales.read', 'dashboard.read', 'customers.view', 'customers.read')
+    WHERE p.code IN ('sales.create', 'sales.confirm', 'sales.read', 'dashboard.read', 'customers.view', 'customers.read')
     ON CONFLICT DO NOTHING;
   `);
 

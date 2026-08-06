@@ -45,6 +45,7 @@ export interface SaleInvoice {
   paymentMethodCode?: string;
   documentTypeCode?: string;
   sellerName: string;
+  operatorName?: string;
   items: SaleItem[];
   subtotalBruto: number;
   descontoTotal: number;
