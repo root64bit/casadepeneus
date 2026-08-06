@@ -252,6 +252,7 @@ function App() {
     if (!sale.clientId) throw new Error('Cliente da venda não identificado.');
 
     const savedSale = await createCustomerSale(sale, sale.clientId);
+    setSales((prev) => [savedSale, ...prev.filter((s) => s.id !== savedSale.id)]);
     await refreshData();
     return savedSale;
   };
@@ -260,6 +261,7 @@ function App() {
     if (!quotation.clientId) throw new Error('Cliente da cotação não identificado.');
 
     const savedQuotation = await createQuotation(quotation, quotation.clientId);
+    setSales((prev) => [savedQuotation, ...prev.filter((s) => s.id !== savedQuotation.id)]);
     await refreshData();
     return savedQuotation;
   };
