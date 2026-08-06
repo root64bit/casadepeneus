@@ -293,23 +293,27 @@ export async function createQuotation(
   }
 
   const year = new Date().getFullYear();
-  const { data: existingDocs } = await client
+  const { data: allDocs } = await client
     .from('documents')
-    .select('display_number')
-    .ilike('display_number', `COT-${year}/%`)
-    .order('created_at', { ascending: false })
-    .limit(1);
+    .select('display_number');
 
-  let nextSeq = 1;
-  if (existingDocs && existingDocs.length > 0) {
-    const lastNum = existingDocs[0].display_number;
-    const parts = lastNum.split('/');
-    if (parts.length > 1) {
-      const parsed = parseInt(parts[1], 10);
-      if (!isNaN(parsed)) nextSeq = parsed + 1;
-    }
+  let maxSeq = 0;
+  if (allDocs && allDocs.length > 0) {
+    allDocs.forEach((d) => {
+      if (d.display_number && (d.display_number.toUpperCase().startsWith('COT') || d.display_number.toUpperCase().startsWith('CO/'))) {
+        const match = d.display_number.match(/(\d+)/g);
+        if (match && match.length > 0) {
+          const lastPart = match[match.length - 1];
+          const parsed = parseInt(lastPart, 10);
+          if (!isNaN(parsed) && parsed > maxSeq) {
+            maxSeq = parsed;
+          }
+        }
+      }
+    });
   }
 
+  const nextSeq = maxSeq + 1;
   const docDisplayNumber = `COT-${year}/${String(nextSeq).padStart(6, '0')}`;
   const companyIdRes = await client.rpc('get_user_company_id');
   const companyId = companyIdRes.data;
@@ -325,6 +329,8 @@ export async function createQuotation(
     const { data: fallbackDocType } = await client.from('document_types').select('id').limit(1);
     docTypeId = fallbackDocType?.[0]?.id;
   }
+
+  const encodedNotes = `[CLIENTE: ${sale.clientName} | NUIT: ${sale.clientNuit || 'N/A'} | MORADA: ${sale.clientAddress || 'N/A'}] ${sale.notes || ''}`.trim();
 
   // Insert quotation into documents table without stock deduction
   const { data: insertedDoc } = await client
@@ -345,7 +351,7 @@ export async function createQuotation(
       amount_paid: 0,
       outstanding_amount: sale.totalAmount,
       salesperson_name: sale.sellerName,
-      notes: sale.notes || 'Proposta de Cotação',
+      notes: encodedNotes,
     })
     .select()
     .single();
