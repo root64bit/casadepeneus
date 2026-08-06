@@ -201,6 +201,92 @@ export async function postStockMovement(movement: StockMovement): Promise<void> 
   throw new Error(error.message || 'Falha ao registar movimento de stock.');
 }
 
+async function resolveOrRegisterCustomer(
+  client: any,
+  companyId: string,
+  customerId: string,
+  clientName?: string,
+  clientNuit?: string,
+  clientAddress?: string
+): Promise<string> {
+  const { data: dbCustomers } = await client
+    .from('customers')
+    .select('id,customer_number,name,nuit')
+    .limit(200);
+
+  const pontualCustomer = (dbCustomers || []).find(
+    (c: any) =>
+      c.customer_number === '1' ||
+      c.customer_number === 'CL-001' ||
+      c.name.toLowerCase().includes('pontual') ||
+      c.name.toLowerCase().includes('final')
+  ) || dbCustomers?.[0];
+
+  const trimmedName = clientName?.trim();
+  const isCustomName =
+    trimmedName &&
+    trimmedName.toLowerCase() !== 'cliente pontual' &&
+    trimmedName.toLowerCase() !== 'cliente final' &&
+    trimmedName.toLowerCase() !== 'pontual' &&
+    trimmedName.toLowerCase() !== 'ibz';
+
+  // If a custom name was specified by the operator for a walk-in sale
+  if (isCustomName) {
+    const existing = (dbCustomers || []).find(
+      (c: any) => c.name.toLowerCase().trim() === trimmedName.toLowerCase()
+    );
+    if (existing) {
+      return existing.id;
+    }
+
+    let maxCode = 1;
+    (dbCustomers || []).forEach((c: any) => {
+      const matches = String(c.customer_number || '').match(/\d+/g);
+      if (matches && matches.length > 0) {
+        const parsed = parseInt(matches[matches.length - 1], 10);
+        if (!isNaN(parsed) && parsed > maxCode) {
+          maxCode = parsed;
+        }
+      }
+    });
+
+    const targetCompanyId = companyId || 'a0000000-0000-0000-0000-000000000001';
+
+    let attemptedCode = maxCode + 1;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const nextCode = String(attemptedCode);
+      const { data: newCustomer, error } = await client
+        .from('customers')
+        .insert({
+          company_id: targetCompanyId,
+          customer_number: nextCode,
+          name: trimmedName,
+          tax_number: clientNuit?.trim() || null,
+          active: true,
+        })
+        .select('id')
+        .single();
+
+      if (!error && newCustomer?.id) {
+        console.log(`✅ Auto-registered new customer #${nextCode}: ${trimmedName} (${newCustomer.id})`);
+        return newCustomer.id;
+      }
+      attemptedCode++;
+    }
+  }
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId);
+  if (isUuid && customerId !== pontualCustomer?.id) {
+    return customerId;
+  }
+
+  if (pontualCustomer?.id) {
+    return pontualCustomer.id;
+  }
+
+  throw new Error('Cliente inválido. Registe pelo menos um cliente no sistema.');
+}
+
 export async function createCustomerSale(
   sale: SaleInvoice,
   customerId: string,
@@ -208,30 +294,17 @@ export async function createCustomerSale(
   const client = requireSupabase();
   const idempotencyKey = crypto.randomUUID();
 
-  let targetCustomerId = customerId;
+  const companyIdRes = await client.rpc('get_user_company_id');
+  const companyId = companyIdRes.data;
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetCustomerId);
-  if (!isUuid) {
-    const { data: dbCustomers } = await client
-      .from('customers')
-      .select('id,customer_number,name')
-      .limit(100);
-
-    const pontualCustomer = (dbCustomers || []).find(
-      (c) =>
-        c.customer_number === '1' ||
-        c.customer_number === 'CL-001' ||
-        c.name.toLowerCase().includes('pontual') ||
-        c.name.toLowerCase().includes('final') ||
-        c.name.toLowerCase().includes('geral')
-    ) || dbCustomers?.[0];
-
-    if (pontualCustomer?.id) {
-      targetCustomerId = pontualCustomer.id;
-    } else {
-      throw new Error('Cliente da venda inválido. Registe pelo menos um cliente no sistema.');
-    }
-  }
+  const targetCustomerId = await resolveOrRegisterCustomer(
+    client,
+    companyId,
+    customerId,
+    sale.clientName,
+    sale.clientNuit,
+    sale.clientAddress
+  );
 
   const encodedNotes = `[CLIENTE: ${sale.clientName} | NUIT: ${sale.clientNuit || 'N/A'} | MORADA: ${sale.clientAddress || 'N/A'}] ${sale.notes || ''}`.trim();
 
@@ -270,30 +343,17 @@ export async function createQuotation(
   customerId: string,
 ): Promise<SaleInvoice> {
   const client = requireSupabase();
-  let targetCustomerId = customerId;
+  const companyIdRes = await client.rpc('get_user_company_id');
+  const companyId = companyIdRes.data;
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetCustomerId);
-  if (!isUuid) {
-    const { data: dbCustomers } = await client
-      .from('customers')
-      .select('id,customer_number,name')
-      .limit(100);
-
-    const pontualCustomer = (dbCustomers || []).find(
-      (c) =>
-        c.customer_number === '1' ||
-        c.customer_number === 'CL-001' ||
-        c.name.toLowerCase().includes('pontual') ||
-        c.name.toLowerCase().includes('final') ||
-        c.name.toLowerCase().includes('geral')
-    ) || dbCustomers?.[0];
-
-    if (pontualCustomer?.id) {
-      targetCustomerId = pontualCustomer.id;
-    } else {
-      throw new Error('Cliente da cotação inválido. Registe pelo menos um cliente no sistema.');
-    }
-  }
+  const targetCustomerId = await resolveOrRegisterCustomer(
+    client,
+    companyId,
+    customerId,
+    sale.clientName,
+    sale.clientNuit,
+    sale.clientAddress
+  );
 
   const year = new Date().getFullYear();
   const { data: allDocs } = await client
@@ -318,8 +378,6 @@ export async function createQuotation(
 
   const nextSeq = maxSeq + 1;
   const docDisplayNumber = `COT-${year}/${String(nextSeq).padStart(6, '0')}`;
-  const companyIdRes = await client.rpc('get_user_company_id');
-  const companyId = companyIdRes.data;
 
   const { data: docTypeRes } = await client
     .from('document_types')
