@@ -349,9 +349,11 @@ export const Quotation: React.FC<QuotationProps> = ({
         s.documentTypeCode === 'CUSTOMER_QUOTATION' ||
         s.documentTypeCode === 'QUOTATION' ||
         s.documentTypeCode === 'COT' ||
-        s.docNumber.startsWith('COT') ||
-        s.docNumber.startsWith('CO/') ||
-        s.docNumber.toLowerCase().includes('cota');
+        s.docNumber.toUpperCase().startsWith('COT') ||
+        s.docNumber.toUpperCase().startsWith('CO/') ||
+        s.docNumber.toUpperCase().startsWith('QUO') ||
+        s.docNumber.toLowerCase().includes('cot') ||
+        (s.notes && (s.notes.toLowerCase().includes('cotação') || s.notes.toLowerCase().includes('cotacao')));
 
       if (isCotation) {
         if (!seenIds.has(s.id) && !seenIds.has(s.docNumber)) {
@@ -381,8 +383,10 @@ export const Quotation: React.FC<QuotationProps> = ({
         d.typeCode === 'CUSTOMER_QUOTATION' ||
         d.typeCode === 'QUOTATION' ||
         d.typeCode === 'COT' ||
-        d.displayNumber.startsWith('COT') ||
-        d.displayNumber.startsWith('CO/') ||
+        d.displayNumber.toUpperCase().startsWith('COT') ||
+        d.displayNumber.toUpperCase().startsWith('CO/') ||
+        d.displayNumber.toUpperCase().startsWith('QUO') ||
+        d.displayNumber.toLowerCase().includes('cot') ||
         (d.typeName && (d.typeName.toLowerCase().includes('cotação') || d.typeName.toLowerCase().includes('cotacao')));
 
       if (isCotation && !seenIds.has(d.id) && !seenIds.has(d.displayNumber)) {
@@ -398,7 +402,7 @@ export const Quotation: React.FC<QuotationProps> = ({
           totalAmount: d.grandTotal,
           status: 'Emitida',
           items: [],
-          sellerName: operatorName,
+          sellerName: d.salespersonName || operatorName,
           rawDoc: d,
         });
       }

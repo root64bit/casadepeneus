@@ -776,10 +776,14 @@ export async function loadAppData(): Promise<AppData> {
     const customer = relation(row.customers);
     const supplier = relation(row.suppliers);
     const documentType = relation(row.document_types);
-    const isCot = row.display_number?.startsWith('COT') || row.display_number?.startsWith('CO/');
-    const isGr = row.display_number?.startsWith('GR');
-    const isVd = row.display_number?.startsWith('VD');
-    const isFt = row.display_number?.startsWith('FT') || row.display_number?.startsWith('A/');
+    const isCot =
+      row.display_number?.toUpperCase().startsWith('COT') ||
+      row.display_number?.toUpperCase().startsWith('CO/') ||
+      row.display_number?.toUpperCase().startsWith('QUO') ||
+      (row.notes && (row.notes.toLowerCase().includes('cotação') || row.notes.toLowerCase().includes('cotacao')));
+    const isGr = row.display_number?.toUpperCase().startsWith('GR');
+    const isVd = row.display_number?.toUpperCase().startsWith('VD');
+    const isFt = row.display_number?.toUpperCase().startsWith('FT') || row.display_number?.toUpperCase().startsWith('A/');
 
     const typeCode = documentType?.code || (isCot ? 'CUSTOMER_QUOTATION' : isGr ? 'CUSTOMER_DELIVERY_NOTE' : isVd ? 'CASH_SALE' : isFt ? 'CUSTOMER_INVOICE' : '');
     const typeName = documentType?.name || (isCot ? 'Cotação' : isGr ? 'Guia de Remessa' : isVd ? 'Venda a Dinheiro' : isFt ? 'Factura' : '');
@@ -801,6 +805,7 @@ export async function loadAppData(): Promise<AppData> {
       grandTotal: numberValue(row.grand_total),
       paidAmount: numberValue(row.amount_paid),
       outstandingAmount: numberValue(row.outstanding_amount),
+      salespersonName: row.salesperson_name ?? '',
     };
   });
 

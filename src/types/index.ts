@@ -179,6 +179,7 @@ export interface DocumentRecord {
   grandTotal: number;
   paidAmount: number;
   outstandingAmount: number;
+  salespersonName?: string;
 }
 
 export interface PaymentRecord {
