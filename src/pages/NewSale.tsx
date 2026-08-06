@@ -236,35 +236,28 @@ export const NewSale: React.FC<NewSaleProps> = ({
 
   // Helper to calculate the next sequence document number for a given document type
   const getNextDocNumberForType = (type: 'CUSTOMER_INVOICE' | 'CASH_SALE' | 'CUSTOMER_DELIVERY_NOTE'): string => {
-    let prefix = 'A/';
-    if (type === 'CASH_SALE') prefix = 'VD/';
-    if (type === 'CUSTOMER_DELIVERY_NOTE') prefix = 'GR/';
+    const year = new Date().getFullYear();
+    const typeCodePrefix = type === 'CASH_SALE' ? 'VD' : type === 'CUSTOMER_DELIVERY_NOTE' ? 'GR' : 'FT';
+    const docPrefix = `${typeCodePrefix}-${year}/`;
 
     let maxSeq = 0;
-    sales.forEach((s) => {
-      if (s.docNumber && s.docNumber.startsWith(prefix)) {
-        const parts = s.docNumber.split('/');
-        if (parts[1]) {
-          const num = parseInt(parts[1], 10);
-          if (!isNaN(num) && num > maxSeq) maxSeq = num;
+    const checkNumber = (numStr?: string) => {
+      if (!numStr) return;
+      const upper = numStr.toUpperCase();
+      if (upper.startsWith(typeCodePrefix) || (typeCodePrefix === 'FT' && upper.startsWith('A/'))) {
+        const matches = numStr.match(/\d+/g);
+        if (matches && matches.length > 0) {
+          const lastNum = parseInt(matches[matches.length - 1], 10);
+          if (!isNaN(lastNum) && lastNum > maxSeq) maxSeq = lastNum;
         }
       }
-    });
+    };
 
-    if (documents) {
-      documents.forEach((d) => {
-        if (d.displayNumber && d.displayNumber.startsWith(prefix)) {
-          const parts = d.displayNumber.split('/');
-          if (parts[1]) {
-            const num = parseInt(parts[1], 10);
-            if (!isNaN(num) && num > maxSeq) maxSeq = num;
-          }
-        }
-      });
-    }
+    sales.forEach((s) => checkNumber(s.docNumber));
+    if (documents) documents.forEach((d) => checkNumber(d.displayNumber));
 
     const nextSeq = maxSeq + 1;
-    return `${prefix}${String(nextSeq).padStart(6, '0')}`;
+    return `${docPrefix}${String(nextSeq).padStart(6, '0')}`;
   };
 
   const loadLastDocumentInConsultationMode = () => {
