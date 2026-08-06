@@ -233,6 +233,8 @@ export async function createCustomerSale(
     }
   }
 
+  const encodedNotes = `[CLIENTE: ${sale.clientName} | NUIT: ${sale.clientNuit || 'N/A'} | MORADA: ${sale.clientAddress || 'N/A'}] ${sale.notes || ''}`.trim();
+
   const { data, error } = await client.rpc('create_and_confirm_customer_sale', {
     p_customer_id: targetCustomerId,
     p_document_date: sale.date,
@@ -244,6 +246,7 @@ export async function createCustomerSale(
     })),
     p_idempotency_key: idempotencyKey,
     p_document_type_code: sale.documentTypeCode ?? 'CUSTOMER_INVOICE',
+    p_notes: encodedNotes,
   });
 
   if (error) throw new Error(error.message || 'Falha ao confirmar a venda.');
@@ -807,6 +810,14 @@ export async function loadAppData(): Promise<AppData> {
     const typeCode = documentType?.code || (isCot ? 'CUSTOMER_QUOTATION' : isGr ? 'CUSTOMER_DELIVERY_NOTE' : isVd ? 'CASH_SALE' : isFt ? 'CUSTOMER_INVOICE' : '');
     const typeName = documentType?.name || (isCot ? 'Cotação' : isGr ? 'Guia de Remessa' : isVd ? 'Venda a Dinheiro' : isFt ? 'Factura' : '');
 
+    let partyName = customer?.name ?? supplier?.name ?? 'Cliente Pontual';
+    if (row.notes && row.notes.includes('[CLIENTE:')) {
+      const match = row.notes.match(/\[CLIENTE:\s*([^|]+)/);
+      if (match && match[1].trim() && match[1].trim() !== 'N/A') {
+        partyName = match[1].trim();
+      }
+    }
+
     return {
       id: row.id,
       displayNumber: row.display_number ?? 'Rascunho',
@@ -817,7 +828,7 @@ export async function loadAppData(): Promise<AppData> {
       partyType: row.customer_id ? 'CUSTOMER' : 'SUPPLIER',
       partyId: row.customer_id ?? row.supplier_id ?? '',
       partyCode: customer?.customer_number ?? supplier?.supplier_number ?? '',
-      partyName: customer?.name ?? supplier?.name ?? '',
+      partyName: partyName,
       status: row.status,
       netTotal: numberValue(row.net_total),
       taxTotal: numberValue(row.tax_total),
