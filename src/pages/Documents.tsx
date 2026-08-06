@@ -9,6 +9,7 @@ interface DocumentsProps {
   onPrintRecord: (document: DocumentRecord) => void;
   canCancelAdvice?: boolean;
   onCancelAdvice?: (documentId: string, reason: string) => Promise<void>;
+  permissions?: string[];
 }
 
 export function Documents({
@@ -18,7 +19,10 @@ export function Documents({
   onPrintRecord,
   canCancelAdvice,
   onCancelAdvice,
+  permissions = [],
 }: DocumentsProps) {
+  const isCashier = permissions.length > 0 && !permissions.includes('settings.manage') && !permissions.includes('products.view');
+
   const [search, setSearch] = useState('');
   const [partyType, setPartyType] = useState<'ALL' | 'CUSTOMER' | 'SUPPLIER'>('ALL');
   const [status, setStatus] = useState('ALL');
@@ -33,6 +37,20 @@ export function Documents({
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return documents.filter((document) => {
+      const isGuiaOrCotacao =
+        document.typeCode === 'CUSTOMER_DELIVERY_NOTE' ||
+        document.typeCode === 'CUSTOMER_QUOTATION' ||
+        document.typeCode === 'QUOTATION' ||
+        document.typeCode === 'COT' ||
+        document.displayNumber.startsWith('GR') ||
+        document.displayNumber.startsWith('COT') ||
+        document.displayNumber.startsWith('CO/') ||
+        (document.typeName && (document.typeName.toLowerCase().includes('guia') || document.typeName.toLowerCase().includes('cotação') || document.typeName.toLowerCase().includes('cotacao')));
+
+      if (isCashier && !isGuiaOrCotacao) {
+        return false;
+      }
+
       const matchesSearch =
         !term ||
         document.displayNumber.toLowerCase().includes(term) ||
@@ -46,7 +64,7 @@ export function Documents({
         (typeFilter === 'ALL' || document.typeName === typeFilter || document.typeCode === typeFilter)
       );
     });
-  }, [documents, partyType, search, status, typeFilter]);
+  }, [documents, partyType, search, status, typeFilter, isCashier]);
 
   const handleExecuteCancel = async () => {
     if (!cancellingDoc || !cancelReason.trim() || !onCancelAdvice || isSubmittingCancel) return;
@@ -114,13 +132,23 @@ export function Documents({
               onChange={(e) => setTypeFilter(e.target.value)}
               className="w-full rounded border border-[#c3c6d1] bg-white p-2 text-sm dark:border-[#43474f] dark:bg-[#282c2e]"
             >
-              <option value="ALL">Todos os tipos</option>
-              <option value="CUSTOMER_INVOICE">Factura a Cliente</option>
-              <option value="CASH_SALE">Venda a Dinheiro</option>
-              <option value="CUSTOMER_DELIVERY_NOTE">Guia de Remessa</option>
-              <option value="CUSTOMER_CREDIT_ADVICE">Aviso de Crédito a Cliente</option>
-              <option value="SUPPLIER_INVOICE">Factura de Fornecedor</option>
-              <option value="SUPPLIER_CREDIT_ADVICE">Aviso de Crédito Fornecedor</option>
+              {isCashier ? (
+                <>
+                  <option value="ALL">Todas (Guia de Remessa & Cotações)</option>
+                  <option value="CUSTOMER_DELIVERY_NOTE">Guia de Remessa</option>
+                  <option value="CUSTOMER_QUOTATION">Cotação</option>
+                </>
+              ) : (
+                <>
+                  <option value="ALL">Todos os tipos</option>
+                  <option value="CUSTOMER_INVOICE">Factura a Cliente</option>
+                  <option value="CASH_SALE">Venda a Dinheiro</option>
+                  <option value="CUSTOMER_DELIVERY_NOTE">Guia de Remessa</option>
+                  <option value="CUSTOMER_CREDIT_ADVICE">Aviso de Crédito a Cliente</option>
+                  <option value="SUPPLIER_INVOICE">Factura de Fornecedor</option>
+                  <option value="SUPPLIER_CREDIT_ADVICE">Aviso de Crédito Fornecedor</option>
+                </>
+              )}
             </select>
           </label>
         </div>

@@ -621,6 +621,7 @@ function App() {
             sales={sales}
             onPrint={handleOpenPrintModal}
             onPrintRecord={setPrintDocument}
+            permissions={permissions}
             canCancelAdvice={permissions.includes('financial_adjustments.cancel')}
             onCancelAdvice={async (docId, reason) => {
               const idempotencyKey = crypto.randomUUID();
