@@ -41,20 +41,22 @@ test.describe('Casa de Pneus — Full Platform End-to-End QA Suite', () => {
   test('02. Cashier Restricted Access Isolation (Operador de Caixa)', async ({ page }) => {
     await loginAs(page, 'caixa@casadepneus.com', 'caixa123456');
 
+    // Verify Direct Redirect to Nova Venda upon login
+    await expect(page.locator('button:has-text("Guia de Remessa")')).toBeEnabled();
+
     // Verify Restricted Navigation Menu (Only Nova Venda & Cotação)
     await expect(page.locator('nav >> text=Nova Venda')).toBeVisible();
     await expect(page.locator('nav >> text=Cotação')).toBeVisible();
 
-    // Verify Restricted Tabs Are Hidden from Menu
+    // Verify Restricted Tabs & Entities Are Hidden from Menu
     await expect(page.locator('nav >> text=Artigos e Stock')).toHaveCount(0);
+    await expect(page.locator('nav >> text=Clientes e Fornecedores')).toHaveCount(0);
     await expect(page.locator('nav >> text=Relatórios')).toHaveCount(0);
     await expect(page.locator('nav >> text=Administração')).toHaveCount(0);
 
     // Verify Nova Venda Document Restrictions for Cashier
-    await page.click('text=Nova Venda');
     await expect(page.locator('button:has-text("Factura (Restrito)")')).toBeDisabled();
     await expect(page.locator('button:has-text("VD (Restrito)")')).toBeDisabled();
-    await expect(page.locator('button:has-text("Guia de Remessa")')).toBeEnabled();
 
     // Verify Cotação Access for Cashier
     await page.click('text=Cotação');

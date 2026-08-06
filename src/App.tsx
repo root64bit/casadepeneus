@@ -60,14 +60,14 @@ const pathToTab = () => {
   return !path || path === 'login' ? 'dashboard' : path;
 };
 const tabAccess: Record<string, string[]> = {
-  dashboard: ['dashboard.read', 'products.view'],
+  dashboard: ['products.view', 'settings.manage'],
   inventory: ['products.read', 'products.view', 'stock.read', 'stock.view'],
   sales: ['sales.create'],
-  quotation: ['sales.create', 'sales.read', 'dashboard.read'],
+  quotation: ['sales.create', 'sales.read'],
   purchases: ['purchases.read', 'purchases.invoice.create'],
   movements: ['stock.read', 'stock.view', 'stock.direct_entry', 'stock.direct_exit'],
-  entities: ['customers.read', 'customers.view', 'suppliers.read', 'suppliers.view'],
-  documents: ['documents.view', 'sales.read', 'purchases.read'],
+  entities: ['settings.manage', 'products.view', 'customers.manage'],
+  documents: ['documents.view'],
   accounts: ['payments.read', 'payments.view', 'accounts.read'],
   reports: ['reports.read', 'reports.sales', 'reports.stock'],
   administration: ['settings.manage', 'users.manage'],
@@ -182,7 +182,14 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!userContext || activeTab === 'unauthorized') return;
+    if (!userContext) return;
+    const isCashier = permissions.length > 0 && !permissions.includes('products.view') && !permissions.includes('settings.manage');
+    if (isCashier && (activeTab === 'dashboard' || activeTab === 'unauthorized')) {
+      setActiveTab('sales');
+      return;
+    }
+
+    if (activeTab === 'unauthorized') return;
     const required = tabAccess[activeTab];
     if (!required || !required.some((code) => permissions.includes(code))) {
       const allowedTab = Object.keys(tabAccess).find((tab) => {
@@ -193,11 +200,7 @@ function App() {
       if (allowedTab) {
         setActiveTab(allowedTab);
       } else {
-        void supabase?.rpc('record_access_denied', {
-          p_route: window.location.pathname,
-          p_reason: `Missing permission for ${activeTab}`,
-        });
-        setActiveTab('unauthorized');
+        setActiveTab(isCashier ? 'sales' : 'unauthorized');
       }
     }
   }, [activeTab, permissions, userContext]);
