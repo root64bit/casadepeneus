@@ -67,7 +67,7 @@ export const Layout: React.FC<LayoutProps> = ({
   const navItems = useMemo(
     () =>
       [
-        { id: 'dashboard', label: 'Início', icon: 'home', visible: permissions.length === 0 || has('dashboard.read', 'products.view') },
+        { id: 'dashboard', label: 'Início', icon: 'home', visible: permissions.length === 0 || has('products.view') },
         { id: 'inventory', label: 'Artigos e Stock', icon: 'inventory_2', visible: permissions.length === 0 || has('products.read', 'products.view', 'stock.read', 'stock.view') },
         { id: 'sales', label: 'Nova Venda', icon: 'sell', visible: permissions.length === 0 || has('sales.create') },
         { id: 'quotation', label: 'Cotação', icon: 'request_quote', visible: permissions.length === 0 || has('sales.create', 'sales.read') },
