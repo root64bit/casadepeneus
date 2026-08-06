@@ -339,6 +339,13 @@ export async function createQuotation(
   const { data: periodRes } = await client.from('fiscal_periods').select('id').eq('company_id', companyId).limit(1);
   const periodId = periodRes?.[0]?.id;
 
+  const { data: userData } = await client.auth.getUser();
+  let currentUserId = userData?.user?.id;
+  if (!currentUserId) {
+    const { data: firstProfile } = await client.from('user_profiles').select('id').limit(1);
+    currentUserId = firstProfile?.[0]?.id;
+  }
+
   const encodedNotes = `[CLIENTE: ${sale.clientName} | NUIT: ${sale.clientNuit || 'N/A'} | MORADA: ${sale.clientAddress || 'N/A'}] ${sale.notes || ''}`.trim();
 
   // Insert quotation into documents table without stock deduction
@@ -364,20 +371,14 @@ export async function createQuotation(
       outstanding_amount: sale.totalAmount,
       salesperson_name: sale.sellerName,
       notes: encodedNotes,
+      created_by: currentUserId,
     })
     .select()
     .single();
 
-  if (!insertedDoc) {
-    return {
-      ...sale,
-      id: `cot-${Date.now()}`,
-      docNumber: docDisplayNumber,
-      documentTypeCode: 'CUSTOMER_QUOTATION',
-      status: 'Concluída',
-      paidAmount: 0,
-      pendingAmount: sale.totalAmount,
-    };
+  if (insertErr) {
+    console.error('❌ Error inserting quotation into documents table:', insertErr);
+    throw new Error(`Falha ao guardar cotação na base de dados: ${insertErr.message}`);
   }
 
   if (sale.items.length > 0) {
@@ -824,6 +825,7 @@ export async function loadAppData(): Promise<AppData> {
       paidAmount: numberValue(row.amount_paid),
       outstandingAmount: numberValue(row.outstanding_amount),
       salespersonName: row.salesperson_name ?? '',
+      notes: row.notes ?? '',
     };
   });
 

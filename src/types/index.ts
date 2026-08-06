@@ -180,6 +180,7 @@ export interface DocumentRecord {
   paidAmount: number;
   outstandingAmount: number;
   salespersonName?: string;
+  notes?: string;
 }
 
 export interface PaymentRecord {

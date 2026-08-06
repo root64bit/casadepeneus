@@ -391,14 +391,27 @@ export const Quotation: React.FC<QuotationProps> = ({
 
       if (isCotation && !seenIds.has(d.id) && !seenIds.has(d.displayNumber)) {
         const clientObj = clients.find((c) => c.id === d.partyId);
+        let name = d.partyName || clientObj?.name || 'Cliente Pontual';
+        let nuit = clientObj?.nuit || '';
+        let address = clientObj?.address || '';
+
+        if (d.notes && d.notes.includes('[CLIENTE:')) {
+          const match = d.notes.match(/\[CLIENTE:\s*([^|]+)\|\s*NUIT:\s*([^|]+)\|\s*MORADA:\s*([^\]]+)\]/);
+          if (match) {
+            if (match[1].trim() && match[1].trim() !== 'N/A') name = match[1].trim();
+            if (match[2].trim() && match[2].trim() !== 'N/A') nuit = match[2].trim();
+            if (match[3].trim() && match[3].trim() !== 'N/A') address = match[3].trim();
+          }
+        }
+
         list.push({
           id: d.id,
           docNumber: d.displayNumber,
           date: d.date,
           clientId: d.partyId,
-          clientName: d.partyName || clientObj?.name || 'Cliente Pontual',
-          clientNuit: clientObj?.nuit || '',
-          clientAddress: clientObj?.address || '',
+          clientName: name,
+          clientNuit: nuit,
+          clientAddress: address,
           totalAmount: d.grandTotal,
           status: 'Emitida',
           items: [],
