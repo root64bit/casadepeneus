@@ -330,13 +330,25 @@ export async function createQuotation(
     docTypeId = fallbackDocType?.[0]?.id;
   }
 
+  const { data: branchRes } = await client.from('branches').select('id').eq('company_id', companyId).limit(1);
+  const branchId = branchRes?.[0]?.id;
+
+  const { data: warehouseRes } = await client.from('warehouses').select('id').eq('company_id', companyId).limit(1);
+  const warehouseId = warehouseRes?.[0]?.id;
+
+  const { data: periodRes } = await client.from('fiscal_periods').select('id').eq('company_id', companyId).limit(1);
+  const periodId = periodRes?.[0]?.id;
+
   const encodedNotes = `[CLIENTE: ${sale.clientName} | NUIT: ${sale.clientNuit || 'N/A'} | MORADA: ${sale.clientAddress || 'N/A'}] ${sale.notes || ''}`.trim();
 
   // Insert quotation into documents table without stock deduction
-  const { data: insertedDoc } = await client
+  const { data: insertedDoc, error: insertErr } = await client
     .from('documents')
     .insert({
       company_id: companyId,
+      branch_id: branchId,
+      warehouse_id: warehouseId,
+      fiscal_period_id: periodId,
       customer_id: targetCustomerId,
       document_type_id: docTypeId,
       display_number: docDisplayNumber,
