@@ -320,7 +320,11 @@ export async function createQuotation(
     .or('code.eq.CUSTOMER_QUOTATION,code.eq.QUOTATION,code.eq.COT')
     .limit(1);
 
-  const docTypeId = docTypeRes?.[0]?.id;
+  let docTypeId = docTypeRes?.[0]?.id;
+  if (!docTypeId) {
+    const { data: fallbackDocType } = await client.from('document_types').select('id').limit(1);
+    docTypeId = fallbackDocType?.[0]?.id;
+  }
 
   // Insert quotation into documents table without stock deduction
   const { data: insertedDoc } = await client
@@ -727,7 +731,10 @@ export async function loadAppData(): Promise<AppData> {
     const customer = relation(row.customers);
     const paymentTerm = relation(row.payment_terms);
     const docType = relation(row.document_types);
-    const docTypeCode = docType?.code ?? (row.display_number?.startsWith('COT') ? 'CUSTOMER_QUOTATION' : 'CUSTOMER_INVOICE');
+    const isCot = row.display_number?.startsWith('COT') || row.display_number?.startsWith('CO/');
+    const isGr = row.display_number?.startsWith('GR');
+    const isVd = row.display_number?.startsWith('VD');
+    const docTypeCode = docType?.code || (isCot ? 'CUSTOMER_QUOTATION' : isGr ? 'CUSTOMER_DELIVERY_NOTE' : isVd ? 'CASH_SALE' : 'CUSTOMER_INVOICE');
     return {
       id: row.id,
       documentTypeCode: docTypeCode,
@@ -769,13 +776,21 @@ export async function loadAppData(): Promise<AppData> {
     const customer = relation(row.customers);
     const supplier = relation(row.suppliers);
     const documentType = relation(row.document_types);
+    const isCot = row.display_number?.startsWith('COT') || row.display_number?.startsWith('CO/');
+    const isGr = row.display_number?.startsWith('GR');
+    const isVd = row.display_number?.startsWith('VD');
+    const isFt = row.display_number?.startsWith('FT') || row.display_number?.startsWith('A/');
+
+    const typeCode = documentType?.code || (isCot ? 'CUSTOMER_QUOTATION' : isGr ? 'CUSTOMER_DELIVERY_NOTE' : isVd ? 'CASH_SALE' : isFt ? 'CUSTOMER_INVOICE' : '');
+    const typeName = documentType?.name || (isCot ? 'Cotação' : isGr ? 'Guia de Remessa' : isVd ? 'Venda a Dinheiro' : isFt ? 'Factura' : '');
+
     return {
       id: row.id,
       displayNumber: row.display_number ?? 'Rascunho',
       date: row.document_date,
       dueDate: row.due_date ?? '',
-      typeCode: documentType?.code ?? '',
-      typeName: documentType?.name ?? '',
+      typeCode: typeCode,
+      typeName: typeName,
       partyType: row.customer_id ? 'CUSTOMER' : 'SUPPLIER',
       partyId: row.customer_id ?? row.supplier_id ?? '',
       partyCode: customer?.customer_number ?? supplier?.supplier_number ?? '',

@@ -253,6 +253,27 @@ function App() {
 
     const savedSale = await createCustomerSale(sale, sale.clientId);
     setSales((prev) => [savedSale, ...prev.filter((s) => s.id !== savedSale.id)]);
+    setDocuments((prev) => [
+      {
+        id: savedSale.id,
+        displayNumber: savedSale.docNumber,
+        date: savedSale.date,
+        dueDate: savedSale.date,
+        typeCode: savedSale.documentTypeCode ?? 'CUSTOMER_INVOICE',
+        typeName: savedSale.documentTypeCode === 'CUSTOMER_DELIVERY_NOTE' ? 'Guia de Remessa' : savedSale.documentTypeCode === 'CASH_SALE' ? 'Venda a Dinheiro' : 'Factura',
+        partyType: 'CUSTOMER',
+        partyId: sale.clientId || '',
+        partyCode: '',
+        partyName: savedSale.clientName || 'Cliente Pontual',
+        status: 'CONFIRMED',
+        netTotal: savedSale.subtotalLiquido ?? savedSale.totalAmount,
+        taxTotal: savedSale.ivaTotal,
+        grandTotal: savedSale.totalAmount,
+        paidAmount: savedSale.paidAmount,
+        outstandingAmount: savedSale.pendingAmount,
+      },
+      ...prev.filter((d) => d.id !== savedSale.id),
+    ]);
     await refreshData();
     return savedSale;
   };
@@ -262,6 +283,27 @@ function App() {
 
     const savedQuotation = await createQuotation(quotation, quotation.clientId);
     setSales((prev) => [savedQuotation, ...prev.filter((s) => s.id !== savedQuotation.id)]);
+    setDocuments((prev) => [
+      {
+        id: savedQuotation.id,
+        displayNumber: savedQuotation.docNumber,
+        date: savedQuotation.date,
+        dueDate: savedQuotation.date,
+        typeCode: 'CUSTOMER_QUOTATION',
+        typeName: 'Cotação',
+        partyType: 'CUSTOMER',
+        partyId: quotation.clientId || '',
+        partyCode: '',
+        partyName: savedQuotation.clientName || 'Cliente Pontual',
+        status: 'CONFIRMED',
+        netTotal: savedQuotation.subtotalLiquido ?? savedQuotation.totalAmount,
+        taxTotal: savedQuotation.ivaTotal,
+        grandTotal: savedQuotation.totalAmount,
+        paidAmount: 0,
+        outstandingAmount: savedQuotation.totalAmount,
+      },
+      ...prev.filter((d) => d.id !== savedQuotation.id),
+    ]);
     await refreshData();
     return savedQuotation;
   };
