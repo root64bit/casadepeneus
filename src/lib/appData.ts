@@ -208,7 +208,7 @@ export async function postStockMovement(movement: StockMovement): Promise<void> 
   if (!movement.warehouseId) throw new Error('Selecione o armazém.');
   const articleResult = await client
     .from('products')
-    .select('id,avg_cost')
+    .select('id,avg_cost,tax_rate')
     .eq('code', movement.articleCode)
     .maybeSingle();
   if (articleResult.error || !articleResult.data?.id) throw new Error('Artigo não encontrado.');
@@ -227,8 +227,21 @@ export async function postStockMovement(movement: StockMovement): Promise<void> 
     p_idempotency_key: crypto.randomUUID(),
   });
 
-  if (!error) return;
-  throw new Error(error.message || 'Falha ao registar movimento de stock.');
+  if (error) throw new Error(error.message || 'Falha ao registar movimento de stock.');
+
+  // Auto-update product sell price if a price with IVA was provided on stock entry
+  if (movement.sellPriceWithIva && movement.sellPriceWithIva > 0 && movement.type === 'entrada') {
+    const taxRate = articleResult.data.tax_rate || 16;
+    const newSellPrice = Math.round((movement.sellPriceWithIva / (1 + taxRate / 100)) * 100) / 100;
+
+    await client
+      .from('products')
+      .update({
+        sell_price: newSellPrice,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', articleResult.data.id);
+  }
 }
 
 async function resolveOrRegisterCustomer(

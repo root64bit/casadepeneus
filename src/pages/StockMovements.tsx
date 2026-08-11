@@ -318,6 +318,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
           entityName: '',
           operator: operatorName,
           reason: type === 'entrada' ? 'Entrada direta por Guia' : 'Saída direta por Guia',
+          sellPriceWithIva: item.priceWithIva,
           notes: [
             item.priceWithIva ? `Preço Compra c/ IVA: ${item.priceWithIva} MZN` : '',
             notes,

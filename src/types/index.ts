@@ -84,6 +84,7 @@ export interface StockMovement {
   reason?: string;
   notes?: string;
   unitCost?: number;
+  sellPriceWithIva?: number; // When provided on stock entry, auto-updates product sell price
 }
 
 export interface AccessScope {

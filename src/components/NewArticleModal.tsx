@@ -57,7 +57,11 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({
       setBrandId(articleToEdit.brandId ?? '');
       setUnitId(articleToEdit.unitId ?? defaultUnitId);
       setCostPriceStr(articleToEdit.costPrice > 0 ? String(articleToEdit.costPrice) : '');
-      setSellPriceStr(articleToEdit.sellPrice > 0 ? String(articleToEdit.sellPrice) : '');
+      // Show sell price WITH IVA when editing
+      const existingSellWithIva = articleToEdit.sellPrice > 0
+        ? Math.round(articleToEdit.sellPrice * (1 + (articleToEdit.taxRate || 16) / 100) * 100) / 100
+        : 0;
+      setSellPriceStr(existingSellWithIva > 0 ? String(existingSellWithIva) : '');
       setMinStockStr(articleToEdit.minStock > 0 ? String(articleToEdit.minStock) : '');
       setTaxRate(articleToEdit.taxRate ?? 16);
       setTaxCodeId(articleToEdit.taxCodeId ?? taxCodes[0]?.id ?? '');
@@ -92,11 +96,11 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({
   if (!isOpen) return null;
 
   const costPrice = Number(costPriceStr) || 0;
-  const sellPrice = Number(sellPriceStr) || 0;
+  const sellPriceWithIva = Number(sellPriceStr) || 0; // User enters price WITH IVA
+  const sellPrice = sellPriceWithIva > 0 ? Math.round((sellPriceWithIva / (1 + taxRate / 100)) * 100) / 100 : 0; // Auto-calc s/IVA
   const minStock = Number(minStockStr) || 0;
 
   const profitMargin = costPrice > 0 ? ((sellPrice - costPrice) / costPrice) * 100 : 0;
-  const sellPriceWithIva = sellPrice * (1 + taxRate / 100);
 
   const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
     if (e.key === 'F2') {
@@ -367,22 +371,22 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({
               />
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-[#43474f] dark:text-[#c3c6d1] mb-1">Preço Venda s/ IVA</label>
+              <label className="block text-[11px] font-bold text-[#43474f] dark:text-[#c3c6d1] mb-1">Preço Venda c/ IVA</label>
               <input
                 type="number"
                 min="0"
                 step="0.01"
                 value={sellPriceStr}
                 onChange={(e) => setSellPriceStr(e.target.value)}
-                placeholder="Ex: 1250"
-                className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-sm font-mono text-blue-600 font-bold"
+                placeholder="Ex: 1450"
+                className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-sm font-mono text-green-600 font-bold"
               />
             </div>
           </div>
 
           <div className="bg-[#003366]/10 p-3 rounded flex justify-between items-center text-sm font-mono">
             <div>
-              <span className="text-xs text-[#43474f] block">Preço Venda (s/ IVA):</span>
+              <span className="text-xs text-[#43474f] block">Preço Venda (s/ IVA) — calculado:</span>
               <strong className="text-[#001e40] dark:text-white">{sellPrice.toFixed(2)} MZN</strong>
               {profitMargin !== 0 && (
                 <span className="text-[10px] ml-2 text-green-700 font-bold">
