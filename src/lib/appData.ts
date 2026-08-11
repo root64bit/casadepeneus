@@ -117,121 +117,19 @@ export interface DocumentUpdatePayload {
 export async function updateDocumentDetails(documentId: string, payload: DocumentUpdatePayload): Promise<void> {
   const client = requireSupabase();
 
-  const { data: doc, error: fetchErr } = await client
-    .from('documents')
-    .select('id, notes, grand_total, customer_id, customers(name)')
-    .eq('id', documentId)
-    .single();
+  const { error } = await client.rpc('update_operational_document', {
+    p_document_id: documentId,
+    p_client_name: payload.clientName?.trim() || null,
+    p_client_nuit: payload.clientNuit !== undefined ? payload.clientNuit.trim() : null,
+    p_client_address: payload.clientAddress !== undefined ? payload.clientAddress.trim() : null,
+    p_grand_total: payload.grandTotal !== undefined ? Number(payload.grandTotal) : null,
+    p_notes: payload.notes !== undefined ? payload.notes.trim() : null,
+    p_lines: payload.items && payload.items.length > 0 ? payload.items : null,
+  });
 
-  if (fetchErr || !doc) throw new Error('Documento não encontrado.');
-
-  const existingNotes = (doc.notes as string) ?? '';
-
-  const currentNameMatch = existingNotes.match(/\[CLIENTE:\s*([^|\]]+)/i);
-  const currentNuitMatch = existingNotes.match(/NUIT:\s*([^|\]]+)/i);
-  const currentAddressMatch = existingNotes.match(/MORADA:\s*([^|\]]+)/i);
-
-  const newName = payload.clientName?.trim() || currentNameMatch?.[1]?.trim() || (doc.customers as any)?.name || 'Cliente Pontual';
-  const newNuit = payload.clientNuit !== undefined ? payload.clientNuit.trim() : (currentNuitMatch?.[1]?.trim() || 'N/A');
-  const newAddress = payload.clientAddress !== undefined ? payload.clientAddress.trim() : (currentAddressMatch?.[1]?.trim() || 'N/A');
-
-  let extraNotes = existingNotes.replace(/\[CLIENTE:[^\]]*\]\s*/i, '').trim();
-  if (payload.notes !== undefined) {
-    extraNotes = payload.notes.trim();
-  }
-
-  const updatedNotes = `[CLIENTE: ${newName} | NUIT: ${newNuit || 'N/A'} | MORADA: ${newAddress || 'N/A'}] ${extraNotes}`.trim();
-
-  let finalGrandTotal = payload.grandTotal;
-
-  // Handle items update in document_lines if items array is provided
-  if (payload.items && payload.items.length > 0) {
-    const calcLineTotal = (i: SaleItem) => {
-      const disc = i.discountPercent || 0;
-      return Math.round(i.quantity * i.unitPrice * (1 - disc / 100) * 100) / 100;
-    };
-
-    const itemsTotal = payload.items.reduce((acc, i) => acc + calcLineTotal(i), 0);
-    finalGrandTotal = Math.round(itemsTotal * 100) / 100;
-
-    // Get company_id via RPC (reliable, not affected by RLS on documents)
-    const companyIdRes = await client.rpc('get_user_company_id');
-    const companyId = companyIdRes.data;
-    if (!companyId) {
-      throw new Error('Não foi possível obter o company_id. Verifique a sua sessão.');
-    }
-
-    // Build new lines first
-    const isUuid = (str?: string) => Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
-
-    const newLines = payload.items.map((item, index) => {
-      const iva = item.ivaPercent || 16;
-      const lineTotal = calcLineTotal(item);
-      const netVal = Math.round((lineTotal / (1 + iva / 100)) * 100) / 100;
-      const taxVal = Math.round((lineTotal - netVal) * 100) / 100;
-      const discVal = Math.round((item.quantity * item.unitPrice * ((item.discountPercent || 0) / 100)) * 100) / 100;
-
-      return {
-        document_id: documentId,
-        company_id: companyId,
-        line_number: index + 1,
-        product_id: isUuid(item.articleId) ? item.articleId : null,
-        product_code_snapshot: item.code || 'DIV',
-        description_snapshot: item.description || item.code || 'Artigo sem descrição',
-        unit_code_snapshot: 'UN',
-        quantity: item.quantity || 1,
-        unit_price: item.unitPrice || 0,
-        discount_percentage: item.discountPercent || 0,
-        discount_amount: discVal,
-        tax_rate_snapshot: iva,
-        net_amount: netVal,
-        tax_amount: taxVal,
-        total_amount: lineTotal,
-      };
-    });
-
-    // Delete existing lines ONLY after new lines are ready
-    const { error: delErr } = await client.from('document_lines').delete().eq('document_id', documentId);
-    if (delErr) {
-      console.error('❌ Error deleting old document_lines:', delErr);
-      throw new Error(`Falha ao remover artigos antigos: ${delErr.message}`);
-    }
-
-    const { error: lineErr } = await client.from('document_lines').insert(newLines);
-    if (lineErr) {
-      console.error('❌ Error inserting document_lines:', lineErr);
-      throw new Error(`Falha ao guardar os artigos editados: ${lineErr.message}`);
-    }
-  }
-
-  const updateFields: Record<string, any> = {
-    notes: updatedNotes,
-    updated_at: new Date().toISOString(),
-  };
-
-  if (finalGrandTotal !== undefined && finalGrandTotal >= 0) {
-    updateFields.grand_total = finalGrandTotal;
-    updateFields.net_total = Math.round((finalGrandTotal / 1.16) * 100) / 100;
-    updateFields.tax_total = Math.round((finalGrandTotal - updateFields.net_total) * 100) / 100;
-    updateFields.outstanding_amount = finalGrandTotal;
-  }
-
-  const { error: updateErr } = await client
-    .from('documents')
-    .update(updateFields)
-    .eq('id', documentId);
-
-  if (updateErr) throw new Error(updateErr.message || 'Falha ao atualizar documento.');
-
-  if (doc.customer_id && payload.clientName?.trim()) {
-    const custUpdate: Record<string, any> = {
-      name: payload.clientName.trim(),
-      updated_at: new Date().toISOString(),
-    };
-    if (payload.clientNuit !== undefined) {
-      custUpdate.tax_number = payload.clientNuit.trim() || null;
-    }
-    await client.from('customers').update(custUpdate).eq('id', doc.customer_id);
+  if (error) {
+    console.error('❌ Error in update_operational_document RPC:', error);
+    throw new Error(error.message || 'Falha ao atualizar documento.');
   }
 }
 
