@@ -40,13 +40,32 @@ export const ArticleSearchSelect: React.FC<ArticleSearchSelectProps> = ({
   const filtered = useMemo(() => {
     if (!query.trim()) return articles;
     const q = query.toLowerCase().trim();
-    if (searchByCodeOnly) {
-      return articles.filter((a) => a.code.toLowerCase().includes(q));
-    }
-    const terms = q.split(/\s+/);
-    return articles.filter((a) => {
+
+    const matches = articles.filter((a) => {
+      if (searchByCodeOnly) {
+        return a.code.toLowerCase().includes(q);
+      }
+      const terms = q.split(/\s+/);
       const haystack = `${a.code} ${a.description} ${a.brand ?? ''}`.toLowerCase();
       return terms.every((term) => haystack.includes(term));
+    });
+
+    return matches.sort((a, b) => {
+      const aCode = a.code.toLowerCase();
+      const bCode = b.code.toLowerCase();
+
+      // 1. Exact code match goes FIRST
+      if (aCode === q && bCode !== q) return -1;
+      if (aCode !== q && bCode === q) return 1;
+
+      // 2. Code starting with query goes SECOND
+      const aStarts = aCode.startsWith(q);
+      const bStarts = bCode.startsWith(q);
+      if (aStarts && !bStarts) return -1;
+      if (!aStarts && bStarts) return 1;
+
+      // 3. Fallback to numeric/alphabetic code sorting
+      return a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: 'base' });
     });
   }, [articles, query, searchByCodeOnly]);
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { UserSummary } from '../types';
+import type { CompanyProfile, UserSummary, BankAccount } from '../types';
 import {
   RESPONSIBILITY_BUNDLES,
   ADVANCED_OVERRIDE_PERMISSIONS,
@@ -13,7 +13,8 @@ interface AdministrationProps {
   systemMode: string;
   users: UserSummary[];
   permissions: string[];
-  onUpdateUser: (user: UserSummary, active: boolean, newBundles?: string[], newPermissions?: string[]) => Promise<void>;
+  company?: CompanyProfile;
+  onUpdateUser: (user: UserSummary, active: boolean, newBundles?: string[], newPermissions?: string[], newPassword?: string) => Promise<void>;
   onCreateUser?: (userData: {
     fullName: string;
     email: string;
@@ -22,14 +23,25 @@ interface AdministrationProps {
     permissions: string[];
     telephone?: string;
   }) => Promise<void>;
+  onSaveCompanySettings?: (settings: {
+    bankBciAccount: string;
+    bankBciNib: string;
+    bankBimAccount: string;
+    bankBimNib: string;
+    bankAccounts: BankAccount[];
+    quotationValidityDays: string;
+    quotationDefaultNotes: string;
+  }) => Promise<void>;
 }
 
 export function Administration({
   systemMode,
   users,
   permissions,
+  company,
   onUpdateUser,
   onCreateUser,
+  onSaveCompanySettings,
 }: AdministrationProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
@@ -38,6 +50,50 @@ export function Administration({
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserSummary | null>(null);
+
+  // Company Settings State
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>(
+    company?.bankAccounts?.length ? company.bankAccounts : [
+      { bankName: 'BCI', account: '9109 8531 0001', nib: '0008 0000 0910 9853 101 80' },
+      { bankName: 'Millennium BIM', account: '5579 3819', nib: '0001 0000 0005 5793 8195 7' },
+    ]
+  );
+  const [validityDays, setValidityDays] = useState(company?.quotationValidityDays || '7 dias');
+  const [defaultNotes, setDefaultNotes] = useState(company?.quotationDefaultNotes || 'Oferta de Nitrogénio e Montagem/Balanceamento Gratuito.');
+  const [settingsSuccess, setSettingsSuccess] = useState('');
+  const [settingsSaving, setSettingsSaving] = useState(false);
+
+  useEffect(() => {
+    if (company) {
+      if (company.bankAccounts && company.bankAccounts.length > 0) setBankAccounts(company.bankAccounts);
+      if (company.quotationValidityDays) setValidityDays(company.quotationValidityDays);
+      if (company.quotationDefaultNotes) setDefaultNotes(company.quotationDefaultNotes);
+    }
+  }, [company]);
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onSaveCompanySettings) return;
+    setSettingsSaving(true);
+    setSettingsSuccess('');
+    try {
+      await onSaveCompanySettings({
+        bankBciAccount: bankAccounts[0]?.account || '',
+        bankBciNib: bankAccounts[0]?.nib || '',
+        bankBimAccount: bankAccounts[1]?.account || '',
+        bankBimNib: bankAccounts[1]?.nib || '',
+        bankAccounts,
+        quotationValidityDays: validityDays,
+        quotationDefaultNotes: defaultNotes,
+      });
+      setSettingsSuccess('Configurações de Cotações salvas permanentemente com sucesso!');
+      setTimeout(() => setSettingsSuccess(''), 4000);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao salvar configurações.');
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
 
   // Form State
   const [fullName, setFullName] = useState('');
@@ -165,7 +221,8 @@ export function Administration({
           { ...editingUser, fullName, email, telephone },
           editingUser.active,
           selectedBundles,
-          effectivePermissionsPreview
+          effectivePermissionsPreview,
+          password.trim() || undefined
         );
         setFormSuccess('Utilizador e pacotes de responsabilidades atualizados com sucesso!');
       } else if (onCreateUser) {
@@ -265,6 +322,108 @@ export function Administration({
           <p className="mt-1 text-2xl font-black text-[#003366] dark:text-[#a7c8ff]">{permissions.length}</p>
           <p className="mt-1 text-[11px] text-slate-500">Permissões ativas no token</p>
         </div>
+      </section>
+
+      {/* Quotation & Bank Settings Section */}
+      <section className="rounded-lg border border-[#c3c6d1] dark:border-[#43474f] bg-white dark:bg-[#1f2325] p-5 shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-[#c3c6d1] dark:border-[#43474f] pb-3">
+          <div>
+            <h2 className="text-sm font-black uppercase text-[#003366] dark:text-[#a7c8ff] flex items-center">
+              <span className="material-symbols-outlined mr-2 text-lg">account_balance</span>
+              Configurações Globais de Cotações & Dados Bancários (Salvar Padrão)
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Edite e salve aqui os números de conta bancária, NIB, validade e observações por defeito para todas as próximas cotações do sistema.
+            </p>
+          </div>
+        </div>
+
+        {settingsSuccess && (
+          <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded text-xs font-bold flex items-center">
+            <span className="material-symbols-outlined text-base mr-2">check_circle</span>
+            {settingsSuccess}
+          </div>
+        )}
+
+        <form onSubmit={handleSaveSettings} className="grid grid-cols-12 gap-4 text-xs font-sans">
+          {bankAccounts.map((bank, idx) => (
+            <div key={idx} className="col-span-12 grid grid-cols-12 gap-3 items-end border-b border-slate-200 dark:border-slate-700 pb-3">
+              <div className="col-span-12 sm:col-span-3">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  {idx === 0 ? 'Nome do Banco' : ''}
+                </label>
+                <input type="text" value={bank.bankName}
+                  onChange={(e) => { const updated = [...bankAccounts]; updated[idx] = {...updated[idx], bankName: e.target.value}; setBankAccounts(updated); }}
+                  className="w-full p-2 rounded border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-[#282c2e] font-bold text-xs"
+                  placeholder="Ex: BCI, NedBank..." required />
+              </div>
+              <div className="col-span-12 sm:col-span-3">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  {idx === 0 ? 'Nº Conta' : ''}
+                </label>
+                <input type="text" value={bank.account}
+                  onChange={(e) => { const updated = [...bankAccounts]; updated[idx] = {...updated[idx], account: e.target.value}; setBankAccounts(updated); }}
+                  className="w-full p-2 rounded border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-[#282c2e] font-mono text-xs"
+                  placeholder="Nº conta" required />
+              </div>
+              <div className="col-span-12 sm:col-span-4">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  {idx === 0 ? 'NIB' : ''}
+                </label>
+                <input type="text" value={bank.nib}
+                  onChange={(e) => { const updated = [...bankAccounts]; updated[idx] = {...updated[idx], nib: e.target.value}; setBankAccounts(updated); }}
+                  className="w-full p-2 rounded border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-[#282c2e] font-mono text-xs"
+                  placeholder="NIB" required />
+              </div>
+              <div className="col-span-12 sm:col-span-2 flex gap-2">
+                {bankAccounts.length > 1 && (
+                  <button type="button" onClick={() => setBankAccounts(bankAccounts.filter((_, i) => i !== idx))}
+                    className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                    title="Remover banco">
+                    <span className="material-symbols-outlined text-sm">delete</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+          <div className="col-span-12">
+            <button type="button"
+              onClick={() => setBankAccounts([...bankAccounts, { bankName: '', account: '', nib: '' }])}
+              className="text-xs font-bold text-[#003366] dark:text-[#a7c8ff] hover:underline flex items-center">
+              <span className="material-symbols-outlined text-sm mr-1">add_circle</span>
+              Adicionar Banco
+            </button>
+          </div>
+          <div className="col-span-12 sm:col-span-4">
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Validade por Defeito (ex: 7 dias)</label>
+            <input
+              type="text"
+              value={validityDays}
+              onChange={(e) => setValidityDays(e.target.value)}
+              className="w-full p-2 rounded border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-[#282c2e] font-sans text-xs"
+              required
+            />
+          </div>
+          <div className="col-span-12 sm:col-span-8">
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Observações Padrão no Rodapé da Cotação</label>
+            <input
+              type="text"
+              value={defaultNotes}
+              onChange={(e) => setDefaultNotes(e.target.value)}
+              className="w-full p-2 rounded border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-[#282c2e] font-sans text-xs"
+            />
+          </div>
+          <div className="col-span-12 flex justify-end">
+            <button
+              type="submit"
+              disabled={settingsSaving}
+              className="px-5 py-2 bg-[#006e25] text-white font-bold text-xs rounded hover:brightness-110 flex items-center transition-all shadow"
+            >
+              <span className="material-symbols-outlined text-sm mr-1">save</span>
+              {settingsSaving ? 'A guardar...' : '💾 Salvar Configurações Permanentemente'}
+            </button>
+          </div>
+        </form>
       </section>
 
       {/* Main Table Card */}
@@ -488,23 +647,21 @@ export function Administration({
                     className="w-full rounded-md border bg-slate-50 px-3 py-2 text-xs font-mono"
                   />
                 </div>
-                {!editingUser && (
-                  <div>
-                    <label htmlFor="admin-password" className="block text-xs font-bold uppercase text-slate-600 mb-1">
-                      Palavra-passe Inicial *
-                    </label>
-                    <input
-                      id="admin-password"
-                      type="password"
-                      required
-                      minLength={6}
-                      placeholder="Mínimo 6 caracteres"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full rounded-md border bg-slate-50 px-3 py-2 text-xs font-mono"
-                    />
-                  </div>
-                )}
+                <div>
+                  <label htmlFor="admin-password" className="block text-xs font-bold uppercase text-slate-600 mb-1">
+                    {editingUser ? 'Nova Palavra-passe (Opcional)' : 'Palavra-passe Inicial *'}
+                  </label>
+                  <input
+                    id="admin-password"
+                    type="password"
+                    required={!editingUser}
+                    minLength={6}
+                    placeholder={editingUser ? 'Deixar em branco para manter a actual' : 'Mínimo 6 caracteres'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full rounded-md border bg-slate-50 px-3 py-2 text-xs font-mono dark:bg-[#1f2325]"
+                  />
+                </div>
                 <div>
                   <label htmlFor="admin-telephone" className="block text-xs font-bold uppercase text-slate-600 mb-1">
                     Contacto Telefónico

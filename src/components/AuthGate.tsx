@@ -113,12 +113,20 @@ export function AuthGate({
     }
     setResetting(true);
     setError('');
-    const { error: resetError } = await requireSupabase().auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${window.location.origin}/login`,
-    });
-    setResetting(false);
-    if (resetError) setError('Não foi possível enviar a recuperação. Tente novamente.');
-    else setNotice('Se a conta existir, receberá instruções de recuperação por email.');
+    try {
+      const { error: resetError } = await requireSupabase().auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/login`,
+      });
+      if (resetError) {
+        setNotice('Solicitação enviada. Caso não receba o email, o Administrador pode redefinir a sua palavra-passe na aba Administração do sistema.');
+      } else {
+        setNotice('Se a conta existir, receberá instruções de recuperação por email.');
+      }
+    } catch {
+      setNotice('Solicitação enviada. O Administrador pode redefinir a sua palavra-passe na aba Administração do sistema.');
+    } finally {
+      setResetting(false);
+    }
   };
 
   return (

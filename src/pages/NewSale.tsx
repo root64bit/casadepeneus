@@ -15,6 +15,7 @@ interface NewSaleProps {
   paymentMethods: ReferenceOption[];
   documents?: DocumentRecord[];
   permissions?: string[];
+  onUpdateDocument?: (documentId: string, payload: { clientName?: string; clientNuit?: string; clientAddress?: string; grandTotal?: number; notes?: string; items?: SaleItem[] }) => Promise<void>;
 }
 
 export const NewSale: React.FC<NewSaleProps> = ({
@@ -29,6 +30,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
   paymentMethods,
   documents,
   permissions = [],
+  onUpdateDocument,
 }) => {
   const isGuiaOnlyUser = permissions.length > 0 && !permissions.includes('settings.manage') && !permissions.includes('products.view');
 
@@ -71,6 +73,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
 
   const [items, setItems] = useState<SaleItem[]>([]);
   const [selectedArticleId, setSelectedArticleId] = useState<string>('');
+  const [customDescription, setCustomDescription] = useState<string>('');
   const [inputQty, setInputQty] = useState<number>(1);
   const [inputDiscount, setInputDiscount] = useState<number>(0);
   const [inputIva, setInputIva] = useState<number>(articles[0]?.taxRate ?? 16);
@@ -83,6 +86,76 @@ export const NewSale: React.FC<NewSaleProps> = ({
   const [saveError, setSaveError] = useState('');
   const [confirmedSaleRecord, setConfirmedSaleRecord] = useState<SaleInvoice | null>(null);
 
+  // Edit Modal State for History
+  const [editingSale, setEditingSale] = useState<SaleInvoice | null>(null);
+  const [editClientName, setEditClientName] = useState('');
+  const [editClientNuit, setEditClientNuit] = useState('');
+  const [editClientAddress, setEditClientAddress] = useState('');
+  const [editGrandTotal, setEditGrandTotal] = useState(0);
+  const [editNotes, setEditNotes] = useState('');
+  const [editItems, setEditItems] = useState<SaleItem[]>([]);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editError, setEditError] = useState('');
+
+  // Auto-sync editGrandTotal when editItems changes
+  useEffect(() => {
+    if (editingSale) {
+      const grand = editItems.reduce(
+        (acc, item) => acc + Math.round((item.quantity || 1) * (item.unitPrice || 0) * (1 - (item.discountPercent || 0) / 100) * 100) / 100,
+        0
+      );
+      setEditGrandTotal(Math.round(grand * 100) / 100);
+    }
+  }, [editItems, editingSale]);
+
+  const handleOpenEditSale = (doc: SaleInvoice) => {
+    setEditingSale(doc);
+    setEditClientName(doc.clientName || '');
+    setEditClientNuit(doc.clientNuit || '');
+    setEditClientAddress(doc.clientAddress || '');
+    setEditGrandTotal(doc.totalAmount || 0);
+    setEditNotes(doc.notes || '');
+    
+    let loadedItems: SaleItem[] = doc.items && doc.items.length > 0 ? JSON.parse(JSON.stringify(doc.items)) : [];
+    if (loadedItems.length === 0 && (doc.totalAmount || 0) > 0) {
+      loadedItems = [{
+        articleId: `custom-${Date.now()}`,
+        code: 'DIV',
+        description: 'Artigo / Serviço Geral',
+        quantity: 1,
+        unitPrice: doc.totalAmount,
+        discountPercent: 0,
+        discountAmount: 0,
+        ivaPercent: 16,
+        total: doc.totalAmount,
+      }];
+    }
+    setEditItems(loadedItems);
+    setEditError('');
+  };
+
+  const handleExecuteSaveEditSale = async () => {
+    if (!editingSale || !onUpdateDocument || isSavingEdit) return;
+    try {
+      setIsSavingEdit(true);
+      setEditError('');
+      await onUpdateDocument(editingSale.id, {
+        clientName: editClientName.trim(),
+        clientNuit: editClientNuit.trim(),
+        clientAddress: editClientAddress.trim(),
+        grandTotal: Number(editGrandTotal),
+        notes: editNotes.trim(),
+        items: editItems,
+      });
+      setEditingSale(null);
+    } catch (err: any) {
+      setEditError(err?.message || 'Falha ao guardar alterações do documento.');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const customDescriptionInputRef = useRef<HTMLInputElement>(null);
   const qtyInputRef = useRef<HTMLInputElement>(null);
   const unitPriceInputRef = useRef<HTMLInputElement>(null);
   const discountInputRef = useRef<HTMLInputElement>(null);
@@ -168,25 +241,39 @@ export const NewSale: React.FC<NewSaleProps> = ({
       ) || clients[0];
 
       setSelectedClientId(pontualInDb ? pontualInDb.id : 'client-pontual');
-      setSelectedClientName('Cliente Pontual');
-      setClientNuit('');
-      setClientAddress('');
+      if (!selectedClientName || selectedClientName === 'Cliente Pontual') {
+        setSelectedClientName('Cliente Pontual');
+      }
       setShowClientInvoices(false);
     }
+  };
+
+  const getArticlePriceWithIva = (art: Article): number => {
+    if (art.sellPriceWithIva && art.sellPriceWithIva > 0) {
+      return art.sellPriceWithIva;
+    }
+    if (art.sellPrice && art.sellPrice > 0) {
+      return art.sellPrice;
+    }
+    return 0;
   };
 
   const handleArticleSelect = (id: string) => {
     setSelectedArticleId(id);
     const art = articles.find((a) => a.id === id);
     if (art) {
+      setCustomDescription(art.description);
       setInputIva(art.taxRate ?? 16);
-      setInputUnitPrice(art.sellPrice);
+      setInputUnitPrice(getArticlePriceWithIva(art));
     }
   };
 
   const handleAfterArticleSelect = () => {
     setTimeout(() => {
-      if (qtyInputRef.current) {
+      if (customDescriptionInputRef.current) {
+        customDescriptionInputRef.current.focus();
+        customDescriptionInputRef.current.select();
+      } else if (qtyInputRef.current) {
         qtyInputRef.current.focus();
         qtyInputRef.current.select();
       }
@@ -194,37 +281,38 @@ export const NewSale: React.FC<NewSaleProps> = ({
   };
 
   const handleAddItem = () => {
-    if (docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY') return;
+    if (docStatus === 'CONFIRMING') return;
 
     const art = articles.find((a) => a.id === selectedArticleId);
-    if (!art || inputQty <= 0) return;
+    const finalDesc = customDescription.trim() || art?.description || '';
+    if (!finalDesc || inputQty <= 0) return;
 
-    const basePrice = inputUnitPrice > 0 ? inputUnitPrice : art.sellPrice;
-    const discountedPrice = basePrice * (1 - inputDiscount / 100);
-    const itemTotalWithIva = discountedPrice * inputQty * (1 + inputIva / 100);
+    const priceWithIva = inputUnitPrice > 0 ? inputUnitPrice : (art ? getArticlePriceWithIva(art) : 0);
+    const itemTotalWithIva = Math.round(priceWithIva * inputQty * 100) / 100;
 
     const newItem: SaleItem = {
-      articleId: art.id,
-      code: art.code,
-      description: art.description,
+      articleId: art?.id || `custom-${Date.now()}`,
+      code: art?.code || 'DIV',
+      description: finalDesc,
       quantity: inputQty,
-      unitPrice: basePrice,
-      discountPercent: inputDiscount,
+      unitPrice: Math.round(priceWithIva * 100) / 100,
+      discountPercent: 0,
+      discountAmount: 0,
       ivaPercent: inputIva,
-      total: Math.round(itemTotalWithIva * 100) / 100,
+      total: itemTotalWithIva,
     };
 
     setItems((current) => [...current, newItem]);
     setInputQty(1);
     setInputDiscount(0);
     setSelectedArticleId('');
+    setCustomDescription('');
     setInputUnitPrice(0);
 
     setTimeout(() => {
-      const searchInput = document.querySelector<HTMLInputElement>('input[placeholder*="Pesquisar artigo"]');
+      const searchInput = document.querySelector<HTMLInputElement>('input[placeholder*="Pesquisar catálogo"]');
       if (searchInput) {
         searchInput.focus();
-        searchInput.select();
       }
     }, 40);
   };
@@ -260,94 +348,17 @@ export const NewSale: React.FC<NewSaleProps> = ({
     return `${docPrefix}${String(nextSeq).padStart(6, '0')}`;
   };
 
-  const loadLastDocumentInConsultationMode = () => {
-    // Look up in sales array first for full items
-    const matchingSales = sales.filter((s) => {
-      if (documentType === 'CASH_SALE') {
-        return s.documentTypeCode === 'CASH_SALE' || s.docNumber.startsWith('VD');
-      }
-      if (documentType === 'CUSTOMER_DELIVERY_NOTE') {
-        return s.documentTypeCode === 'CUSTOMER_DELIVERY_NOTE' || s.docNumber.startsWith('GR');
-      }
-      return s.documentTypeCode === 'CUSTOMER_INVOICE' || s.docNumber.startsWith('A/') || s.docNumber.startsWith('FT');
-    });
+  const grossTotalWithIva = items.reduce((acc, item) => acc + item.total, 0);
+  const descontoGeralValor = generalDiscount || 0;
+  const netTotalWithIva = Math.max(0, grossTotalWithIva - descontoGeralValor);
 
-    const targetSale = matchingSales[0];
+  const subtotalBruto = items.reduce((acc, item) => acc + (Math.round((item.total / (1 + item.ivaPercent / 100)) * 100) / 100), 0);
+  const descontoLinhas = 0;
+  
+  const subtotalLiquido = Math.round((netTotalWithIva / 1.16) * 100) / 100;
+  const ivaTotal = Math.round((netTotalWithIva - subtotalLiquido) * 100) / 100;
 
-    if (targetSale) {
-      const found = clients.find((c) => c.id === targetSale.clientId);
-      if (found) {
-        setClientCodeInput(found.number || found.code || '');
-        setSelectedClientId(found.id);
-        setSelectedClientName(targetSale.clientName || found.name);
-        setClientNuit(targetSale.clientNuit || found.nuit || '');
-        setClientAddress(targetSale.clientAddress || found.address || '');
-      } else {
-        setSelectedClientName(targetSale.clientName);
-        setClientNuit(targetSale.clientNuit || '');
-        setClientAddress(targetSale.clientAddress || '');
-      }
-
-      const nextNum = getNextDocNumberForType(documentType);
-      setDocNumber(nextNum);
-      setDate(new Date().toISOString().split('T')[0]);
-      setItems(targetSale.items || []);
-      setDocStatus('PREPARATION');
-      setSaveError('');
-      setConfirmedSaleRecord(null);
-      alert(`Último documento (${targetSale.docNumber}) carregado com sucesso! ${targetSale.items.length} artigo(s) prontos em novo rascunho de venda.`);
-      return true;
-    }
-
-    if (!documents || documents.length === 0) {
-      setSaveError('Nenhum documento anterior encontrado na base de dados.');
-      return false;
-    }
-
-    const matchingDocs = documents.filter((d) => {
-      if (documentType === 'CASH_SALE') {
-        return d.typeCode === 'CASH_SALE' || d.displayNumber.startsWith('VD') || d.typeName.toLowerCase().includes('dinheiro');
-      }
-      if (documentType === 'CUSTOMER_DELIVERY_NOTE') {
-        return d.typeCode === 'CUSTOMER_DELIVERY_NOTE' || d.displayNumber.startsWith('GR') || d.typeName.toLowerCase().includes('guia');
-      }
-      return d.typeCode === 'CUSTOMER_INVOICE' || d.displayNumber.startsWith('A/') || d.displayNumber.startsWith('FT') || d.typeName.toLowerCase().includes('factura') || d.typeName.toLowerCase().includes('fatura');
-    });
-
-    const targetDoc = matchingDocs[0] || documents[0];
-    if (!targetDoc) return false;
-
-    const found = clients.find((c) => c.id === targetDoc.partyId);
-    if (found) {
-      setClientCodeInput(found.number || found.code || '');
-      setSelectedClientId(found.id);
-      setSelectedClientName(targetDoc.partyName || found.name);
-      setClientNuit(found.nuit || '');
-      setClientAddress(found.address || '');
-    }
-
-    const nextNum = getNextDocNumberForType(documentType);
-    setDocNumber(nextNum);
-    setDate(new Date().toISOString().split('T')[0]);
-    setDocStatus('PREPARATION');
-    setSaveError('');
-    setConfirmedSaleRecord(null);
-    alert(`Último documento (${targetDoc.displayNumber}) carregado em novo rascunho.`);
-    return true;
-  };
-
-  const subtotalBruto = items.reduce((acc, item) => acc + item.unitPrice * item.quantity, 0);
-  const descontoLinhas = items.reduce((acc, item) => acc + item.unitPrice * item.quantity * (item.discountPercent / 100), 0);
-  const totalAfterLineDiscount = subtotalBruto - descontoLinhas;
-  const descontoGeralValor = totalAfterLineDiscount * (generalDiscount / 100);
-  const subtotalLiquido = totalAfterLineDiscount - descontoGeralValor;
-
-  const ivaTotal = items.reduce((acc, item) => {
-    const lineNet = item.unitPrice * item.quantity * (1 - item.discountPercent / 100) * (1 - generalDiscount / 100);
-    return acc + (lineNet * item.ivaPercent) / 100;
-  }, 0);
-
-  const totalFinalAmount = subtotalLiquido + ivaTotal;
+  const totalFinalAmount = netTotalWithIva;
 
   const selectedClient = clients.find((c) => c.id === selectedClientId);
   const previousBalance = selectedClient?.pendingBalance ?? 0;
@@ -442,12 +453,6 @@ export const NewSale: React.FC<NewSaleProps> = ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key.toLowerCase() === 'l') {
-        e.preventDefault();
-        loadLastDocumentInConsultationMode();
-        return;
-      }
-
       if (e.key === 'F2') {
         e.preventDefault();
         if (docStatus === 'CONFIRMING') {
@@ -565,14 +570,6 @@ export const NewSale: React.FC<NewSaleProps> = ({
               ? 'A CONFIRMAR'
               : 'EM PREPARAÇÃO'}
           </span>
-          <button
-            type="button"
-            onClick={loadLastDocumentInConsultationMode}
-            className="rounded bg-slate-800 text-white px-3 py-1.5 text-xs font-bold hover:bg-slate-900 transition-colors"
-            title="Consultar último documento (Ctrl+L)"
-          >
-            Último Documento (Ctrl+L)
-          </button>
           <button
             type="button"
             onClick={handleResetForm}
@@ -790,14 +787,32 @@ export const NewSale: React.FC<NewSaleProps> = ({
             <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f] font-mono">
               {docStatus !== 'CONFIRMED' && docStatus !== 'READ_ONLY' && (
                 <tr className="bg-[#0000aa]/10 dark:bg-[#282c2e] border-b-2 border-[#003366] print:hidden">
-                  <td className="p-2" colSpan={2}>
+                  <td className="p-2">
                     <ArticleSearchSelect
                       articles={articles}
                       selectedArticleId={selectedArticleId}
                       onSelect={handleArticleSelect}
                       onAfterSelect={handleAfterArticleSelect}
-                      renderLabel={(a) => `[${a.code}] ${a.description} - ${a.sellPrice.toFixed(2)} MZN (Existência: ${a.stock})`}
-                      placeholder="Pesquisar artigo por código ou descrição… (Enter para seleccionar)"
+                      renderLabel={(a) => `[${a.code}] ${a.description} - ${a.sellPrice.toFixed(2)} MZN (Stock: ${a.stock})`}
+                      placeholder="Pesquisar catálogo (opcional)…"
+                    />
+                  </td>
+                  <td className="p-2">
+                    <input
+                      ref={customDescriptionInputRef}
+                      type="text"
+                      placeholder="Escreva a descrição do artigo ou serviço (ex: Alinhamento)..."
+                      disabled={docStatus === 'CONFIRMING'}
+                      value={customDescription}
+                      onChange={(e) => setCustomDescription(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          qtyInputRef.current?.focus();
+                          qtyInputRef.current?.select();
+                        }
+                      }}
+                      className="w-full bg-white dark:bg-[#1f2325] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 text-xs font-medium focus-ring"
                     />
                   </td>
                   <td className="p-2 text-center font-bold text-[#006e25]">
@@ -814,7 +829,8 @@ export const NewSale: React.FC<NewSaleProps> = ({
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
-                          handleAddItem();
+                          unitPriceInputRef.current?.focus();
+                          unitPriceInputRef.current?.select();
                         }
                       }}
                       className="w-full border border-[#c3c6d1] dark:border-[#43474f] dark:bg-[#1f2325] dark:text-white rounded p-1.5 text-center text-xs font-bold bg-yellow-100 text-black focus:ring-2 focus:ring-[#003366]"
@@ -826,7 +842,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
                       type="number"
                       step="0.01"
                       min="0"
-                      value={inputUnitPrice || (articles.find(a => a.id === selectedArticleId)?.sellPrice ?? 0)}
+                      value={inputUnitPrice || (() => { const a = articles.find(a => a.id === selectedArticleId); return a ? getArticlePriceWithIva(a) : 0; })()}
                       onChange={(e) => setInputUnitPrice(Number(e.target.value))}
                       onFocus={(e) => e.target.select()}
                       onKeyDown={(e) => {
@@ -877,7 +893,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
                   </td>
                   <td className="p-2 text-right font-extrabold text-[#006e25]">
                     {(
-                      ((inputUnitPrice > 0 ? inputUnitPrice : (articles.find(a => a.id === selectedArticleId)?.sellPrice || 0)) * (1 - inputDiscount / 100)) * inputQty * (1 + inputIva / 100)
+                      (inputUnitPrice > 0 ? inputUnitPrice : (() => { const a = articles.find(a => a.id === selectedArticleId); return a ? getArticlePriceWithIva(a) : 0; })()) * inputQty
                     ).toFixed(2)}
                   </td>
                   <td className="p-2 text-center">
@@ -934,17 +950,16 @@ export const NewSale: React.FC<NewSaleProps> = ({
         <div className="grid grid-cols-12 gap-3 print:gap-2">
           <div className="col-span-12 md:col-span-6 space-y-2 print:space-y-1 bg-[#f3f4f5] dark:bg-[#282c2e] p-2.5 print:p-1.5 rounded-lg border border-[#c3c6d1] dark:border-[#43474f]">
             <div className="flex items-center space-x-3 text-xs print:text-[10px]">
-              <label className="font-bold uppercase text-[#191c1d] dark:text-white">% Desconto Geral:</label>
+              <label className="font-bold uppercase text-[#191c1d] dark:text-white">Desconto Geral (MZN):</label>
               <input
                 type="number"
                 min="0"
-                max="100"
                 value={generalDiscount}
                 disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
                 onChange={(e) => setGeneralDiscount(Number(e.target.value))}
-                className="w-16 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded p-0.5 text-center font-bold text-[#191c1d] dark:text-white disabled:opacity-60"
+                className="w-24 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded p-0.5 text-center font-bold text-[#191c1d] dark:text-white disabled:opacity-60"
               />
-              <span className="font-bold text-[#191c1d] dark:text-white">Valor: {formatMZN(descontoGeralValor)}</span>
+              <span className="font-bold text-[#191c1d] dark:text-white">Aplicado: {formatMZN(descontoGeralValor)}</span>
             </div>
 
             <div>
@@ -1133,14 +1148,22 @@ export const NewSale: React.FC<NewSaleProps> = ({
                     <td className="p-2 font-bold">{doc.clientName || 'Cliente Pontual'}</td>
                     <td className="p-2 text-right font-bold text-[#006e25]">{formatMZN(doc.totalAmount)}</td>
                     <td className="p-2 text-slate-600 dark:text-slate-400">{doc.operatorName || operatorName || 'Operador'}</td>
-                    <td className="p-2 text-center">
+                    <td className="p-2 text-center space-x-1">
                       <button
                         type="button"
                         onClick={() => onOpenPrintModal(doc)}
-                        className="inline-flex items-center space-x-1 px-3 py-1 bg-[#003366] text-white rounded font-bold text-[11px] hover:bg-[#001e40] transition-all shadow-sm"
+                        className="inline-flex items-center space-x-1 px-2.5 py-1 bg-[#003366] text-white rounded font-bold text-[11px] hover:bg-[#001e40] transition-all shadow-sm"
                       >
                         <span className="material-symbols-outlined text-xs">print</span>
                         <span>Imprimir</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditSale(doc)}
+                        className="inline-flex items-center space-x-1 px-2.5 py-1 bg-amber-600 text-white rounded font-bold text-[11px] hover:bg-amber-700 transition-all shadow-sm"
+                      >
+                        <span className="material-symbols-outlined text-xs">edit_note</span>
+                        <span>Editar</span>
                       </button>
                     </td>
                   </tr>
@@ -1181,6 +1204,348 @@ export const NewSale: React.FC<NewSaleProps> = ({
           Tipo Activo: <b className="uppercase text-[#006e25]">{documentType}</b> | Estado: <b>{docStatus}</b> | Cliente: <b>{selectedClientName || 'Nenhum'}</b>
         </div>
       </div>
+
+      {/* Edit Document Modal */}
+      {editingSale && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 print:hidden">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg border bg-white p-6 shadow-2xl dark:bg-[#1f2325] dark:border-[#43474f] space-y-4">
+            <div className="flex items-center justify-between border-b pb-3 text-[#003366] dark:text-[#a7c8ff]">
+              <div className="flex items-center space-x-2">
+                <span className="material-symbols-outlined text-2xl">edit_note</span>
+                <h3 className="font-black text-sm uppercase tracking-wide">
+                  Editar Documento {editingSale.docNumber}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingSale(null)}
+                className="text-gray-500 hover:text-gray-700 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {editError && (
+              <div className="rounded border border-red-200 bg-red-50 p-3 text-xs text-red-700 font-semibold">
+                {editError}
+              </div>
+            )}
+
+            <div className="space-y-4 text-xs font-sans">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
+                    Nome do Cliente / Entidade *
+                  </label>
+                  <input
+                    type="text"
+                    value={editClientName}
+                    onChange={(e) => setEditClientName(e.target.value)}
+                    placeholder="Nome do cliente (ex: AUTO COMPANY)"
+                    className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
+                    NUIT do Cliente
+                  </label>
+                  <input
+                    type="text"
+                    value={editClientNuit}
+                    onChange={(e) => setEditClientNuit(e.target.value)}
+                    placeholder="NUIT (opcional)"
+                    className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Tabela de Edição de Artigos / Items & Prices */}
+              <div className="space-y-2 border-t border-b py-3 dark:border-gray-700">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block font-black text-[#003366] dark:text-[#a7c8ff] uppercase text-xs">
+                      Artigos / Itens do Documento ({editItems.length})
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditItems(prev => [
+                          ...prev,
+                          {
+                            articleId: `custom-${Date.now()}`,
+                            code: 'DIV',
+                            description: 'Novo Artigo / Serviço',
+                            quantity: 1,
+                            unitPrice: 0,
+                            discountPercent: 0,
+                            discountAmount: 0,
+                            ivaPercent: 16,
+                            total: 0,
+                          }
+                        ]);
+                      }}
+                      className="px-2.5 py-1 bg-[#003366] text-white font-bold rounded text-[11px] hover:bg-blue-900 transition-colors shadow-sm flex items-center gap-1"
+                    >
+                      <span>+ Artigo Manual</span>
+                    </button>
+                  </div>
+                  {articles.length > 0 && (
+                    <ArticleSearchSelect
+                      articles={articles}
+                      selectedArticleId=""
+                      onSelect={(articleId) => {
+                        const art = articles.find(a => a.id === articleId);
+                        if (!art) return;
+                        const priceWithIva = (art.sellPriceWithIva && art.sellPriceWithIva > 0)
+                          ? art.sellPriceWithIva
+                          : (art.sellPrice ? Math.round(art.sellPrice * (1 + (art.taxRate ?? 16) / 100) * 100) / 100 : 0);
+                        setEditItems(prev => {
+                          const updated = [
+                            ...prev,
+                            {
+                              articleId: art.id,
+                              code: art.code,
+                              description: art.description,
+                              quantity: 1,
+                              unitPrice: priceWithIva,
+                              discountPercent: 0,
+                              discountAmount: 0,
+                              ivaPercent: art.taxRate ?? 16,
+                              total: priceWithIva,
+                            }
+                          ];
+                          const grand = updated.reduce((acc, i) => acc + Math.round(i.quantity * i.unitPrice * (1 - (i.discountPercent || 0) / 100) * 100) / 100, 0);
+                          setEditGrandTotal(Math.round(grand * 100) / 100);
+                          return updated;
+                        });
+                      }}
+                      renderLabel={(a) => `[${a.code}] ${a.description} - ${(a.sellPriceWithIva || a.sellPrice).toFixed(2)} MZN (Stock: ${a.stock})`}
+                      placeholder="🔍 Pesquisar artigo do catálogo..."
+                      className="w-full"
+                    />
+                  )}
+                </div>
+
+                {editItems.length === 0 ? (
+                  <div className="text-center py-3 text-gray-400 italic text-xs border rounded border-dashed">
+                    Nenhum artigo no documento. Pesquise no catálogo ou clique em "+ Artigo Manual".
+                  </div>
+                ) : (
+                  <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+                    {editItems.map((item, idx) => {
+                      const lineTotal = Math.round(item.quantity * item.unitPrice * (1 - (item.discountPercent || 0) / 100) * 100) / 100;
+                      return (
+                      <div key={idx} className="bg-slate-50 dark:bg-[#282c2e] p-2.5 rounded border border-slate-200 dark:border-gray-700 text-xs space-y-1.5">
+                        {/* Row 1: Code + Description + Remove */}
+                        <div className="flex items-center gap-2">
+                          <div className="w-28">
+                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Código</span>
+                            <input
+                              type="text"
+                              value={item.code || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditItems(prev => {
+                                  const updated = [...prev];
+                                  updated[idx] = { ...updated[idx], code: val };
+                                  return updated;
+                                });
+                              }}
+                              placeholder="Código..."
+                              className="w-full rounded border border-gray-300 p-1.5 dark:bg-[#1f2325] dark:border-gray-600 dark:text-white font-mono font-bold text-xs"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Descrição</span>
+                            <input
+                              type="text"
+                              value={item.description}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditItems(prev => {
+                                  const updated = [...prev];
+                                  updated[idx] = { ...updated[idx], description: val };
+                                  return updated;
+                                });
+                              }}
+                              placeholder="Descrição do artigo ou serviço..."
+                              className="w-full rounded border border-gray-300 p-1.5 dark:bg-[#1f2325] dark:border-gray-600 dark:text-white font-medium text-xs"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditItems(prev => {
+                                const updated = prev.filter((_, i) => i !== idx);
+                                const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
+                                setEditGrandTotal(Math.round(grand * 100) / 100);
+                                return updated;
+                              });
+                            }}
+                            className="mt-4 p-1 text-red-600 hover:text-red-800 font-bold hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
+                            title="Remover Item"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        {/* Row 2: Qty, Price c/ IVA, Desc%, IVA%, Total */}
+                        <div className="flex items-end gap-2">
+                          <div className="w-16">
+                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5 text-center">Qtd</span>
+                            <input
+                              type="number"
+                              min="1"
+                              value={item.quantity}
+                              onChange={(e) => {
+                                const qty = Number(e.target.value);
+                                setEditItems(prev => {
+                                  const updated = [...prev];
+                                  const tot = Math.round(qty * updated[idx].unitPrice * (1 - (updated[idx].discountPercent || 0) / 100) * 100) / 100;
+                                  updated[idx] = { ...updated[idx], quantity: qty, total: tot };
+                                  const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
+                                  setEditGrandTotal(Math.round(grand * 100) / 100);
+                                  return updated;
+                                });
+                              }}
+                              className="w-full text-center font-bold rounded border border-gray-300 p-1.5 dark:bg-[#1f2325] dark:border-gray-600 dark:text-white text-xs"
+                            />
+                          </div>
+                          <div className="w-28">
+                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5 text-right">Preço c/ IVA</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={item.unitPrice}
+                              onChange={(e) => {
+                                const price = Number(e.target.value);
+                                setEditItems(prev => {
+                                  const updated = [...prev];
+                                  const tot = Math.round(updated[idx].quantity * price * (1 - (updated[idx].discountPercent || 0) / 100) * 100) / 100;
+                                  updated[idx] = { ...updated[idx], unitPrice: price, total: tot };
+                                  const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
+                                  setEditGrandTotal(Math.round(grand * 100) / 100);
+                                  return updated;
+                                });
+                              }}
+                              placeholder="0.00"
+                              className="w-full text-right font-bold rounded border border-gray-300 p-1.5 text-[#006e25] dark:bg-[#1f2325] dark:border-gray-600 dark:text-white text-xs font-mono"
+                            />
+                          </div>
+                          <div className="w-16">
+                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5 text-center">Desc %</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                              value={item.discountPercent || 0}
+                              onChange={(e) => {
+                                const disc = Number(e.target.value);
+                                setEditItems(prev => {
+                                  const updated = [...prev];
+                                  const tot = Math.round(updated[idx].quantity * updated[idx].unitPrice * (1 - disc / 100) * 100) / 100;
+                                  updated[idx] = { ...updated[idx], discountPercent: disc, total: tot };
+                                  const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
+                                  setEditGrandTotal(Math.round(grand * 100) / 100);
+                                  return updated;
+                                });
+                              }}
+                              className="w-full text-center font-bold rounded border border-gray-300 p-1.5 text-red-600 dark:bg-[#1f2325] dark:border-gray-600 dark:text-red-400 text-xs"
+                            />
+                          </div>
+                          <div className="w-14">
+                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5 text-center">IVA %</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                              value={item.ivaPercent || 16}
+                              onChange={(e) => {
+                                const iva = Number(e.target.value);
+                                setEditItems(prev => {
+                                  const updated = [...prev];
+                                  updated[idx] = { ...updated[idx], ivaPercent: iva };
+                                  return updated;
+                                });
+                              }}
+                              className="w-full text-center font-bold rounded border border-gray-300 p-1.5 text-[#003366] dark:bg-[#1f2325] dark:border-gray-600 dark:text-[#a7c8ff] text-xs"
+                            />
+                          </div>
+                          <div className="w-28 text-right font-mono font-black text-[#001e40] dark:text-[#a7c8ff] text-xs pb-0.5">
+                            {formatMZN(lineTotal)}
+                          </div>
+                        </div>
+                      </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
+                    Morada do Cliente
+                  </label>
+                  <input
+                    type="text"
+                    value={editClientAddress}
+                    onChange={(e) => setEditClientAddress(e.target.value)}
+                    placeholder="Morada (opcional)"
+                    className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
+                    Valor Total do Documento (MZN) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={editGrandTotal}
+                    onChange={(e) => setEditGrandTotal(Number(e.target.value))}
+                    className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-mono font-black text-base text-[#006e25]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
+                  Observações / Notas Adicionais
+                </label>
+                <textarea
+                  rows={2}
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  placeholder="Adicionar notas adicionais ao documento..."
+                  className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-2 border-t pt-3">
+              <button
+                type="button"
+                onClick={() => setEditingSale(null)}
+                className="rounded border border-gray-300 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isSavingEdit || !editClientName.trim()}
+                onClick={handleExecuteSaveEditSale}
+                className="rounded bg-[#003366] px-4 py-2 text-xs font-bold text-white hover:bg-[#002244] disabled:opacity-50"
+              >
+                {isSavingEdit ? 'A guardar…' : 'Gravar Alterações'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

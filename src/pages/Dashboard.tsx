@@ -28,9 +28,36 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const canEntry = permissions.includes('stock.direct_entry') || permissions.includes('stock.entry.confirm');
   const canExit = permissions.includes('stock.direct_exit') || permissions.includes('stock.exit.confirm');
   const canCreateProduct = permissions.includes('products.create');
+  const isManagerOrAdmin = !permissions.length || permissions.includes('settings.manage') || permissions.includes('reports.view');
 
   return (
     <div className="space-y-6">
+      {/* Weekly Debtors Reminder Banner for Administrator & Manager */}
+      {isManagerOrAdmin && (
+        <div className="bg-[#fff8f6] dark:bg-[#2b1917] border-l-4 border-[#ba1a1a] p-4 rounded shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 bg-[#ffdad6] text-[#ba1a1a] rounded-full flex items-center justify-center">
+              <span className="material-symbols-outlined text-2xl">notifications_active</span>
+            </div>
+            <div>
+              <h4 className="font-bold text-sm text-[#191c1d] dark:text-white flex items-center gap-2">
+                🔔 Lembrete Semanal de Devedores (Administrador & Gestor)
+                <span className="text-[10px] bg-[#ba1a1a] text-white font-extrabold px-2 py-0.5 rounded uppercase">Recorrente • Segunda-feira</span>
+              </h4>
+              <p className="text-xs text-[#43474f] dark:text-[#c3c6d1] mt-0.5">
+                Existem <strong className="text-[#ba1a1a]">{clients.filter(c => c.pendingBalance > 0).length} clientes devedores</strong> registados com um total pendente de <strong className="text-[#ba1a1a] font-mono">{formatMZN(totalPendingDebt)}</strong> por cobrar.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setActiveTab('accounts')}
+            className="px-4 py-2 bg-[#ba1a1a] text-white text-xs font-bold rounded hover:bg-[#93000a] transition-colors whitespace-nowrap self-start md:self-auto shadow-sm flex items-center"
+          >
+            <span className="material-symbols-outlined text-base mr-1.5">payments</span>
+            Gerir Contas a Receber →
+          </button>
+        </div>
+      )}
       {/* Quick Action Tiles */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {canSell && <button

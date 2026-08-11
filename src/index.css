@@ -1,4 +1,93 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================================================
+   GLOBAL DARK MODE HIGH CONTRAST STYLES
+   ============================================================ */
+html.dark,
+body.dark {
+  background-color: #191c1d !important;
+  color: #e1e3e4 !important;
+}
+
+html.dark body {
+  background-color: #191c1d !important;
+  color: #e1e3e4 !important;
+}
+
+.dark aside,
+.dark header,
+.dark nav,
+.dark .bg-white,
+.dark .bg-slate-50,
+.dark .bg-slate-100 {
+  background-color: #1f2325 !important;
+  color: #e1e3e4 !important;
+}
+
+.dark .bg-slate-200,
+.dark .bg-slate-300 {
+  background-color: #282c2e !important;
+}
+
+.dark th,
+.dark td,
+.dark label,
+.dark p,
+.dark span:not([class*="bg-"]):not([class*="text-red"]):not([class*="text-green"]):not([class*="text-emerald"]):not([class*="text-amber"]) {
+  color: #e1e3e4;
+}
+
+.dark h1,
+.dark h2,
+.dark h3,
+.dark h4,
+.dark h5,
+.dark h6,
+.dark .font-bold,
+.dark .font-semibold,
+.dark .font-black,
+.dark .font-extrabold {
+  color: #ffffff !important;
+}
+
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-slate-700,
+.dark .text-slate-600,
+.dark .text-slate-500,
+.dark .text-black {
+  color: #d1d5db !important;
+}
+
+.dark table {
+  background-color: #1f2325 !important;
+}
+
+.dark tbody tr:hover {
+  background-color: #282c2e !important;
+}
+
+.dark .border-slate-200,
+.dark .border-slate-300,
+.dark .border-gray-200,
+.dark .border-gray-300,
+.dark .divide-slate-200,
+.dark .divide-slate-300 {
+  border-color: #43474f !important;
+}
+
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: #282c2e !important;
+  color: #ffffff !important;
+  border-color: #43474f !important;
+}
+
+.dark input::placeholder {
+  color: #9ca3af !important;
+}
 
 /* ============================================================
    STITCH DESIGN SYSTEM — Casa de Pneus, Lda.
@@ -209,39 +298,82 @@ textarea {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 8mm 10mm;
+    margin: 5mm 8mm;
   }
-  body {
-    background: #fff !important;
-    color: #000 !important;
-    overflow: visible !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
+
+  /* FORCE pure white background and black text for ALL elements in print, ignoring dark mode */
+  html,
+  body,
+  html.dark,
+  body.dark,
+  html.dark body,
+  .dark,
+  .dark *,
+  div,
+  section,
+  table,
+  tbody,
+  thead,
+  tr,
+  th,
+  td,
+  p,
+  span,
+  b,
+  strong {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    border-color: #000000 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
   }
-  button,
-  input,
-  select,
-  textarea {
-    min-height: auto !important;
+  
+  body.printing-modal #root {
+    display: none !important;
   }
+
+  /* Hide web app UI controls during print */
   aside,
   header,
   footer,
+  nav,
   button,
+  input,
+  select,
+  textarea,
   .no-print,
   .print\:hidden,
   [role="alert"],
-  nav,
   [data-screen-only] {
     display: none !important;
   }
+
+  /* Reset modal backdrop wrappers */
+  .fixed.inset-0,
+  .fixed {
+    position: static !important;
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+  }
+
   main {
     margin: 0 !important;
     padding: 0 !important;
+    background: #ffffff !important;
   }
+
   table {
     break-inside: auto;
   }
+
   tr {
     break-inside: avoid;
     break-after: auto;

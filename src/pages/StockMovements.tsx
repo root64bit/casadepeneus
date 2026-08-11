@@ -743,17 +743,21 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                   .map((item) => {
                     const matchedArt = articles.find((a) => a.code === item.articleCode);
                     const matchedDoc = documents.find(
-                      (d) => d.displayNumber && item.docRef && item.docRef.includes(d.displayNumber)
+                      (d) => (d.id && d.id === item.sourceDocumentId) || (d.displayNumber && item.docRef && item.docRef.includes(d.displayNumber))
                     );
-                    const docDisplayRaw = item.docRef || (item.type === 'entrada' ? 'Entrada Directa por Guia' : 'Saída Directa por Guia');
-                    const docDisplay = docDisplayRaw
-                      .replace(/CUSTOMER_INVOICE/g, 'Factura FT')
-                      .replace(/CASH_SALE/g, 'Venda a Dinheiro VD')
-                      .replace(/CUSTOMER_DELIVERY_NOTE/g, 'Guia de Remessa GR')
-                      .replace(/SUPPLIER_INVOICE/g, 'Factura Fornecedor')
-                      .replace(/CUSTOMER_RECEIPT/g, 'Recibo')
-                      .replace(/CUSTOMER_CREDIT_NOTE/g, 'Nota de Crédito NC')
-                      .replace(/CREDIT_NOTE/g, 'Nota de Crédito NC');
+                    let docDisplay = item.docRef || (item.type === 'entrada' ? 'Entrada Directa por Guia' : 'Saída Directa por Guia');
+                    if (docDisplay.includes('Migração Pos.zip') || docDisplay.includes('STK-')) {
+                      docDisplay = item.type === 'entrada' ? 'Entrada Inicial (Migração POS)' : 'Saída Inicial (Migração POS)';
+                    } else {
+                      docDisplay = docDisplay
+                        .replace(/CUSTOMER_INVOICE/g, 'Factura')
+                        .replace(/CASH_SALE/g, 'Venda a Dinheiro')
+                        .replace(/CUSTOMER_DELIVERY_NOTE/g, 'Guia de Remessa')
+                        .replace(/SUPPLIER_INVOICE/g, 'Factura Fornecedor')
+                        .replace(/CUSTOMER_RECEIPT/g, 'Recibo')
+                        .replace(/CUSTOMER_CREDIT_NOTE/g, 'Nota de Crédito')
+                        .replace(/CREDIT_NOTE/g, 'Nota de Crédito');
+                    }
                     const saldo = movementsWithSaldo.get(item.id) ?? (matchedArt?.stock ?? 0);
                     
                     // Format date only (no time: 04/08/2026)

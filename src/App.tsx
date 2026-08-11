@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient, type Session } from '@supabase/supabase-js';
 import { Layout } from './components/Layout';
 import { AuthGate } from './components/AuthGate';
@@ -48,6 +48,8 @@ import {
   postStockMovement,
   createAndConfirmFinancialAdvice,
   cancelFinancialAdvice,
+  saveCompanyQuotationSettings,
+  updateDocumentDetails,
 } from './lib/appData';
 import type { PartyInput } from './lib/appData';
 
@@ -114,9 +116,13 @@ function App() {
   const [printPayment, setPrintPayment] = useState<PaymentRecord | null>(null);
   const [partyModalType, setPartyModalType] = useState<'customer' | 'supplier' | null>(null);
 
-  const refreshData = useCallback(async () => {
+  const initialLoadedRef = useRef(false);
+
+  const refreshData = useCallback(async (isSilent = false) => {
     if (!session) return;
-    setDataLoading(true);
+    if (!isSilent && !userContext) {
+      setDataLoading(true);
+    }
     setDataError('');
     try {
       const data = await loadAppData();
@@ -151,7 +157,7 @@ function App() {
     } finally {
       setDataLoading(false);
     }
-  }, [session]);
+  }, [session, userContext]);
 
   useEffect(() => {
     if (!supabase) {
@@ -165,15 +171,26 @@ function App() {
     });
 
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
+      setSession((prevSession) => {
+        if (prevSession?.user?.id === nextSession?.user?.id && prevSession?.access_token === nextSession?.access_token) {
+          return prevSession;
+        }
+        return nextSession;
+      });
       setCheckingSession(false);
     });
     return () => data.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
-    void refreshData();
-  }, [refreshData]);
+    if (!session) return;
+    if (!initialLoadedRef.current) {
+      initialLoadedRef.current = true;
+      void refreshData(false);
+    } else {
+      void refreshData(true);
+    }
+  }, [session]);
 
   useEffect(() => {
     const onPopState = () => setActiveTab(pathToTab());
@@ -373,7 +390,8 @@ function App() {
     user: UserSummary,
     active: boolean,
     newBundles?: string[],
-    newPermissions?: string[]
+    newPermissions?: string[],
+    newPassword?: string
   ) => {
     try {
       if (user.id) {
@@ -383,6 +401,14 @@ function App() {
           p_is_active: active,
         });
         if (error) throw new Error(error.message);
+
+        if (newPassword && newPassword.length >= 6) {
+          const { error: passErr } = await supabase!.rpc('admin_update_user_password_direct', {
+            p_email: user.email,
+            p_password: newPassword,
+          });
+          if (passErr) console.warn('Could not reset password via RPC:', passErr.message);
+        }
 
         if (newBundles && newBundles.length > 0) {
           await supabase!.from('user_roles').delete().eq('user_id', user.id);
@@ -574,6 +600,10 @@ function App() {
             paymentTerms={paymentTerms}
             paymentMethods={paymentMethods}
             permissions={permissions}
+            onUpdateDocument={async (docId, payload) => {
+              await updateDocumentDetails(docId, payload);
+              await refreshData(true);
+            }}
           />
         );
       case 'quotation':
@@ -586,6 +616,10 @@ function App() {
             onCreateQuotation={handleCreateQuotation}
             onOpenPrintModal={handleOpenPrintModal}
             operatorName={userContext?.fullName ?? ''}
+            onUpdateDocument={async (docId, payload) => {
+              await updateDocumentDetails(docId, payload);
+              await refreshData(true);
+            }}
           />
         );
       case 'purchases':
@@ -661,6 +695,7 @@ function App() {
           <Documents
             documents={documents}
             sales={sales}
+            articles={articles}
             onPrint={handleOpenPrintModal}
             onPrintRecord={setPrintDocument}
             permissions={permissions}
@@ -668,7 +703,11 @@ function App() {
             onCancelAdvice={async (docId, reason) => {
               const idempotencyKey = crypto.randomUUID();
               await cancelFinancialAdvice(docId, reason, idempotencyKey);
-              await refreshData();
+              await refreshData(true);
+            }}
+            onUpdateDocument={async (docId, payload) => {
+              await updateDocumentDetails(docId, payload);
+              await refreshData(true);
             }}
           />
         );
@@ -688,8 +727,14 @@ function App() {
             systemMode={systemMode}
             users={users}
             permissions={permissions}
+            company={company}
             onUpdateUser={handleUpdateUser}
             onCreateUser={handleCreateUser}
+            onSaveCompanySettings={async (settings) => {
+              const targetId = company.id || 'a0000000-0000-0000-0000-000000000001';
+              await saveCompanyQuotationSettings(targetId, settings);
+              await refreshData();
+            }}
           />
         );
       case 'stitch':
@@ -728,7 +773,7 @@ function App() {
             </button>
           </div>
         )}
-        {dataLoading ? (
+        {dataLoading && !userContext ? (
           <div className="grid min-h-[50vh] place-items-center text-sm font-bold text-slate-500">
             A carregar dados operacionais…
           </div>

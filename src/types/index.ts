@@ -28,6 +28,7 @@ export interface SaleItem {
   quantity: number;
   unitPrice: number;
   discountPercent: number;
+  discountAmount?: number;
   ivaPercent: number;
   total: number;
 }
@@ -57,6 +58,12 @@ export interface SaleInvoice {
   status: 'Concluída' | 'Pendente' | 'Cancelada';
   time?: string;
   notes?: string;
+  clientPhone?: string;
+  bankAccountBci?: string;
+  bankNibBci?: string;
+  bankAccountBim?: string;
+  bankNibBim?: string;
+  validityDays?: string;
 }
 
 export interface StockMovement {
@@ -151,7 +158,14 @@ export interface Supplier {
   pendingBalance: number;
 }
 
+export interface BankAccount {
+  bankName: string;
+  account: string;
+  nib: string;
+}
+
 export interface CompanyProfile {
+  id?: string;
   name: string;
   taxNumber: string;
   address: string;
@@ -160,6 +174,13 @@ export interface CompanyProfile {
   phone: string;
   email: string;
   currency: string;
+  bankBciAccount?: string;
+  bankBciNib?: string;
+  bankBimAccount?: string;
+  bankBimNib?: string;
+  bankAccounts?: BankAccount[];
+  quotationValidityDays?: string;
+  quotationDefaultNotes?: string;
 }
 
 export interface DocumentRecord {

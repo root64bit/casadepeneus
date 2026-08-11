@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { CompanyProfile, SaleInvoice } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
 
@@ -56,6 +57,17 @@ export function numberToExtensoMZN(amount: number): string {
 export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, onClose, invoice, company }) => {
   if (!isOpen || !invoice) return null;
 
+  // Editable Bank & Document Details
+  const [bankAccounts, setBankAccounts] = useState<import('../types').BankAccount[]>(
+    company?.bankAccounts?.length ? company.bankAccounts : [
+      { bankName: 'BCI', account: invoice.bankAccountBci || company.bankBciAccount || '9109 8531 0001', nib: invoice.bankNibBci || company.bankBciNib || '0008 0000 0910 9853 101 80' },
+      { bankName: 'Millennium BIM', account: invoice.bankAccountBim || company.bankBimAccount || '5579 3819', nib: invoice.bankNibBim || company.bankBimNib || '0001 0000 0005 5793 8195 7' },
+    ]
+  );
+  const [validityDays, setValidityDays] = useState(invoice.validityDays || company.quotationValidityDays || (invoice.documentTypeCode === 'CUSTOMER_QUOTATION' ? '7 dias' : 'Pronto pag.'));
+  const [customNotes, setCustomNotes] = useState(invoice.notes || company.quotationDefaultNotes || '');
+  const [showEditPanel, setShowEditPanel] = useState(false);
+
   const isQuotation = invoice.documentTypeCode === 'CUSTOMER_QUOTATION';
   const docTitleName = isQuotation
     ? 'Proposta de Cotação'
@@ -71,9 +83,57 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
     year: 'numeric',
   });
 
-  return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl overflow-hidden text-black print:shadow-none print:max-w-none print:w-full print:rounded-none print:p-0">
+  // Whole-Metical non-decimal calculations for Subtotal, IVA, and Total
+  const calculatedItems = invoice.items.map((item) => {
+    const ivaRate = item.ivaPercent ?? 16;
+    const itemTotalComIva = item.total > 0
+      ? item.total
+      : item.unitPrice * item.quantity * (1 - item.discountPercent / 100) * (1 + ivaRate / 100);
+
+    const lineTotalRounded = Math.round(itemTotalComIva);
+    const lineSubtotal = Math.round((lineTotalRounded / (1 + ivaRate / 100)) * 100) / 100;
+    const lineIva = Math.round((lineTotalRounded - lineSubtotal) * 100) / 100;
+    const lineUnitPriceExcl = item.quantity > 0 ? lineSubtotal / item.quantity : item.unitPrice;
+
+    return {
+      ...item,
+      lineTotalRounded,
+      lineSubtotal,
+      lineIva,
+      lineUnitPriceExcl,
+    };
+  });
+
+  const totalDocAmount = Math.round(calculatedItems.reduce((acc, i) => acc + i.lineTotalRounded, 0));
+  const subtotalDocCalculated = Math.round(calculatedItems.reduce((acc, i) => acc + i.lineSubtotal, 0) * 100) / 100;
+  const ivaDocCalculated = Math.round((totalDocAmount - subtotalDocCalculated) * 100) / 100;
+  const totalItemDiscounts = calculatedItems.reduce((acc, i) => acc + (i.discountAmount || 0), 0);
+  const descontoTotalCalculado = (invoice.descontoTotal && invoice.descontoTotal > 0) ? invoice.descontoTotal : totalItemDiscounts;
+
+  const minRows = 8;
+  const fillerCount = Math.max(0, minRows - calculatedItems.length);
+  const fillerRows = Array.from({ length: fillerCount });
+
+  const handlePrint = () => {
+    const wasDarkDoc = document.documentElement.classList.contains('dark');
+    const wasDarkBody = document.body.classList.contains('dark');
+
+    if (wasDarkDoc) document.documentElement.classList.remove('dark');
+    if (wasDarkBody) document.body.classList.remove('dark');
+    document.body.classList.add('printing-modal');
+
+    window.print();
+
+    setTimeout(() => {
+      document.body.classList.remove('printing-modal');
+      if (wasDarkDoc) document.documentElement.classList.add('dark');
+      if (wasDarkBody) document.body.classList.add('dark');
+    }, 500);
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:bg-white print:p-0 print:static print:block print:inset-auto print:backdrop-blur-none print-document-modal">
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl overflow-hidden text-black print:shadow-none print:max-w-none print:w-full print:rounded-none print:p-0 print:m-0 print:border-none">
         {/* Modal Top Bar - Hidden during printing */}
         <div className="bg-[#001e40] text-white px-6 py-3 flex justify-between items-center print:hidden">
           <span className="font-bold text-sm flex items-center">
@@ -82,7 +142,14 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
           </span>
           <div className="flex items-center space-x-2">
             <button
-              onClick={() => window.print()}
+              onClick={() => setShowEditPanel((prev) => !prev)}
+              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded flex items-center transition-all"
+            >
+              <span className="material-symbols-outlined text-sm mr-1">edit</span>
+              {showEditPanel ? 'Ocultar Edição' : '✏️ Editar Bancos & Validade'}
+            </button>
+            <button
+              onClick={handlePrint}
               className="px-4 py-1.5 bg-[#006e25] text-white text-xs font-bold rounded hover:brightness-110 flex items-center"
             >
               <span className="material-symbols-outlined text-sm mr-1">print</span> Imprimir (F9)
@@ -92,6 +159,65 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
             </button>
           </div>
         </div>
+
+        {/* Inline Admin Edit Panel for Quotation Bank Account & Notes */}
+        {showEditPanel && (
+          <div className="bg-amber-50 dark:bg-[#1a2332] p-4 border-b border-amber-200 text-xs font-sans space-y-3 print:hidden">
+            <div className="flex justify-between items-center">
+              <h4 className="font-extrabold uppercase text-[#003366] dark:text-[#a7c8ff] flex items-center">
+                <span className="material-symbols-outlined text-sm mr-1">account_balance</span>
+                Personalização de Dados Bancários, Validade e Observações da Cotação
+              </h4>
+              <span className="text-[10px] text-amber-800 dark:text-amber-300 font-bold">
+                As alterações aplicam-se imediatamente no impresso abaixo.
+              </span>
+            </div>
+            <div className="grid grid-cols-12 gap-3">
+              {bankAccounts.map((bank, idx) => (
+                <React.Fragment key={idx}>
+                  <div className="col-span-12 sm:col-span-3">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Conta {bank.bankName}</label>
+                    <input
+                      type="text"
+                      value={bank.account}
+                      onChange={(e) => { const updated = [...bankAccounts]; updated[idx] = {...updated[idx], account: e.target.value}; setBankAccounts(updated); }}
+                      className="w-full p-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#282c2e] font-mono text-xs"
+                    />
+                  </div>
+                  <div className="col-span-12 sm:col-span-3">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">NIB {bank.bankName}</label>
+                    <input
+                      type="text"
+                      value={bank.nib}
+                      onChange={(e) => { const updated = [...bankAccounts]; updated[idx] = {...updated[idx], nib: e.target.value}; setBankAccounts(updated); }}
+                      className="w-full p-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#282c2e] font-mono text-xs"
+                    />
+                  </div>
+                </React.Fragment>
+              ))}
+              <div className="col-span-12 sm:col-span-4">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Validade / Condição</label>
+                <input
+                  type="text"
+                  value={validityDays}
+                  onChange={(e) => setValidityDays(e.target.value)}
+                  placeholder="ex: 7 dias, 15 dias"
+                  className="w-full p-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#282c2e] font-sans text-xs"
+                />
+              </div>
+              <div className="col-span-12 sm:col-span-8">
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Observações Adicionais</label>
+                <input
+                  type="text"
+                  value={customNotes}
+                  onChange={(e) => setCustomNotes(e.target.value)}
+                  placeholder="ex: Preços sujeitos a confirmação de stock."
+                  className="w-full p-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-[#282c2e] font-sans text-xs"
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Printable Area matching official invoice/quotation structure */}
         <div className="p-8 font-sans space-y-3 max-h-[85vh] overflow-y-auto print:max-h-none print:p-0 print:space-y-2 text-xs">
@@ -128,15 +254,14 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
               <div className="pt-1">
                 <p className="font-bold">Contas bancárias: Casa de Pneus, Lda.</p>
                 <div className="grid grid-cols-12 gap-1 text-[10px] print:text-[9px]">
-                  <span className="col-span-3 font-bold">BCI</span>
-                  <span className="col-span-4 font-mono font-bold">9109 8531 0001</span>
-                  <span className="col-span-1 font-bold">NIB</span>
-                  <span className="col-span-4 font-mono">0008 0000 0910 9853 101 80</span>
-
-                  <span className="col-span-3 font-bold">Millennium BIM</span>
-                  <span className="col-span-4 font-mono font-bold">5579 3819</span>
-                  <span className="col-span-1 font-bold">NIB</span>
-                  <span className="col-span-4 font-mono">0001 0000 0005 5793 8195 7</span>
+                  {bankAccounts.map((bank, idx) => (
+                    <React.Fragment key={idx}>
+                      <span className="col-span-3 font-bold">{bank.bankName}</span>
+                      <span className="col-span-4 font-mono font-bold">{bank.account}</span>
+                      <span className="col-span-1 font-bold">NIB</span>
+                      <span className="col-span-4 font-mono">{bank.nib}</span>
+                    </React.Fragment>
+                  ))}
                 </div>
               </div>
             </div>
@@ -144,7 +269,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
             {/* Right Block: Client Box */}
             <div className="col-span-5 border border-black rounded p-2 space-y-1 bg-white">
               <p className="font-bold">Exmo.(s) Sr.(s) - {invoice.clientName || 'Consumidor Final'}</p>
-              <p>Tel: 0</p>
+              <p>Tel: {invoice.clientPhone || '0'}</p>
               <p>NUIT: {invoice.clientNuit || '0'}</p>
               <p>Nº da requisição: -</p>
             </div>
@@ -159,7 +284,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
               <p className="text-[11px] print:text-[10px]">Data doc.: {formattedDate}</p>
             </div>
             <div className="text-right text-[11px] print:text-[10px]">
-              <p>- Validade: {isQuotation ? '7 dias' : 'Pronto pag.'}</p>
+              <p>- Validade: {validityDays}</p>
             </div>
           </div>
 
@@ -179,8 +304,8 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
             <span className="col-span-3 font-sans font-medium">{invoice.sellerName || 'usuario'}</span>
           </div>
 
-          {/* Items Table */}
-          <div className="border border-black rounded overflow-hidden">
+          {/* Items Table with Full Vertical and Horizontal Grid Lines */}
+          <div className="border border-black rounded overflow-hidden my-2">
             <table className="w-full text-left border-collapse text-[10px] print:text-[9.5px]">
               <thead className="bg-gray-800 text-white print:bg-gray-200 print:text-black font-bold uppercase border-b border-black">
                 <tr>
@@ -195,23 +320,37 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-300 font-mono">
-                {invoice.items.map((item, idx) => {
-                  const lineNet = item.unitPrice * item.quantity * (1 - item.discountPercent / 100);
-                  const lineIva = lineNet * (item.ivaPercent / 100);
+                {calculatedItems.map((item, idx) => (
+                  <tr key={idx} className="h-8 print:h-8">
+                    <td className="p-1 text-center border-r border-black font-bold">{idx + 1}</td>
+                    <td className="p-1 border-r border-black font-bold">{item.code}</td>
+                    <td className="p-1 border-r border-black font-sans font-medium">{item.description}</td>
+                    <td className="p-1 text-center border-r border-black font-bold">{item.quantity}</td>
+                    <td className="p-1 text-right border-r border-black">{item.lineUnitPriceExcl.toFixed(2)}</td>
+                    <td className="p-1 text-right border-r border-black font-bold">
+                      {item.discountAmount && item.discountAmount > 0
+                        ? item.discountAmount.toFixed(2)
+                        : item.discountPercent > 0
+                          ? ((item.unitPrice * (item.discountPercent / 100)) * item.quantity).toFixed(2)
+                          : '0,00'}
+                    </td>
+                    <td className="p-1 text-right border-r border-black">{item.lineIva.toFixed(2)}</td>
+                    <td className="p-1 text-right font-bold">{item.lineTotalRounded.toFixed(2)}</td>
+                  </tr>
+                ))}
 
-                  return (
-                    <tr key={idx} className="h-6">
-                      <td className="p-1 text-center border-r border-black font-bold">{idx + 1}</td>
-                      <td className="p-1 border-r border-black font-bold">{item.code}</td>
-                      <td className="p-1 border-r border-black font-sans font-medium">{item.description}</td>
-                      <td className="p-1 text-center border-r border-black font-bold">{item.quantity}</td>
-                      <td className="p-1 text-right border-r border-black">{item.unitPrice.toFixed(2)}</td>
-                      <td className="p-1 text-right border-r border-black">{item.discountPercent > 0 ? `${item.discountPercent}%` : '0,00'}</td>
-                      <td className="p-1 text-right border-r border-black">{lineIva.toFixed(2)}</td>
-                      <td className="p-1 text-right font-bold">{item.total.toFixed(2)}</td>
-                    </tr>
-                  );
-                })}
+                {fillerRows.map((_, idx) => (
+                  <tr key={`filler-${idx}`} className="h-8 print:h-8">
+                    <td className="p-1 text-center border-r border-black">&nbsp;</td>
+                    <td className="p-1 border-r border-black">&nbsp;</td>
+                    <td className="p-1 border-r border-black">&nbsp;</td>
+                    <td className="p-1 text-center border-r border-black">&nbsp;</td>
+                    <td className="p-1 text-right border-r border-black">&nbsp;</td>
+                    <td className="p-1 text-right border-r border-black">&nbsp;</td>
+                    <td className="p-1 text-right border-r border-black">&nbsp;</td>
+                    <td className="p-1 text-right">&nbsp;</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -220,10 +359,10 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
           <p className="text-[9px] print:text-[8px] italic text-gray-700 pt-1">
             Documento processado por computador / SEIP(v1.0) - Licença Nº DAFM1 - 01/04/2018
           </p>
-          {invoice.notes && <p className="text-[10px] print:text-[9px] font-medium">Obs.: {invoice.notes}</p>}
+          {(customNotes || invoice.notes) && <p className="text-[10px] print:text-[9px] font-medium">Obs.: {customNotes || invoice.notes}</p>}
 
           {/* Quadro Resumo do IVA & Totals Box */}
-          <div className="grid grid-cols-12 gap-4 items-start pt-1 font-mono text-[10px] print:text-[9px]">
+          <div className="grid grid-cols-12 gap-4 items-start pt-1 font-mono text-[10px] print:text-[9px] break-inside-avoid">
             {/* Left: Quadro Resumo do IVA */}
             <div className="col-span-6 border border-black rounded overflow-hidden">
               <div className="bg-gray-100 print:bg-transparent font-bold text-center uppercase p-1 border-b border-black text-[9px]">
@@ -241,8 +380,8 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
                 <tbody>
                   <tr>
                     <td className="p-1 text-center border-r border-black">16%</td>
-                    <td className="p-1 text-right border-r border-black font-bold">{(invoice.subtotalLiquido ?? invoice.subtotalBruto ?? 0).toFixed(2)}</td>
-                    <td className="p-1 text-right border-r border-black">{invoice.ivaTotal.toFixed(2)}</td>
+                    <td className="p-1 text-right border-r border-black font-bold">{subtotalDocCalculated.toFixed(2)}</td>
+                    <td className="p-1 text-right border-r border-black">{ivaDocCalculated.toFixed(2)}</td>
                     <td className="p-1 text-left">-</td>
                   </tr>
                 </tbody>
@@ -253,7 +392,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
             <div className="col-span-6 border border-black rounded p-2 space-y-1">
               <div className="flex justify-between">
                 <span>Mercadoria/serviços | subtotal</span>
-                <span className="font-bold">{formatMZN(invoice.subtotalBruto)}</span>
+                <span className="font-bold">{formatMZN(subtotalDocCalculated)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Mão-de-obra</span>
@@ -261,22 +400,22 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
               </div>
               <div className="flex justify-between">
                 <span>Total descontos</span>
-                <span>{formatMZN(invoice.descontoTotal)}</span>
+                <span>{formatMZN(descontoTotalCalculado)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Total Iva</span>
-                <span>{formatMZN(invoice.ivaTotal)}</span>
+                <span>{formatMZN(ivaDocCalculated)}</span>
               </div>
               <div className="flex justify-between text-sm print:text-xs font-black border-t border-black pt-1">
                 <span>Total [MT]</span>
-                <span>{formatMZN(invoice.totalAmount)}</span>
+                <span>{formatMZN(totalDocAmount)}</span>
               </div>
             </div>
           </div>
 
           {/* Total Extenso */}
           <div className="text-[11px] print:text-[10px] font-bold border-t border-gray-300 pt-1">
-            Total Extenso: <span className="underline italic lowercase font-normal">{numberToExtensoMZN(invoice.totalAmount)}</span>
+            Total Extenso: <span className="underline italic lowercase font-normal">{numberToExtensoMZN(totalDocAmount)}</span>
           </div>
 
           {/* Promotional Free Service Banners matching Image 3 Model */}
@@ -288,6 +427,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    window.document.body
   );
 };

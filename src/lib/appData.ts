@@ -6,6 +6,7 @@ import type {
   LedgerRecord,
   PaymentRecord,
   SaleInvoice,
+  SaleItem,
   StockMovement,
   Supplier,
   UserSummary,
@@ -13,6 +14,7 @@ import type {
   UserContext,
   DashboardMetrics,
   ReferenceOption,
+  BankAccount,
 } from '../types';
 import { requireSupabase } from './supabase';
 import { bundleCodesFromRoleCodes } from './responsibilityBundles';
@@ -101,6 +103,136 @@ export async function deleteArticle(id: string): Promise<void> {
     .eq('id', id);
 
   if (error) throw new Error(error.message || 'Falha ao desativar artigo.');
+}
+
+export interface DocumentUpdatePayload {
+  clientName?: string;
+  clientNuit?: string;
+  clientAddress?: string;
+  grandTotal?: number;
+  notes?: string;
+  items?: SaleItem[];
+}
+
+export async function updateDocumentDetails(documentId: string, payload: DocumentUpdatePayload): Promise<void> {
+  const client = requireSupabase();
+
+  const { data: doc, error: fetchErr } = await client
+    .from('documents')
+    .select('id, notes, grand_total, customer_id, customers(name)')
+    .eq('id', documentId)
+    .single();
+
+  if (fetchErr || !doc) throw new Error('Documento não encontrado.');
+
+  const existingNotes = (doc.notes as string) ?? '';
+
+  const currentNameMatch = existingNotes.match(/\[CLIENTE:\s*([^|\]]+)/i);
+  const currentNuitMatch = existingNotes.match(/NUIT:\s*([^|\]]+)/i);
+  const currentAddressMatch = existingNotes.match(/MORADA:\s*([^|\]]+)/i);
+
+  const newName = payload.clientName?.trim() || currentNameMatch?.[1]?.trim() || (doc.customers as any)?.name || 'Cliente Pontual';
+  const newNuit = payload.clientNuit !== undefined ? payload.clientNuit.trim() : (currentNuitMatch?.[1]?.trim() || 'N/A');
+  const newAddress = payload.clientAddress !== undefined ? payload.clientAddress.trim() : (currentAddressMatch?.[1]?.trim() || 'N/A');
+
+  let extraNotes = existingNotes.replace(/\[CLIENTE:[^\]]*\]\s*/i, '').trim();
+  if (payload.notes !== undefined) {
+    extraNotes = payload.notes.trim();
+  }
+
+  const updatedNotes = `[CLIENTE: ${newName} | NUIT: ${newNuit || 'N/A'} | MORADA: ${newAddress || 'N/A'}] ${extraNotes}`.trim();
+
+  let finalGrandTotal = payload.grandTotal;
+
+  // Handle items update in document_lines if items array is provided
+  if (payload.items && payload.items.length > 0) {
+    const calcLineTotal = (i: SaleItem) => {
+      const disc = i.discountPercent || 0;
+      return Math.round(i.quantity * i.unitPrice * (1 - disc / 100) * 100) / 100;
+    };
+
+    const itemsTotal = payload.items.reduce((acc, i) => acc + calcLineTotal(i), 0);
+    finalGrandTotal = Math.round(itemsTotal * 100) / 100;
+
+    // Get company_id via RPC (reliable, not affected by RLS on documents)
+    const companyIdRes = await client.rpc('get_user_company_id');
+    const companyId = companyIdRes.data;
+    if (!companyId) {
+      throw new Error('Não foi possível obter o company_id. Verifique a sua sessão.');
+    }
+
+    // Build new lines first
+    const isUuid = (str?: string) => Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
+
+    const newLines = payload.items.map((item, index) => {
+      const iva = item.ivaPercent || 16;
+      const lineTotal = calcLineTotal(item);
+      const netVal = Math.round((lineTotal / (1 + iva / 100)) * 100) / 100;
+      const taxVal = Math.round((lineTotal - netVal) * 100) / 100;
+      const discVal = Math.round((item.quantity * item.unitPrice * ((item.discountPercent || 0) / 100)) * 100) / 100;
+
+      return {
+        document_id: documentId,
+        company_id: companyId,
+        line_number: index + 1,
+        product_id: isUuid(item.articleId) ? item.articleId : null,
+        product_code_snapshot: item.code || 'DIV',
+        description_snapshot: item.description || item.code || 'Artigo sem descrição',
+        unit_code_snapshot: 'UN',
+        quantity: item.quantity || 1,
+        unit_price: item.unitPrice || 0,
+        discount_percentage: item.discountPercent || 0,
+        discount_amount: discVal,
+        tax_rate_snapshot: iva,
+        net_amount: netVal,
+        tax_amount: taxVal,
+        total_amount: lineTotal,
+      };
+    });
+
+    // Delete existing lines ONLY after new lines are ready
+    const { error: delErr } = await client.from('document_lines').delete().eq('document_id', documentId);
+    if (delErr) {
+      console.error('❌ Error deleting old document_lines:', delErr);
+      throw new Error(`Falha ao remover artigos antigos: ${delErr.message}`);
+    }
+
+    const { error: lineErr } = await client.from('document_lines').insert(newLines);
+    if (lineErr) {
+      console.error('❌ Error inserting document_lines:', lineErr);
+      throw new Error(`Falha ao guardar os artigos editados: ${lineErr.message}`);
+    }
+  }
+
+  const updateFields: Record<string, any> = {
+    notes: updatedNotes,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (finalGrandTotal !== undefined && finalGrandTotal >= 0) {
+    updateFields.grand_total = finalGrandTotal;
+    updateFields.net_total = Math.round((finalGrandTotal / 1.16) * 100) / 100;
+    updateFields.tax_total = Math.round((finalGrandTotal - updateFields.net_total) * 100) / 100;
+    updateFields.outstanding_amount = finalGrandTotal;
+  }
+
+  const { error: updateErr } = await client
+    .from('documents')
+    .update(updateFields)
+    .eq('id', documentId);
+
+  if (updateErr) throw new Error(updateErr.message || 'Falha ao atualizar documento.');
+
+  if (doc.customer_id && payload.clientName?.trim()) {
+    const custUpdate: Record<string, any> = {
+      name: payload.clientName.trim(),
+      updated_at: new Date().toISOString(),
+    };
+    if (payload.clientNuit !== undefined) {
+      custUpdate.tax_number = payload.clientNuit.trim() || null;
+    }
+    await client.from('customers').update(custUpdate).eq('id', doc.customer_id);
+  }
 }
 
 export interface PartyInput {
@@ -314,8 +446,12 @@ export async function createCustomerSale(
     p_payment_term_code: sale.paymentTermCode ?? 'DINHEIRO',
     p_items: sale.items.map((item) => ({
       article_id: item.articleId,
+      code: item.code || 'DIV',
+      description: item.description,
       quantity: item.quantity,
+      unit_price: item.unitPrice || 0,
       discount_percent: item.discountPercent || 0,
+      tax_rate: item.ivaPercent || 16,
     })),
     p_idempotency_key: idempotencyKey,
     p_document_type_code: sale.documentTypeCode ?? 'CUSTOMER_INVOICE',
@@ -377,7 +513,7 @@ export async function createQuotation(
   }
 
   const nextSeq = maxSeq + 1;
-  const docDisplayNumber = `COT-${year}/${String(nextSeq).padStart(6, '0')}`;
+  const docDisplayNumber = `COT-${year}/${String(nextSeq).padStart(3, '0')}`;
 
   const { data: docTypeRes } = await client
     .from('document_types')
@@ -443,19 +579,39 @@ export async function createQuotation(
   }
 
   if (sale.items.length > 0) {
-    const lines = sale.items.map((item) => ({
-      document_id: insertedDoc.id,
-      product_id: item.articleId,
-      product_code_snapshot: item.code,
-      description_snapshot: item.description,
-      quantity: item.quantity,
-      unit_price: item.unitPrice,
-      discount_percentage: item.discountPercent || 0,
-      tax_rate_snapshot: item.ivaPercent || 16,
-      total_amount: item.total,
-    }));
+    const isUuid = (str?: string) => !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
-    await client.from('document_lines').insert(lines);
+    const lines = sale.items.map((item, index) => {
+      const gross = (item.unitPrice || 0) * (item.quantity || 1);
+      const descVal = Math.round((gross * (item.discountPercent || 0) / 100) * 100) / 100;
+      const totalVal = item.total || gross;
+      const netVal = Math.round((totalVal / (1 + (item.ivaPercent || 16) / 100)) * 100) / 100;
+      const taxVal = Math.round((totalVal - netVal) * 100) / 100;
+
+      return {
+        company_id: companyId,
+        document_id: insertedDoc.id,
+        line_number: index + 1,
+        product_id: isUuid(item.articleId) ? item.articleId : null,
+        product_code_snapshot: item.code || '',
+        description_snapshot: item.description || item.code || 'Artigo sem descrição',
+        unit_code_snapshot: 'UN',
+        quantity: item.quantity || 1,
+        unit_price: item.unitPrice || 0,
+        discount_percentage: item.discountPercent || 0,
+        discount_amount: descVal,
+        tax_rate_snapshot: item.ivaPercent || 16,
+        net_amount: netVal,
+        tax_amount: taxVal,
+        total_amount: totalVal,
+      };
+    });
+
+    const { error: lineErr } = await client.from('document_lines').insert(lines);
+    if (lineErr) {
+      console.error('❌ Error inserting quotation lines into document_lines:', lineErr);
+      throw new Error(`Falha ao guardar os artigos da cotação: ${lineErr.message}`);
+    }
   }
 
   return {
@@ -617,7 +773,7 @@ export async function loadAppData(): Promise<AppData> {
         .single(),
       client
         .from('companies')
-        .select('name,tax_number,address,city,country,phone,email,currency')
+        .select('id,name,tax_number,address,city,country,phone,email,currency,bank_bci_account,bank_bci_nib,bank_bim_account,bank_bim_nib,quotation_validity_days,quotation_default_notes,bank_accounts')
         .eq('id', companyIdResult.data)
         .single(),
       client
@@ -625,14 +781,14 @@ export async function loadAppData(): Promise<AppData> {
         .select('id,code,description,min_stock,avg_cost,profit_pct,sale_price_excl,sale_price_incl,tax_code_id,tax_codes(id,code,description,rate),product_categories(id,name),brands(id,name),units_of_measure(id,abbreviation)')
         .eq('is_active', true)
         .order('code')
-        .limit(500),
-      client.from('inventory_balances').select('product_id,quantity').limit(1000),
+        .limit(2000),
+      client.from('inventory_balances').select('product_id,quantity').limit(2000),
       client
         .from('customers')
         .select('id,customer_number,name,tax_number,telephone,email,current_balance,customer_addresses(address_line_1,is_primary)')
         .eq('active', true)
         .order('name')
-        .limit(500),
+        .limit(2000),
       client
         .from('suppliers')
         .select('id,supplier_number,name,tax_number,telephone,email,contact_person,current_balance,supplier_addresses(address_line_1,is_primary)')
@@ -643,17 +799,17 @@ export async function loadAppData(): Promise<AppData> {
         .from('documents')
         .select('id,display_number,document_date,due_date,status,subtotal,discount_total,net_total,tax_total,grand_total,amount_paid,outstanding_amount,salesperson_name,customer_id,supplier_id,customers(customer_number,name,tax_number),suppliers(supplier_number,name,tax_number),payment_terms(code,name),document_types(code,name),document_lines(id,product_id,product_code_snapshot,description_snapshot,quantity,unit_price,discount_percentage,tax_rate_snapshot,total_amount)')
         .order('document_date', { ascending: false })
-        .limit(250),
+        .limit(1000),
       client
         .from('stock_movements')
         .select('id,movement_type,legacy_ref,source_document_id,created_at,quantity_in,quantity_out,unit_cost,products(code,description),warehouses(id,name),user_profiles(full_name)')
         .order('created_at', { ascending: false })
-        .limit(500),
+        .limit(1000),
       client
         .from('payments')
         .select('id,display_number,payment_date,direction,total_amount,allocated_amount,unapplied_amount,status,customers(name),suppliers(name)')
         .order('payment_date', { ascending: false })
-        .limit(500),
+        .limit(2000),
       client
         .from('ledger_entries')
         .select('id,entry_date,party_type,entry_type,debit_amount,credit_amount,outstanding_amount,status,customers(name),suppliers(name)')
@@ -722,6 +878,7 @@ export async function loadAppData(): Promise<AppData> {
   };
 
   const company: CompanyProfile = {
+    id: companyResult.data.id,
     name: companyResult.data.name,
     taxNumber: companyResult.data.tax_number,
     address: companyResult.data.address ?? '',
@@ -730,6 +887,13 @@ export async function loadAppData(): Promise<AppData> {
     phone: companyResult.data.phone ?? '',
     email: companyResult.data.email ?? '',
     currency: companyResult.data.currency ?? 'MZN',
+    bankBciAccount: companyResult.data.bank_bci_account ?? '9109 8531 0001',
+    bankBciNib: companyResult.data.bank_bci_nib ?? '0008 0000 0910 9853 101 80',
+    bankBimAccount: companyResult.data.bank_bim_account ?? '5579 3819',
+    bankBimNib: companyResult.data.bank_bim_nib ?? '0001 0000 0005 5793 8195 7',
+    bankAccounts: (companyResult.data.bank_accounts || []) as BankAccount[],
+    quotationValidityDays: companyResult.data.quotation_validity_days ?? '7 dias',
+    quotationDefaultNotes: companyResult.data.quotation_default_notes ?? 'Oferta de Nitrogénio e Montagem/Balanceamento Gratuito.',
   };
 
   const stockByProduct = new Map<string, number>();
@@ -805,37 +969,64 @@ export async function loadAppData(): Promise<AppData> {
     };
   });
 
-  const sales: SaleInvoice[] = (documentsResult.data ?? [])
-    .filter((row: Row) => Boolean(row.customer_id))
-    .map((row: Row) => {
+  const sales: SaleInvoice[] = (documentsResult.data ?? []).map((row: Row) => {
     const customer = relation(row.customers);
     const paymentTerm = relation(row.payment_terms);
     const docType = relation(row.document_types);
     const isCot = row.display_number?.startsWith('COT') || row.display_number?.startsWith('CO/');
     const isGr = row.display_number?.startsWith('GR');
     const isVd = row.display_number?.startsWith('VD');
+    const notesStr = (row.notes as string) ?? '';
+    const notesNameMatch = notesStr.match(/\[CLIENTE:\s*([^|\]]+)/i);
+    const customNameFromNotes = notesNameMatch?.[1]?.trim();
+    const resolvedClientName = (customNameFromNotes && customNameFromNotes.toLowerCase() !== 'cliente pontual' && customNameFromNotes.toLowerCase() !== 'cliente final')
+      ? customNameFromNotes
+      : (customer?.name ?? 'Cliente Pontual');
+
+    const notesNuitMatch = notesStr.match(/NUIT:\s*([^|\]]+)/i);
+    const customNuitFromNotes = notesNuitMatch?.[1]?.trim();
+    const resolvedClientNuit = (customNuitFromNotes && customNuitFromNotes !== 'N/A')
+      ? customNuitFromNotes
+      : (customer?.tax_number ?? '');
+
+    const notesAddressMatch = notesStr.match(/MORADA:\s*([^|\]]+)/i);
+    const customAddressFromNotes = notesAddressMatch?.[1]?.trim();
+    const resolvedClientAddress = (customAddressFromNotes && customAddressFromNotes !== 'N/A')
+      ? customAddressFromNotes
+      : (clients.find((client) => client.id === row.customer_id)?.address ?? '');
+
     const docTypeCode = docType?.code || (isCot ? 'CUSTOMER_QUOTATION' : isGr ? 'CUSTOMER_DELIVERY_NOTE' : isVd ? 'CASH_SALE' : 'CUSTOMER_INVOICE');
+
     return {
       id: row.id,
       documentTypeCode: docTypeCode,
       docNumber: row.display_number ?? 'Rascunho',
       date: row.document_date,
-      clientName: customer?.name ?? 'Cliente não identificado',
-      clientNuit: customer?.tax_number ?? '',
-      clientAddress: clients.find((client) => client.id === row.customer_id)?.address ?? '',
+      clientName: resolvedClientName,
+      clientNuit: resolvedClientNuit,
+      clientAddress: resolvedClientAddress,
       paymentMethod: paymentTerm?.name ?? '',
       paymentTermCode: paymentTerm?.code ?? undefined,
       sellerName: row.salesperson_name ?? '',
-      items: ((row.document_lines ?? []) as Row[]).map((line) => ({
-        articleId: line.product_id ?? line.id,
-        code: line.product_code_snapshot ?? '',
-        description: line.description_snapshot,
-        quantity: numberValue(line.quantity),
-        unitPrice: numberValue(line.unit_price),
-        discountPercent: numberValue(line.discount_percentage),
-        ivaPercent: numberValue(line.tax_rate_snapshot),
-        total: numberValue(line.total_amount),
-      })),
+      items: ((row.document_lines ?? []) as Row[]).map((line) => {
+        const qty = numberValue(line.quantity) || 1;
+        const tot = numberValue(line.total_amount);
+        const disc = numberValue(line.discount_percentage) || 0;
+        const priceWithIva = (tot > 0 && qty > 0)
+          ? Math.round((tot / (qty * (1 - disc / 100))) * 100) / 100
+          : numberValue(line.unit_price);
+
+        return {
+          articleId: line.product_id ?? line.id,
+          code: line.product_code_snapshot ?? '',
+          description: line.description_snapshot,
+          quantity: qty,
+          unitPrice: priceWithIva,
+          discountPercent: disc,
+          ivaPercent: numberValue(line.tax_rate_snapshot) || 16,
+          total: tot > 0 ? tot : Math.round(qty * priceWithIva * (1 - disc / 100) * 100) / 100,
+        };
+      }),
       subtotalBruto: numberValue(row.subtotal),
       descontoTotal: numberValue(row.discount_total),
       ivaTotal: numberValue(row.tax_total),
@@ -907,9 +1098,13 @@ export async function loadAppData(): Promise<AppData> {
 
     const matchedDoc = documents.find((d) => d.id === row.source_document_id);
     const isEntrada = numberValue(row.quantity_in) > 0;
-    const computedRef = matchedDoc?.displayNumber 
-      || row.legacy_ref 
-      || (isEntrada ? 'Entrada Directa' : 'Saída Directa');
+    const isOpeningOrMigration = row.movement_type === 'opening_stock' || (row.legacy_ref && (row.legacy_ref.includes('Migração') || row.legacy_ref.includes('Pos.zip') || row.legacy_ref.startsWith('STK-')));
+
+    const computedRef = matchedDoc
+      ? `${matchedDoc.typeName} ${matchedDoc.displayNumber}`
+      : isOpeningOrMigration
+        ? (isEntrada ? 'Entrada Inicial (Migração POS)' : 'Saída Inicial (Migração POS)')
+        : row.legacy_ref || (isEntrada ? 'Entrada Directa por Guia' : 'Saída Directa por Guia');
 
     const item: StockMovement = {
       id: row.id,
@@ -932,7 +1127,35 @@ export async function loadAppData(): Promise<AppData> {
     return item;
   });
 
-  const movements: StockMovement[] = rawMovements.filter((m): m is StockMovement => m !== null);
+  const baseMovements: StockMovement[] = rawMovements.filter((m): m is StockMovement => m !== null);
+
+  // Synthesize stock exit movements from customer sales & delivery notes
+  const saleExitMovements: StockMovement[] = [];
+  sales.forEach((s) => {
+    if (s.documentTypeCode === 'CUSTOMER_QUOTATION' || s.status === 'Cancelada') return;
+    s.items.forEach((item, idx) => {
+      if (!item.code || item.quantity <= 0) return;
+      const docName = s.documentTypeCode === 'CASH_SALE' ? 'Venda a Dinheiro' : s.documentTypeCode === 'CUSTOMER_DELIVERY_NOTE' ? 'Guia de Remessa' : 'Factura';
+      saleExitMovements.push({
+        id: `sale-mov-${s.id}-${idx}`,
+        type: 'saida',
+        docRef: `${docName} ${s.docNumber}`,
+        sourceDocumentId: s.id,
+        docTypeCode: s.documentTypeCode,
+        docTypeName: docName,
+        date: s.date,
+        articleCode: item.code,
+        articleDescription: item.description,
+        quantity: item.quantity,
+        entityName: s.clientName,
+        operator: s.sellerName || 'Operador de Caixa',
+        reason: 'Venda / Emissão de Documento',
+        unitCost: item.unitPrice,
+      });
+    });
+  });
+
+  const movements: StockMovement[] = [...baseMovements, ...saleExitMovements];
 
   const payments: PaymentRecord[] = (paymentsResult.data ?? []).map((row: Row) => ({
     id: row.id,
@@ -1149,4 +1372,28 @@ export async function cancelFinancialAdvice(
 
   if (error) throw new Error(error.message || 'Falha ao cancelar o aviso financeiro na base de dados.');
   return Boolean(data);
+}
+
+export async function saveCompanyQuotationSettings(companyId: string, settings: {
+  bankBciAccount: string;
+  bankBciNib: string;
+  bankBimAccount: string;
+  bankBimNib: string;
+  bankAccounts?: BankAccount[];
+  quotationValidityDays: string;
+  quotationDefaultNotes: string;
+}): Promise<void> {
+  const client = requireSupabase();
+  const targetId = companyId || 'a0000000-0000-0000-0000-000000000001';
+  const { error } = await client.from('companies').update({
+    bank_bci_account: settings.bankBciAccount,
+    bank_bci_nib: settings.bankBciNib,
+    bank_bim_account: settings.bankBimAccount,
+    bank_bim_nib: settings.bankBimNib,
+    bank_accounts: settings.bankAccounts,
+    quotation_validity_days: settings.quotationValidityDays,
+    quotation_default_notes: settings.quotationDefaultNotes,
+  }).eq('id', targetId);
+
+  if (error) throw new Error(error.message || 'Falha ao salvar as configurações de cotação.');
 }

@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import type { CompanyProfile, DocumentRecord, PaymentRecord } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
 
@@ -26,13 +27,21 @@ export function PrintRecordModal({
   const partyName = document?.partyName ?? payment?.partyName ?? '';
   const total = document?.grandTotal ?? payment?.totalAmount ?? 0;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-3xl overflow-hidden rounded-lg bg-white text-black shadow-2xl print:shadow-none print:max-w-none print:w-full print:rounded-none">
+  const handlePrint = () => {
+    window.document.body.classList.add('printing-modal');
+    window.print();
+    setTimeout(() => {
+      window.document.body.classList.remove('printing-modal');
+    }, 500);
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm print:bg-white print:p-0 print:static print:block print:inset-auto print:backdrop-blur-none print-document-modal">
+      <div className="w-full max-w-3xl overflow-hidden rounded-lg bg-white text-black shadow-2xl print:shadow-none print:max-w-none print:w-full print:rounded-none print:p-0 print:m-0 print:border-none">
         <div className="flex items-center justify-between bg-[#001e40] px-6 py-3 text-white print:hidden">
           <strong className="text-sm">Visualização de impressão — {number}</strong>
           <div className="flex gap-2">
-            <button onClick={() => window.print()} className="rounded bg-[#006e25] px-4 py-2 text-xs font-bold">
+            <button onClick={handlePrint} className="rounded bg-[#006e25] px-4 py-2 text-xs font-bold">
               Imprimir
             </button>
             <button onClick={onClose} aria-label="Fechar impressão" className="px-2">×</button>
@@ -92,6 +101,7 @@ export function PrintRecordModal({
           </footer>
         </article>
       </div>
-    </div>
+    </div>,
+    window.document.body
   );
 }

@@ -36,9 +36,25 @@ export const Inventory: React.FC<InventoryProps> = ({
   const [localSearch, setLocalSearch] = useState<string>('');
   const [codeFrom, setCodeFrom] = useState<string>('');
   const [codeTo, setCodeTo] = useState<string>('');
+  const [stockFilter, setStockFilter] = useState<'ALL' | 'WITH_STOCK' | 'NO_STOCK'>('ALL');
+  const [sortBy, setSortBy] = useState<'CODE' | 'MOST_SOLD' | 'STOCK_ASC' | 'STOCK_DESC'>('CODE');
   const [ledgerArticle, setLedgerArticle] = useState<Article | null>(null);
 
   const searchTerm = (globalSearch || localSearch).toLowerCase();
+
+  // Aggregate quantity sold by article code from sales
+  const totalSoldByCode = React.useMemo(() => {
+    const map = new Map<string, number>();
+    sales.forEach((s) => {
+      if (s.documentTypeCode === 'CUSTOMER_QUOTATION' || s.status === 'Cancelada') return;
+      s.items.forEach((item) => {
+        if (!item.code) return;
+        const key = item.code.trim().toUpperCase();
+        map.set(key, (map.get(key) ?? 0) + item.quantity);
+      });
+    });
+    return map;
+  }, [sales]);
 
   const categoryPills = React.useMemo(() => {
     const set = new Set<string>();
@@ -52,23 +68,47 @@ export const Inventory: React.FC<InventoryProps> = ({
     return [{ id: 'todos', label: 'Todos' }, ...dynamicList];
   }, [articles]);
 
-  const filteredArticles = articles.filter((art) => {
-    const matchesCategory = selectedCategory === 'todos' || art.category.toLowerCase() === selectedCategory.toLowerCase();
-    const matchesSearch =
-      art.code.toLowerCase().includes(searchTerm) ||
-      art.description.toLowerCase().includes(searchTerm) ||
-      (art.brand && art.brand.toLowerCase().includes(searchTerm));
-    
-    let matchesCodeRange = true;
-    if (codeFrom.trim()) {
-      matchesCodeRange = matchesCodeRange && art.code.toUpperCase() >= codeFrom.trim().toUpperCase();
-    }
-    if (codeTo.trim()) {
-      matchesCodeRange = matchesCodeRange && art.code.toUpperCase() <= codeTo.trim().toUpperCase();
+  const filteredArticles = React.useMemo(() => {
+    let list = articles.filter((art) => {
+      const matchesCategory = selectedCategory === 'todos' || art.category.toLowerCase() === selectedCategory.toLowerCase();
+      const matchesSearch =
+        art.code.toLowerCase().includes(searchTerm) ||
+        art.description.toLowerCase().includes(searchTerm) ||
+        (art.brand && art.brand.toLowerCase().includes(searchTerm));
+
+      let matchesCodeRange = true;
+      if (codeFrom.trim()) {
+        matchesCodeRange = matchesCodeRange && art.code.toUpperCase() >= codeFrom.trim().toUpperCase();
+      }
+      if (codeTo.trim()) {
+        matchesCodeRange = matchesCodeRange && art.code.toUpperCase() <= codeTo.trim().toUpperCase();
+      }
+
+      let matchesStock = true;
+      if (stockFilter === 'WITH_STOCK') {
+        matchesStock = art.stock > 0;
+      } else if (stockFilter === 'NO_STOCK') {
+        matchesStock = art.stock <= 0;
+      }
+
+      return matchesCategory && matchesSearch && matchesCodeRange && matchesStock;
+    });
+
+    const sortedList = [...list];
+    if (sortBy === 'MOST_SOLD') {
+      sortedList.sort((a, b) => {
+        const soldA = totalSoldByCode.get(a.code.trim().toUpperCase()) ?? 0;
+        const soldB = totalSoldByCode.get(b.code.trim().toUpperCase()) ?? 0;
+        return soldB - soldA;
+      });
+    } else if (sortBy === 'STOCK_ASC') {
+      sortedList.sort((a, b) => a.stock - b.stock);
+    } else if (sortBy === 'STOCK_DESC') {
+      sortedList.sort((a, b) => b.stock - a.stock);
     }
 
-    return matchesCategory && matchesSearch && matchesCodeRange;
-  });
+    return sortedList;
+  }, [articles, selectedCategory, searchTerm, codeFrom, codeTo, stockFilter, sortBy, totalSoldByCode]);
 
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -160,37 +200,72 @@ export const Inventory: React.FC<InventoryProps> = ({
           </div>
         </div>
 
-        {/* Code Range Filter */}
-        <div className="flex items-center space-x-3 text-xs bg-[#f8f9fa] dark:bg-[#282c2e] p-2 rounded border border-[#c3c6d1] dark:border-[#43474f]">
-          <span className="font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase flex items-center">
-            <span className="material-symbols-outlined text-sm mr-1">filter_alt</span> Intervalo de Códigos:
-          </span>
-          <div className="flex items-center space-x-2">
-            <label className="font-bold text-gray-500">De:</label>
-            <input
-              type="text"
-              value={codeFrom}
-              onChange={(e) => setCodeFrom(e.target.value)}
-              placeholder="Ex: ART-001"
-              className="p-1 border border-[#c3c6d1] dark:border-[#43474f] rounded uppercase w-28 dark:bg-[#1f2325]"
-            />
+        {/* Filters & Sorting Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs bg-[#f8f9fa] dark:bg-[#282c2e] p-2.5 rounded border border-[#c3c6d1] dark:border-[#43474f]">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Code Range */}
+            <div className="flex items-center space-x-1.5">
+              <span className="font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase flex items-center">
+                <span className="material-symbols-outlined text-sm mr-1">filter_alt</span> Código:
+              </span>
+              <label className="font-bold text-gray-500">De:</label>
+              <input
+                type="text"
+                value={codeFrom}
+                onChange={(e) => setCodeFrom(e.target.value)}
+                placeholder="Ex: ART-001"
+                className="p-1 border border-[#c3c6d1] dark:border-[#43474f] rounded uppercase w-24 dark:bg-[#1f2325]"
+              />
+              <label className="font-bold text-gray-500">Até:</label>
+              <input
+                type="text"
+                value={codeTo}
+                onChange={(e) => setCodeTo(e.target.value)}
+                placeholder="Ex: ART-999"
+                className="p-1 border border-[#c3c6d1] dark:border-[#43474f] rounded uppercase w-24 dark:bg-[#1f2325]"
+              />
+            </div>
+
+            {/* Stock Filter */}
+            <div className="flex items-center space-x-1.5 border-l pl-3 border-[#c3c6d1] dark:border-[#43474f]">
+              <span className="font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase flex items-center">
+                <span className="material-symbols-outlined text-sm mr-1">inventory_2</span> Stock:
+              </span>
+              <select
+                value={stockFilter}
+                onChange={(e) => setStockFilter(e.target.value as any)}
+                className="p-1 border border-[#c3c6d1] dark:border-[#43474f] rounded font-bold dark:bg-[#1f2325]"
+              >
+                <option value="ALL">Todos os Artigos</option>
+                <option value="NO_STOCK">Apenas Sem Stock (Agotados)</option>
+                <option value="WITH_STOCK">Apenas Com Stock (&gt; 0)</option>
+              </select>
+            </div>
+
+            {/* Sort Filter */}
+            <div className="flex items-center space-x-1.5 border-l pl-3 border-[#c3c6d1] dark:border-[#43474f]">
+              <span className="font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase flex items-center">
+                <span className="material-symbols-outlined text-sm mr-1">sort</span> Ordenar:
+              </span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="p-1 border border-[#c3c6d1] dark:border-[#43474f] rounded font-bold dark:bg-[#1f2325] text-emerald-700 dark:text-emerald-400"
+              >
+                <option value="CODE">Por Código de Artigo</option>
+                <option value="MOST_SOLD">🔥 Mais Vendidos Primeiro</option>
+                <option value="STOCK_ASC">Stock Menor → Maior</option>
+                <option value="STOCK_DESC">Stock Maior → Menor</option>
+              </select>
+            </div>
           </div>
-          <div className="flex items-center space-x-2">
-            <label className="font-bold text-gray-500">Até:</label>
-            <input
-              type="text"
-              value={codeTo}
-              onChange={(e) => setCodeTo(e.target.value)}
-              placeholder="Ex: ART-999"
-              className="p-1 border border-[#c3c6d1] dark:border-[#43474f] rounded uppercase w-28 dark:bg-[#1f2325]"
-            />
-          </div>
-          {(codeFrom || codeTo) && (
+
+          {(codeFrom || codeTo || stockFilter !== 'ALL' || sortBy !== 'CODE') && (
             <button
-              onClick={() => { setCodeFrom(''); setCodeTo(''); }}
+              onClick={() => { setCodeFrom(''); setCodeTo(''); setStockFilter('ALL'); setSortBy('CODE'); }}
               className="text-[#ba1a1a] font-bold hover:underline"
             >
-              Limpar Filtro
+              Limpar Filtros
             </button>
           )}
         </div>
@@ -207,6 +282,7 @@ export const Inventory: React.FC<InventoryProps> = ({
                 <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-center">Un.</th>
                 <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">Stock Mín.</th>
                 <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">Existência</th>
+                <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right text-purple-700 dark:text-purple-300">Qtd. Vendida</th>
                 {canViewCost && <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">P. Custo</th>}
                 {canViewCost && <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">Custo c/IVA</th>}
                 {canViewCost && <th className="px-3 py-3 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">Valor Total</th>}
@@ -249,6 +325,9 @@ export const Inventory: React.FC<InventoryProps> = ({
                       <span className={isCritical ? 'text-[#ba1a1a]' : 'text-[#006e25]'}>
                         {art.stock}
                       </span>
+                    </td>
+                    <td className="px-3 py-2.5 border-r border-[#c3c6d1] dark:border-[#43474f] text-right font-extrabold text-purple-700 dark:text-purple-400">
+                      {totalSoldByCode.get(art.code.trim().toUpperCase()) ? totalSoldByCode.get(art.code.trim().toUpperCase()) : '—'}
                     </td>
                     {canViewCost && <td className="px-3 py-2.5 border-r border-[#c3c6d1] dark:border-[#43474f] text-right">
                       {art.costPrice.toFixed(2)}

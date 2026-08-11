@@ -12,6 +12,7 @@ interface QuotationProps {
   onCreateQuotation: (quotation: SaleInvoice) => Promise<SaleInvoice>;
   onOpenPrintModal: (doc: SaleInvoice) => void;
   operatorName: string;
+  onUpdateDocument?: (documentId: string, payload: { clientName?: string; clientNuit?: string; clientAddress?: string; grandTotal?: number; notes?: string; items?: SaleItem[] }) => Promise<void>;
 }
 
 export const Quotation: React.FC<QuotationProps> = ({
@@ -22,6 +23,7 @@ export const Quotation: React.FC<QuotationProps> = ({
   onCreateQuotation,
   onOpenPrintModal,
   operatorName,
+  onUpdateDocument,
 }) => {
   const [docStatus, setDocStatus] = useState<'PREPARATION' | 'CONFIRMED' | 'READ_ONLY'>('PREPARATION');
   const [docNumber, setDocNumber] = useState('A atribuir ao emitir');
@@ -37,6 +39,7 @@ export const Quotation: React.FC<QuotationProps> = ({
 
   // Item Entry State
   const [selectedArticleId, setSelectedArticleId] = useState('');
+  const [customDescription, setCustomDescription] = useState('');
   const [inputQty, setInputQty] = useState(1);
   const [inputUnitPrice, setInputUnitPrice] = useState(0);
   const [inputDiscount, setInputDiscount] = useState(0);
@@ -53,6 +56,75 @@ export const Quotation: React.FC<QuotationProps> = ({
   const [confirmedQuotationRecord, setConfirmedQuotationRecord] = useState<SaleInvoice | null>(null);
   const [sessionQuotations, setSessionQuotations] = useState<SaleInvoice[]>([]);
 
+  // Edit Modal State for Quotations History
+  const [editingQuotation, setEditingQuotation] = useState<{ id: string; docNumber: string } | null>(null);
+  const [editClientName, setEditClientName] = useState('');
+  const [editClientNuit, setEditClientNuit] = useState('');
+  const [editClientAddress, setEditClientAddress] = useState('');
+  const [editGrandTotal, setEditGrandTotal] = useState(0);
+  const [editNotes, setEditNotes] = useState('');
+  const [editItems, setEditItems] = useState<SaleItem[]>([]);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editError, setEditError] = useState('');
+
+  // Auto-sync editGrandTotal when editItems changes
+  useEffect(() => {
+    if (editingQuotation) {
+      const grand = editItems.reduce(
+        (acc, item) => acc + Math.round((item.quantity || 1) * (item.unitPrice || 0) * (1 - (item.discountPercent || 0) / 100) * 100) / 100,
+        0
+      );
+      setEditGrandTotal(Math.round(grand * 100) / 100);
+    }
+  }, [editItems, editingQuotation]);
+
+  const handleOpenEditQuotation = (doc: { id: string; docNumber: string; clientName: string; clientNuit?: string; clientAddress?: string; totalAmount?: number; notes?: string; items?: SaleItem[] }) => {
+    setEditingQuotation({ id: doc.id, docNumber: doc.docNumber });
+    setEditClientName(doc.clientName || '');
+    setEditClientNuit(doc.clientNuit || '');
+    setEditClientAddress(doc.clientAddress || '');
+    setEditGrandTotal(doc.totalAmount || 0);
+    setEditNotes(doc.notes || '');
+    
+    let loadedItems: SaleItem[] = doc.items && doc.items.length > 0 ? JSON.parse(JSON.stringify(doc.items)) : [];
+    if (loadedItems.length === 0 && (doc.totalAmount || 0) > 0) {
+      loadedItems = [{
+        articleId: `custom-${Date.now()}`,
+        code: 'DIV',
+        description: 'Artigo / Serviço Geral',
+        quantity: 1,
+        unitPrice: doc.totalAmount || 0,
+        discountPercent: 0,
+        discountAmount: 0,
+        ivaPercent: 16,
+        total: doc.totalAmount || 0,
+      }];
+    }
+    setEditItems(loadedItems);
+    setEditError('');
+  };
+
+  const handleExecuteSaveEditQuotation = async () => {
+    if (!editingQuotation || !onUpdateDocument || isSavingEdit) return;
+    try {
+      setIsSavingEdit(true);
+      setEditError('');
+      await onUpdateDocument(editingQuotation.id, {
+        clientName: editClientName.trim(),
+        clientNuit: editClientNuit.trim(),
+        clientAddress: editClientAddress.trim(),
+        grandTotal: Number(editGrandTotal),
+        notes: editNotes.trim(),
+        items: editItems,
+      });
+      setEditingQuotation(null);
+    } catch (err: any) {
+      setEditError(err?.message || 'Falha ao guardar alterações da cotação.');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
   // History Table Filters & Pagination
   const [historyDateFilter, setHistoryDateFilter] = useState('');
   const [historyNameFilter, setHistoryNameFilter] = useState('');
@@ -66,6 +138,7 @@ export const Quotation: React.FC<QuotationProps> = ({
   const clientNameInputRef = useRef<HTMLInputElement>(null);
   const clientNuitInputRef = useRef<HTMLInputElement>(null);
   const clientAddressInputRef = useRef<HTMLInputElement>(null);
+  const customDescriptionInputRef = useRef<HTMLInputElement>(null);
   const qtyInputRef = useRef<HTMLInputElement>(null);
   const unitPriceInputRef = useRef<HTMLInputElement>(null);
   const discountInputRef = useRef<HTMLInputElement>(null);
@@ -129,18 +202,32 @@ export const Quotation: React.FC<QuotationProps> = ({
     }
   };
 
+  const getArticlePriceWithIva = (art: Article): number => {
+    if (art.sellPriceWithIva && art.sellPriceWithIva > 0) {
+      return art.sellPriceWithIva;
+    }
+    if (art.sellPrice && art.sellPrice > 0) {
+      return art.sellPrice;
+    }
+    return 0;
+  };
+
   const handleArticleSelect = (id: string) => {
     setSelectedArticleId(id);
     const art = articles.find((a) => a.id === id);
     if (art) {
+      setCustomDescription(art.description);
       setInputIva(art.taxRate ?? 16);
-      setInputUnitPrice(art.sellPrice);
+      setInputUnitPrice(getArticlePriceWithIva(art));
     }
   };
 
   const handleAfterArticleSelect = () => {
     setTimeout(() => {
-      if (qtyInputRef.current) {
+      if (customDescriptionInputRef.current) {
+        customDescriptionInputRef.current.focus();
+        customDescriptionInputRef.current.select();
+      } else if (qtyInputRef.current) {
         qtyInputRef.current.focus();
         qtyInputRef.current.select();
       }
@@ -151,34 +238,38 @@ export const Quotation: React.FC<QuotationProps> = ({
     if (docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY') return;
 
     const art = articles.find((a) => a.id === selectedArticleId);
-    if (!art || inputQty <= 0) return;
+    const finalDesc = customDescription.trim() || art?.description || '';
+    if (!finalDesc || inputQty <= 0) return;
 
-    const basePrice = inputUnitPrice > 0 ? inputUnitPrice : art.sellPrice;
-    const discountedPrice = basePrice * (1 - inputDiscount / 100);
-    const itemTotalWithIva = discountedPrice * inputQty * (1 + inputIva / 100);
+    const priceWithIva = inputUnitPrice > 0 ? inputUnitPrice : (art ? getArticlePriceWithIva(art) : 0);
+    const grossTotalWithIva = priceWithIva * inputQty;
+    const itemTotalWithIva = Math.round(Math.max(0, grossTotalWithIva - inputDiscount));
+    const unitPriceExclIva = inputQty > 0 ? (itemTotalWithIva / inputQty) / (1 + inputIva / 100) : 0;
+    const discountPct = grossTotalWithIva > 0 ? Math.round((inputDiscount / grossTotalWithIva) * 10000) / 100 : 0;
 
     const newItem: SaleItem = {
-      articleId: art.id,
-      code: art.code,
-      description: art.description,
+      articleId: art?.id || `custom-${Date.now()}`,
+      code: art?.code || 'DIV',
+      description: finalDesc,
       quantity: inputQty,
-      unitPrice: basePrice,
-      discountPercent: inputDiscount,
+      unitPrice: Math.round(unitPriceExclIva * 100) / 100,
+      discountPercent: discountPct,
+      discountAmount: inputDiscount,
       ivaPercent: inputIva,
-      total: Math.round(itemTotalWithIva * 100) / 100,
+      total: itemTotalWithIva,
     };
 
     setItems((current) => [...current, newItem]);
     setInputQty(1);
     setInputDiscount(0);
     setSelectedArticleId('');
+    setCustomDescription('');
     setInputUnitPrice(0);
 
     setTimeout(() => {
-      const searchInput = document.querySelector<HTMLInputElement>('input[placeholder*="Pesquisar artigo"]');
+      const searchInput = document.querySelector<HTMLInputElement>('input[placeholder*="Pesquisar catálogo"]');
       if (searchInput) {
         searchInput.focus();
-        searchInput.select();
       }
     }, 40);
   };
@@ -188,20 +279,15 @@ export const Quotation: React.FC<QuotationProps> = ({
     setItems((current) => current.filter((_, i) => i !== index));
   };
 
-  const subtotalBruto = items.reduce((acc, item) => acc + item.unitPrice * item.quantity, 0);
-  const descontoLinhas = items.reduce((acc, item) => acc + item.unitPrice * item.quantity * (item.discountPercent / 100), 0);
-  const totalAfterLineDiscount = subtotalBruto - descontoLinhas;
-  const descontoGeralValor = totalAfterLineDiscount * (generalDiscount / 100);
-  const subtotalLiquido = totalAfterLineDiscount - descontoGeralValor;
+  const grossTotalWithIva = items.reduce((acc, item) => acc + item.total, 0);
+  const descontoGeralValor = generalDiscount || 0;
+  const netTotalWithIva = Math.max(0, grossTotalWithIva - descontoGeralValor);
 
-  const ivaTotal = items.reduce((acc, item) => {
-    const itemNetAfterLineDiscount = item.unitPrice * item.quantity * (1 - item.discountPercent / 100);
-    const itemShareOfGeneralDiscount = (itemNetAfterLineDiscount / (totalAfterLineDiscount || 1)) * descontoGeralValor;
-    const itemTaxableBase = itemNetAfterLineDiscount - itemShareOfGeneralDiscount;
-    return acc + itemTaxableBase * (item.ivaPercent / 100);
-  }, 0);
-
-  const totalFinalAmount = Math.round((subtotalLiquido + ivaTotal) * 100) / 100;
+  const subtotalBruto = items.reduce((acc, item) => acc + (Math.round((item.total / (1 + (item.ivaPercent || 16) / 100)) * 100) / 100), 0);
+  const descontoLinhas = items.reduce((acc, item) => acc + (item.discountAmount || 0), 0);
+  const subtotalLiquido = Math.round((netTotalWithIva / 1.16) * 100) / 100;
+  const ivaTotal = Math.round((netTotalWithIva - subtotalLiquido) * 100) / 100;
+  const totalFinalAmount = netTotalWithIva;
 
   const handleSaveQuotation = async (shouldPrint = false) => {
     if (docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY') {
@@ -248,8 +334,11 @@ export const Quotation: React.FC<QuotationProps> = ({
       setConfirmedQuotationRecord(savedQuotation);
       setDocStatus('CONFIRMED');
 
-      // Add to session list so it appears in table below immediately
+      // Add to session list and reset history view to Page 1 immediately
       setSessionQuotations((prev) => [savedQuotation, ...prev]);
+      setHistoryPage(1);
+      setHistoryNameFilter('');
+      setHistoryCodeFilter('');
 
       if (shouldPrint) {
         onOpenPrintModal(savedQuotation);
@@ -317,6 +406,7 @@ export const Quotation: React.FC<QuotationProps> = ({
       status: string;
       items: SaleItem[];
       sellerName: string;
+      notes?: string;
       rawSale?: SaleInvoice;
       rawDoc?: DocumentRecord;
     }> = [];
@@ -339,6 +429,7 @@ export const Quotation: React.FC<QuotationProps> = ({
         status: s.status || 'Emitida',
         items: s.items || [],
         sellerName: s.sellerName || operatorName,
+        notes: s.notes || '',
         rawSale: s,
       });
     });
@@ -371,6 +462,7 @@ export const Quotation: React.FC<QuotationProps> = ({
             status: s.status || 'Emitida',
             items: s.items || [],
             sellerName: s.sellerName || operatorName,
+            notes: s.notes || '',
             rawSale: s,
           });
         }
@@ -404,6 +496,9 @@ export const Quotation: React.FC<QuotationProps> = ({
           }
         }
 
+        const matchingSale = sales.find((s) => s.id === d.id || s.docNumber === d.displayNumber);
+        const docItems = matchingSale?.items && matchingSale.items.length > 0 ? matchingSale.items : [];
+
         list.push({
           id: d.id,
           docNumber: d.displayNumber,
@@ -414,14 +509,21 @@ export const Quotation: React.FC<QuotationProps> = ({
           clientAddress: address,
           totalAmount: d.grandTotal,
           status: 'Emitida',
-          items: [],
+          items: docItems,
           sellerName: d.salespersonName || operatorName,
+          notes: d.notes || '',
           rawDoc: d,
+          rawSale: matchingSale,
         });
       }
     });
 
-    return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return list.sort((a, b) => {
+      const timeA = new Date(a.date).getTime();
+      const timeB = new Date(b.date).getTime();
+      if (timeB !== timeA) return timeB - timeA;
+      return b.docNumber.localeCompare(a.docNumber, undefined, { numeric: true, sensitivity: 'base' });
+    });
   }, [sessionQuotations, sales, documents, clients, operatorName]);
 
   // Filtered Quotation History by Date, Name/Nuit, or Code/DocNo
@@ -453,7 +555,10 @@ export const Quotation: React.FC<QuotationProps> = ({
   }, [filteredQuotations, historyPage, historyPageSize]);
 
   const handlePrintQuotationFromHistory = (item: (typeof quotationHistory)[0]) => {
-    if (item.rawSale) {
+    const matchingSale = sales.find((s) => s.id === item.id || s.docNumber === item.docNumber);
+    const resolvedItems = (item.items && item.items.length > 0) ? item.items : (matchingSale?.items || []);
+
+    if (item.rawSale && item.rawSale.items && item.rawSale.items.length > 0) {
       onOpenPrintModal(item.rawSale);
     } else {
       const saleFormat: SaleInvoice = {
@@ -467,7 +572,7 @@ export const Quotation: React.FC<QuotationProps> = ({
         clientAddress: item.clientAddress,
         paymentMethod: 'CASH',
         sellerName: item.sellerName || operatorName,
-        items: item.items,
+        items: resolvedItems,
         subtotalBruto: item.totalAmount,
         descontoTotal: 0,
         subtotalLiquido: item.totalAmount,
@@ -656,8 +761,8 @@ export const Quotation: React.FC<QuotationProps> = ({
         </span>
 
         <div className="grid grid-cols-12 gap-2 items-end">
-          <div className="col-span-12 md:col-span-5">
-            <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[10px]">Artigo</label>
+          <div className="col-span-12 md:col-span-3">
+            <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[10px]">Do Stock (Opção)</label>
             <ArticleSearchSelect
               articles={articles}
               selectedArticleId={selectedArticleId}
@@ -665,7 +770,27 @@ export const Quotation: React.FC<QuotationProps> = ({
               onAfterSelect={handleAfterArticleSelect}
               searchByCodeOnly={false}
               disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
-              placeholder="Pesquisar artigo por código ou descrição…"
+              placeholder="Pesquisar catálogo…"
+            />
+          </div>
+
+          <div className="col-span-12 md:col-span-3">
+            <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[10px]">Descrição / Serviço *</label>
+            <input
+              ref={customDescriptionInputRef}
+              type="text"
+              placeholder="Escreva artigo ou serviço sem stock..."
+              disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
+              value={customDescription}
+              onChange={(e) => setCustomDescription(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  qtyInputRef.current?.focus();
+                  qtyInputRef.current?.select();
+                }
+              }}
+              className="w-full bg-white dark:bg-[#282c2e] dark:text-white border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 text-xs font-medium focus-ring"
             />
           </div>
 
@@ -756,8 +881,7 @@ export const Quotation: React.FC<QuotationProps> = ({
               <th className="p-2">Código</th>
               <th className="p-2">Descrição</th>
               <th className="p-2 text-right">Qtd</th>
-              <th className="p-2 text-right">Preço Un.</th>
-              <th className="p-2 text-right">Desc %</th>
+              <th className="p-2 text-right">Desc. (MZN)</th>
               <th className="p-2 text-right">IVA %</th>
               <th className="p-2 text-right">Total (c/ IVA)</th>
               <th className="p-2 text-center w-12 print:hidden">Ação</th>
@@ -771,7 +895,13 @@ export const Quotation: React.FC<QuotationProps> = ({
                 <td className="p-2 font-sans font-medium">{item.description}</td>
                 <td className="p-2 text-right font-bold">{item.quantity}</td>
                 <td className="p-2 text-right">{formatMZN(item.unitPrice)}</td>
-                <td className="p-2 text-right text-red-600">{item.discountPercent > 0 ? `${item.discountPercent}%` : '—'}</td>
+                <td className="p-2 text-right text-red-600 font-bold">
+                  {item.discountAmount && item.discountAmount > 0
+                    ? formatMZN(item.discountAmount)
+                    : item.discountPercent > 0
+                      ? `${item.discountPercent}%`
+                      : '—'}
+                </td>
                 <td className="p-2 text-right">{item.ivaPercent}%</td>
                 <td className="p-2 text-right font-bold text-[#006e25]">{formatMZN(item.total)}</td>
                 <td className="p-2 text-center print:hidden">
@@ -955,13 +1085,20 @@ export const Quotation: React.FC<QuotationProps> = ({
                         {item.status}
                       </span>
                     </td>
-                    <td className="p-2.5 text-center">
+                    <td className="p-2.5 text-center flex items-center justify-center gap-1.5">
                       <button
                         type="button"
                         onClick={() => handlePrintQuotationFromHistory(item)}
-                        className="px-3 py-1 bg-[#003366] text-white font-bold rounded text-[11px] hover:bg-blue-900 flex items-center gap-1 mx-auto"
+                        className="px-2.5 py-1 bg-[#003366] text-white font-bold rounded text-[11px] hover:bg-blue-900 flex items-center gap-1"
                       >
                         <span>🖨</span> Imprimir / Consultar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditQuotation(item)}
+                        className="px-2.5 py-1 bg-amber-600 text-white font-bold rounded text-[11px] hover:bg-amber-700 flex items-center gap-1 transition-colors"
+                      >
+                        <span>✏️</span> Editar
                       </button>
                     </td>
                   </tr>
@@ -1017,6 +1154,348 @@ export const Quotation: React.FC<QuotationProps> = ({
           </button>
         </div>
       </footer>
+
+      {/* Edit Document Modal */}
+      {editingQuotation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 print:hidden">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg border bg-white p-6 shadow-2xl dark:bg-[#1f2325] dark:border-[#43474f] space-y-4">
+            <div className="flex items-center justify-between border-b pb-3 text-[#003366] dark:text-[#a7c8ff]">
+              <div className="flex items-center space-x-2">
+                <span className="material-symbols-outlined text-2xl">edit_note</span>
+                <h3 className="font-black text-sm uppercase tracking-wide">
+                  Editar Cotação {editingQuotation.docNumber}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingQuotation(null)}
+                className="text-gray-500 hover:text-gray-700 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {editError && (
+              <div className="rounded border border-red-200 bg-red-50 p-3 text-xs text-red-700 font-semibold">
+                {editError}
+              </div>
+            )}
+
+            <div className="space-y-4 text-xs font-sans">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
+                    Nome do Cliente / Entidade *
+                  </label>
+                  <input
+                    type="text"
+                    value={editClientName}
+                    onChange={(e) => setEditClientName(e.target.value)}
+                    placeholder="Nome do cliente (ex: AUTO COMPANY)"
+                    className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
+                    NUIT do Cliente
+                  </label>
+                  <input
+                    type="text"
+                    value={editClientNuit}
+                    onChange={(e) => setEditClientNuit(e.target.value)}
+                    placeholder="NUIT (opcional)"
+                    className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Tabela de Edição de Artigos / Items & Prices */}
+              <div className="space-y-2 border-t border-b py-3 dark:border-gray-700">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block font-black text-[#003366] dark:text-[#a7c8ff] uppercase text-xs">
+                      Artigos / Itens da Cotação ({editItems.length})
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditItems(prev => [
+                          ...prev,
+                          {
+                            articleId: `custom-${Date.now()}`,
+                            code: 'DIV',
+                            description: 'Novo Artigo / Serviço',
+                            quantity: 1,
+                            unitPrice: 0,
+                            discountPercent: 0,
+                            discountAmount: 0,
+                            ivaPercent: 16,
+                            total: 0,
+                          }
+                        ]);
+                      }}
+                      className="px-2.5 py-1 bg-[#003366] text-white font-bold rounded text-[11px] hover:bg-blue-900 transition-colors shadow-sm flex items-center gap-1"
+                    >
+                      <span>+ Artigo Manual</span>
+                    </button>
+                  </div>
+                  {articles.length > 0 && (
+                    <ArticleSearchSelect
+                      articles={articles}
+                      selectedArticleId=""
+                      onSelect={(articleId) => {
+                        const art = articles.find(a => a.id === articleId);
+                        if (!art) return;
+                        const priceWithIva = (art.sellPriceWithIva && art.sellPriceWithIva > 0)
+                          ? art.sellPriceWithIva
+                          : (art.sellPrice ? Math.round(art.sellPrice * (1 + (art.taxRate ?? 16) / 100) * 100) / 100 : 0);
+                        setEditItems(prev => {
+                          const updated = [
+                            ...prev,
+                            {
+                              articleId: art.id,
+                              code: art.code,
+                              description: art.description,
+                              quantity: 1,
+                              unitPrice: priceWithIva,
+                              discountPercent: 0,
+                              discountAmount: 0,
+                              ivaPercent: art.taxRate ?? 16,
+                              total: priceWithIva,
+                            }
+                          ];
+                          const grand = updated.reduce((acc, i) => acc + i.total, 0);
+                          setEditGrandTotal(Math.round(grand * 100) / 100);
+                          return updated;
+                        });
+                      }}
+                      renderLabel={(a) => `[${a.code}] ${a.description} - ${(a.sellPriceWithIva || a.sellPrice).toFixed(2)} MZN (Stock: ${a.stock})`}
+                      placeholder="🔍 Pesquisar artigo do catálogo..."
+                      className="w-full"
+                    />
+                  )}
+                </div>
+
+                {editItems.length === 0 ? (
+                  <div className="text-center py-3 text-gray-400 italic text-xs border rounded border-dashed">
+                    Nenhum artigo na cotação. Pesquise no catálogo ou clique em "+ Artigo Manual".
+                  </div>
+                ) : (
+                  <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+                    {editItems.map((item, idx) => {
+                      const lineTotal = Math.round(item.quantity * item.unitPrice * (1 - (item.discountPercent || 0) / 100) * 100) / 100;
+                      return (
+                      <div key={idx} className="bg-slate-50 dark:bg-[#282c2e] p-2.5 rounded border border-slate-200 dark:border-gray-700 text-xs space-y-1.5">
+                        {/* Row 1: Code + Description + Remove */}
+                        <div className="flex items-center gap-2">
+                          <div className="w-28">
+                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Código</span>
+                            <input
+                              type="text"
+                              value={item.code || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditItems(prev => {
+                                  const updated = [...prev];
+                                  updated[idx] = { ...updated[idx], code: val };
+                                  return updated;
+                                });
+                              }}
+                              placeholder="Código..."
+                              className="w-full rounded border border-gray-300 p-1.5 dark:bg-[#1f2325] dark:border-gray-600 dark:text-white font-mono font-bold text-xs"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Descrição</span>
+                            <input
+                              type="text"
+                              value={item.description}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditItems(prev => {
+                                  const updated = [...prev];
+                                  updated[idx] = { ...updated[idx], description: val };
+                                  return updated;
+                                });
+                              }}
+                              placeholder="Descrição do artigo ou serviço..."
+                              className="w-full rounded border border-gray-300 p-1.5 dark:bg-[#1f2325] dark:border-gray-600 dark:text-white font-medium text-xs"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditItems(prev => {
+                                const updated = prev.filter((_, i) => i !== idx);
+                                const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
+                                setEditGrandTotal(Math.round(grand * 100) / 100);
+                                return updated;
+                              });
+                            }}
+                            className="mt-4 p-1 text-red-600 hover:text-red-800 font-bold hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
+                            title="Remover Item"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        {/* Row 2: Qty, Price c/ IVA, Desc%, IVA%, Total */}
+                        <div className="flex items-end gap-2">
+                          <div className="w-16">
+                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5 text-center">Qtd</span>
+                            <input
+                              type="number"
+                              min="1"
+                              value={item.quantity}
+                              onChange={(e) => {
+                                const qty = Number(e.target.value);
+                                setEditItems(prev => {
+                                  const updated = [...prev];
+                                  const tot = Math.round(qty * updated[idx].unitPrice * (1 - (updated[idx].discountPercent || 0) / 100) * 100) / 100;
+                                  updated[idx] = { ...updated[idx], quantity: qty, total: tot };
+                                  const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
+                                  setEditGrandTotal(Math.round(grand * 100) / 100);
+                                  return updated;
+                                });
+                              }}
+                              className="w-full text-center font-bold rounded border border-gray-300 p-1.5 dark:bg-[#1f2325] dark:border-gray-600 dark:text-white text-xs"
+                            />
+                          </div>
+                          <div className="w-28">
+                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5 text-right">Preço c/ IVA</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={item.unitPrice}
+                              onChange={(e) => {
+                                const price = Number(e.target.value);
+                                setEditItems(prev => {
+                                  const updated = [...prev];
+                                  const tot = Math.round(updated[idx].quantity * price * (1 - (updated[idx].discountPercent || 0) / 100) * 100) / 100;
+                                  updated[idx] = { ...updated[idx], unitPrice: price, total: tot };
+                                  const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
+                                  setEditGrandTotal(Math.round(grand * 100) / 100);
+                                  return updated;
+                                });
+                              }}
+                              placeholder="0.00"
+                              className="w-full text-right font-bold rounded border border-gray-300 p-1.5 text-[#006e25] dark:bg-[#1f2325] dark:border-gray-600 dark:text-white text-xs font-mono"
+                            />
+                          </div>
+                          <div className="w-16">
+                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5 text-center">Desc %</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                              value={item.discountPercent || 0}
+                              onChange={(e) => {
+                                const disc = Number(e.target.value);
+                                setEditItems(prev => {
+                                  const updated = [...prev];
+                                  const tot = Math.round(updated[idx].quantity * updated[idx].unitPrice * (1 - disc / 100) * 100) / 100;
+                                  updated[idx] = { ...updated[idx], discountPercent: disc, total: tot };
+                                  const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
+                                  setEditGrandTotal(Math.round(grand * 100) / 100);
+                                  return updated;
+                                });
+                              }}
+                              className="w-full text-center font-bold rounded border border-gray-300 p-1.5 text-red-600 dark:bg-[#1f2325] dark:border-gray-600 dark:text-red-400 text-xs"
+                            />
+                          </div>
+                          <div className="w-14">
+                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5 text-center">IVA %</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                              value={item.ivaPercent || 16}
+                              onChange={(e) => {
+                                const iva = Number(e.target.value);
+                                setEditItems(prev => {
+                                  const updated = [...prev];
+                                  updated[idx] = { ...updated[idx], ivaPercent: iva };
+                                  return updated;
+                                });
+                              }}
+                              className="w-full text-center font-bold rounded border border-gray-300 p-1.5 text-[#003366] dark:bg-[#1f2325] dark:border-gray-600 dark:text-[#a7c8ff] text-xs"
+                            />
+                          </div>
+                          <div className="w-28 text-right font-mono font-black text-[#001e40] dark:text-[#a7c8ff] text-xs pb-0.5">
+                            {formatMZN(lineTotal)}
+                          </div>
+                        </div>
+                      </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
+                    Morada do Cliente
+                  </label>
+                  <input
+                    type="text"
+                    value={editClientAddress}
+                    onChange={(e) => setEditClientAddress(e.target.value)}
+                    placeholder="Morada (opcional)"
+                    className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
+                    Valor Total da Cotação (MZN) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={editGrandTotal}
+                    onChange={(e) => setEditGrandTotal(Number(e.target.value))}
+                    className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-mono font-black text-base text-[#006e25]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
+                  Observações / Notas Adicionais
+                </label>
+                <textarea
+                  rows={2}
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  placeholder="Adicionar notas adicionais à cotação..."
+                  className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-2 border-t pt-3">
+              <button
+                type="button"
+                onClick={() => setEditingQuotation(null)}
+                className="rounded border border-gray-300 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isSavingEdit || !editClientName.trim()}
+                onClick={handleExecuteSaveEditQuotation}
+                className="rounded bg-[#003366] px-4 py-2 text-xs font-bold text-white hover:bg-[#002244] disabled:opacity-50"
+              >
+                {isSavingEdit ? 'A guardar…' : 'Gravar Alterações'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

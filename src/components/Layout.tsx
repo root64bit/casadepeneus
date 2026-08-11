@@ -43,10 +43,25 @@ export const Layout: React.FC<LayoutProps> = ({
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifTab, setNotifTab] = useState<'stock' | 'receivables'>('stock');
 
+  const [isDark, setIsDark] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    if (saved) return saved === 'dark';
+    return document.documentElement.classList.contains('dark');
+  });
+
   useEffect(() => {
-    document.documentElement.classList.remove('dark');
-    localStorage.removeItem('theme');
-  }, []);
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDark]);
+
+  const toggleTheme = () => setIsDark((prev) => !prev);
 
   const has = (...codes: string[]) => codes.some((code) => permissions.includes(code));
 
@@ -116,18 +131,18 @@ export const Layout: React.FC<LayoutProps> = ({
   const sidebar = (
     <aside
       aria-label="Navegação principal"
-      className={`fixed inset-y-0 left-0 z-40 flex w-[280px] max-w-[86vw] flex-col border-r border-slate-300 bg-slate-50 transition-transform lg:w-[240px] lg:translate-x-0 ${
+      className={`fixed inset-y-0 left-0 z-40 flex w-[280px] max-w-[86vw] flex-col border-r border-slate-300 dark:border-[#43474f] bg-slate-50 dark:bg-[#1a1e20] transition-transform lg:w-[240px] lg:translate-x-0 ${
         menuOpen ? 'translate-x-0' : '-translate-x-full'
       }`}
     >
-      <div className="border-b px-5 py-5">
+      <div className="border-b border-slate-200 dark:border-[#43474f] px-5 py-5">
         <div className="flex items-center justify-between">
-          <h1 className="font-black text-[#001e40]">{companyName}</h1>
-          <button aria-label="Fechar menu" className="lg:hidden" onClick={() => setMenuOpen(false)}>
+          <h1 className="font-black text-[#001e40] dark:text-[#a7c8ff]">{companyName}</h1>
+          <button aria-label="Fechar menu" className="lg:hidden dark:text-slate-300" onClick={() => setMenuOpen(false)}>
             ✕
           </button>
         </div>
-        <p className="mt-2 inline-flex rounded bg-emerald-100 px-2 py-1 text-[11px] font-black text-emerald-900">
+        <p className="mt-2 inline-flex rounded bg-emerald-100 dark:bg-emerald-950/80 px-2 py-1 text-[11px] font-black text-emerald-900 dark:text-emerald-300 border dark:border-emerald-700">
           {displayMode}
         </p>
       </div>
@@ -138,8 +153,8 @@ export const Layout: React.FC<LayoutProps> = ({
             onClick={() => navigate(item.id)}
             className={`flex w-full items-center gap-3 px-5 py-3 text-left text-sm ${
               activeTab === item.id
-                ? 'border-r-4 border-primary bg-slate-200 font-black text-primary'
-                : 'font-semibold text-slate-700 hover:bg-slate-100'
+                ? 'border-r-4 border-primary dark:border-[#a7c8ff] bg-slate-200 dark:bg-[#282c2e] font-black text-primary dark:text-[#a7c8ff]'
+                : 'font-semibold text-slate-700 dark:text-[#c3c6d1] hover:bg-slate-100 dark:hover:bg-[#282c2e]'
             }`}
           >
             <span className="material-symbols-outlined">{item.icon}</span>
@@ -147,15 +162,15 @@ export const Layout: React.FC<LayoutProps> = ({
           </button>
         ))}
       </nav>
-      <div className="space-y-3 border-t p-4 text-xs">
+      <div className="space-y-3 border-t border-slate-200 dark:border-[#43474f] p-4 text-xs">
         <div>
-          <p className="truncate font-black">{userLabel}</p>
-          <p className="truncate text-slate-500">
+          <p className="truncate font-black dark:text-white">{userLabel}</p>
+          <p className="truncate text-slate-500 dark:text-slate-400">
             {roleLabel}
             {warehouseLabel ? ` · ${warehouseLabel}` : ''}
           </p>
         </div>
-        <button onClick={onSignOut} className="block font-bold text-red-700">
+        <button onClick={onSignOut} className="block font-bold text-red-700 dark:text-red-400 hover:underline">
           Terminar sessão
         </button>
       </div>
@@ -163,7 +178,7 @@ export const Layout: React.FC<LayoutProps> = ({
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#191c1d] text-slate-900 dark:text-[#e1e3e4] font-sans">
       {sidebar}
       {menuOpen && (
         <button
@@ -172,24 +187,24 @@ export const Layout: React.FC<LayoutProps> = ({
           className="fixed inset-0 z-30 bg-black/45 lg:hidden"
         />
       )}
-      <header className="fixed inset-x-0 top-0 z-20 flex min-h-16 items-center gap-2 border-b bg-white px-3 sm:px-5 lg:left-[240px]">
+      <header className="fixed inset-x-0 top-0 z-20 flex min-h-16 items-center gap-2 border-b border-slate-200 dark:border-[#43474f] bg-white dark:bg-[#1f2325] px-3 sm:px-5 lg:left-[240px]">
         <button
           aria-label="Abrir menu"
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen(true)}
-          className="rounded p-2 lg:hidden"
+          className="rounded p-2 lg:hidden dark:text-slate-200"
         >
           <span className="material-symbols-outlined">menu</span>
         </button>
 
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-black">{title}</p>
-          <p className="text-[10px] font-bold text-emerald-700">{displayMode}</p>
+          <p className="truncate text-sm font-black dark:text-white">{title}</p>
+          <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">{displayMode}</p>
         </div>
 
         {/* Global Search Input */}
         <div className="relative hidden w-full max-w-xs sm:block">
-          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
+          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 text-sm">
             search
           </span>
           <input
@@ -197,9 +212,22 @@ export const Layout: React.FC<LayoutProps> = ({
             value={globalSearch}
             onChange={(event) => setGlobalSearch(event.target.value)}
             placeholder="Pesquisar…"
-            className="w-full rounded-lg border bg-slate-50 py-1.5 pl-9 pr-3 text-xs"
+            className="w-full rounded-lg border border-slate-300 dark:border-[#43474f] bg-slate-50 dark:bg-[#282c2e] py-1.5 pl-9 pr-3 text-xs dark:text-white dark:placeholder-slate-400"
           />
         </div>
+
+        <button
+          type="button"
+          onClick={toggleTheme}
+          aria-label="Alternar tema"
+          title={isDark ? 'Mudar para modo claro' : 'Mudar para modo escuro'}
+          className="flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+        >
+          <span className="material-symbols-outlined text-sm">
+            {isDark ? 'light_mode' : 'dark_mode'}
+          </span>
+          <span className="hidden sm:inline">{isDark ? 'Modo Claro' : 'Modo Escuro'}</span>
+        </button>
 
         {/* User Profile Badge */}
         <button
@@ -211,7 +239,7 @@ export const Layout: React.FC<LayoutProps> = ({
         </button>
       </header>
 
-      <main className="min-h-screen px-3 pb-6 pt-20 sm:px-5 lg:ml-[240px] lg:p-6 lg:pb-6 lg:pt-20">
+      <main className="min-h-screen px-3 pb-6 pt-20 sm:px-5 lg:ml-[240px] lg:p-6 lg:pb-6 lg:pt-20 bg-slate-50 dark:bg-[#191c1d]">
         {children}
       </main>
     </div>
