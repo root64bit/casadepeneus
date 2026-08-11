@@ -7,6 +7,5 @@ Pos.zip
 .env.*
 *.env
 *.log
-scripts
 e2e
 playwright-report
