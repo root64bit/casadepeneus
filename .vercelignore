@@ -1,0 +1,12 @@
+node_modules
+backups
+pos_extracted
+pos_latest
+Pos.zip
+.env
+.env.*
+*.env
+*.log
+scripts
+e2e
+playwright-report

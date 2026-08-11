@@ -24,3 +24,9 @@ dist-ssr/
 *.sln
 *.sw?
 .vercel
+
+# Large files & backups
+backups/
+pos_extracted/
+pos_latest/
+Pos.zip
