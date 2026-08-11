@@ -34,6 +34,7 @@ DECLARE
   v_net_val NUMERIC;
   v_tax_val NUMERIC;
   v_prod_id UUID;
+  v_prod_exists BOOLEAN;
 BEGIN
   -- Get existing doc details
   SELECT notes, customer_id, company_id, grand_total
@@ -78,12 +79,21 @@ BEGIN
 
       v_final_grand := v_final_grand + v_line_tot;
 
-      -- Check if product_id is UUID
+      -- Check if product_id is a valid UUID
+      v_prod_id := NULL;
       BEGIN
         v_prod_id := (v_line->>'articleId')::uuid;
       EXCEPTION WHEN OTHERS THEN
         v_prod_id := NULL;
       END;
+
+      -- Verify product actually exists in products table to avoid FK violation
+      IF v_prod_id IS NOT NULL THEN
+        SELECT EXISTS(SELECT 1 FROM products WHERE id = v_prod_id) INTO v_prod_exists;
+        IF NOT v_prod_exists THEN
+          v_prod_id := NULL;
+        END IF;
+      END IF;
 
       INSERT INTO document_lines (
         document_id,
