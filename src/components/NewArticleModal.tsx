@@ -7,6 +7,7 @@ interface NewArticleModalProps {
   onSave: (article: Omit<Article, 'id'>) => Promise<void>;
   onUpdate?: (article: Article) => Promise<void>;
   articleToEdit?: Article | null;
+  existingArticles?: Article[];
   categories: ReferenceOption[];
   brands: ReferenceOption[];
   units: ReferenceOption[];
@@ -19,6 +20,7 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({
   onSave,
   onUpdate,
   articleToEdit,
+  existingArticles = [],
   categories,
   brands,
   units,
@@ -64,7 +66,12 @@ export const NewArticleModal: React.FC<NewArticleModalProps> = ({
       setIsCustomBrand(false);
       setCustomBrandName('');
     } else {
-      setCode('');
+      // Auto-generate next sequential code
+      const numericCodes = existingArticles
+        .map((a) => parseInt(a.code, 10))
+        .filter((n) => !isNaN(n));
+      const maxCode = numericCodes.length > 0 ? Math.max(...numericCodes) : 0;
+      setCode(String(maxCode + 1));
       setDescription('');
       setCategoryId(categories[0]?.id ?? '');
       setIsCustomCategory(false);

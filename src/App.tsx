@@ -792,6 +792,7 @@ function App() {
         onSave={handleAddArticle}
         onUpdate={handleUpdateArticle}
         articleToEdit={articleToEdit}
+        existingArticles={articles}
         categories={productCategories}
         brands={brands}
         units={units}
