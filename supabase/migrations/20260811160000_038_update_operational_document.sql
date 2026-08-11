@@ -138,7 +138,8 @@ BEGIN
   v_net := ROUND(v_final_grand / 1.16, 2);
   v_tax := ROUND(v_final_grand - v_net, 2);
 
-  -- Update documents table with SECURITY DEFINER privileges!
+  -- Update ONLY the target document's notes, grand_total, net_total, tax_total, outstanding_amount
+  -- DO NOT touch the shared customers table row so each document remains 100% unique!
   UPDATE documents
   SET
     notes = v_updated_notes,
@@ -148,16 +149,6 @@ BEGIN
     outstanding_amount = v_final_grand,
     updated_at = NOW()
   WHERE id = p_document_id;
-
-  -- Update customer if associated
-  IF v_customer_id IS NOT NULL AND TRIM(p_client_name) <> '' THEN
-    UPDATE customers
-    SET
-      name = TRIM(p_client_name),
-      tax_number = NULLIF(TRIM(p_client_nuit), ''),
-      updated_at = NOW()
-    WHERE id = v_customer_id;
-  END IF;
 END;
 $$;
 
