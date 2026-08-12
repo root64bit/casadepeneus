@@ -107,6 +107,7 @@ export async function deleteArticle(id: string): Promise<void> {
 }
 
 export interface DocumentUpdatePayload {
+  documentDate?: string;
   clientName?: string;
   clientNuit?: string;
   clientAddress?: string;
@@ -123,6 +124,7 @@ export async function updateDocumentDetails(documentId: string, payload: Documen
   const lines = payload.items ? recalculateSaleItems(payload.items) : undefined;
   const { error } = await client.rpc('update_operational_document_v2', {
     p_document_id: documentId,
+    p_document_date: payload.documentDate || null,
     p_client_name: payload.clientName?.trim() || null,
     p_client_nuit: payload.clientNuit !== undefined ? payload.clientNuit.trim() : null,
     p_client_address: payload.clientAddress !== undefined ? payload.clientAddress.trim() : null,

@@ -13,7 +13,7 @@ interface QuotationProps {
   onCreateQuotation: (quotation: SaleInvoice) => Promise<SaleInvoice>;
   onOpenPrintModal: (doc: SaleInvoice) => void;
   operatorName: string;
-  onUpdateDocument?: (documentId: string, payload: { clientName?: string; clientNuit?: string; clientAddress?: string; grandTotal?: number; notes?: string; items?: SaleItem[]; generalDiscount?: number; keepAsWalkIn?: boolean }) => Promise<void>;
+  onUpdateDocument?: (documentId: string, payload: { documentDate?: string; clientName?: string; clientNuit?: string; clientAddress?: string; grandTotal?: number; notes?: string; items?: SaleItem[]; generalDiscount?: number; keepAsWalkIn?: boolean }) => Promise<void>;
 }
 
 export const Quotation: React.FC<QuotationProps> = ({
@@ -60,6 +60,7 @@ export const Quotation: React.FC<QuotationProps> = ({
 
   // Edit Modal State for Quotations History
   const [editingQuotation, setEditingQuotation] = useState<{ id: string; docNumber: string } | null>(null);
+  const [editDocumentDate, setEditDocumentDate] = useState('');
   const [editClientName, setEditClientName] = useState('');
   const [editClientNuit, setEditClientNuit] = useState('');
   const [editClientAddress, setEditClientAddress] = useState('');
@@ -78,8 +79,9 @@ export const Quotation: React.FC<QuotationProps> = ({
     }
   }, [editItems, editGeneralDiscount, editingQuotation]);
 
-  const handleOpenEditQuotation = (doc: { id: string; docNumber: string; clientName: string; clientNuit?: string; clientAddress?: string; totalAmount?: number; descontoTotal?: number; generalDiscountAmount?: number; notes?: string; items?: SaleItem[] }) => {
+  const handleOpenEditQuotation = (doc: { id: string; docNumber: string; date: string; clientName: string; clientNuit?: string; clientAddress?: string; totalAmount?: number; descontoTotal?: number; generalDiscountAmount?: number; notes?: string; items?: SaleItem[] }) => {
     setEditingQuotation({ id: doc.id, docNumber: doc.docNumber });
+    setEditDocumentDate((doc.date || new Date().toISOString()).slice(0, 10));
     setEditClientName(doc.clientName || '');
     setEditClientNuit(doc.clientNuit || '');
     setEditClientAddress(doc.clientAddress || '');
@@ -119,6 +121,7 @@ export const Quotation: React.FC<QuotationProps> = ({
       setIsSavingEdit(true);
       setEditError('');
       await onUpdateDocument(editingQuotation.id, {
+        documentDate: editDocumentDate,
         clientName: editClientName.trim(),
         clientNuit: editClientNuit.trim(),
         clientAddress: editClientAddress.trim(),
@@ -1208,7 +1211,18 @@ export const Quotation: React.FC<QuotationProps> = ({
             )}
 
             <div className="space-y-4 text-xs font-sans">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
+                    Data de Emissão *
+                  </label>
+                  <input
+                    type="date"
+                    value={editDocumentDate}
+                    onChange={(e) => setEditDocumentDate(e.target.value)}
+                    className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-mono"
+                  />
+                </div>
                 <div>
                   <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
                     Nome do Cliente / Entidade *
@@ -1528,7 +1542,7 @@ export const Quotation: React.FC<QuotationProps> = ({
               </button>
               <button
                 type="button"
-                disabled={isSavingEdit || !editClientName.trim()}
+                disabled={isSavingEdit || !editDocumentDate || !editClientName.trim()}
                 onClick={handleExecuteSaveEditQuotation}
                 className="rounded bg-[#003366] px-4 py-2 text-xs font-bold text-white hover:bg-[#002244] disabled:opacity-50"
               >

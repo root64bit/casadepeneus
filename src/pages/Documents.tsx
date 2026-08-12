@@ -15,7 +15,7 @@ interface DocumentsProps {
   onCancelAdvice?: (documentId: string, reason: string) => Promise<void>;
   canCancelDocument?: boolean;
   onCancelDocument?: (documentId: string, reason: string) => Promise<void>;
-  onUpdateDocument?: (documentId: string, payload: { clientName?: string; clientNuit?: string; clientAddress?: string; grandTotal?: number; notes?: string; items?: SaleItem[]; generalDiscount?: number; keepAsWalkIn?: boolean }) => Promise<void>;
+  onUpdateDocument?: (documentId: string, payload: { documentDate?: string; clientName?: string; clientNuit?: string; clientAddress?: string; grandTotal?: number; notes?: string; items?: SaleItem[]; generalDiscount?: number; keepAsWalkIn?: boolean }) => Promise<void>;
   permissions?: string[];
 }
 
@@ -47,6 +47,7 @@ export function Documents({
 
   // Edit Modal State
   const [editingDoc, setEditingDoc] = useState<DocumentRecord | null>(null);
+  const [editDocumentDate, setEditDocumentDate] = useState('');
   const [editClientName, setEditClientName] = useState('');
   const [editClientNuit, setEditClientNuit] = useState('');
   const [editClientAddress, setEditClientAddress] = useState('');
@@ -57,6 +58,10 @@ export function Documents({
   const [editKeepAsWalkIn, setEditKeepAsWalkIn] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editError, setEditError] = useState('');
+  const [editingDateOnlyDoc, setEditingDateOnlyDoc] = useState<DocumentRecord | null>(null);
+  const [editDateOnlyValue, setEditDateOnlyValue] = useState('');
+  const [editDateOnlyError, setEditDateOnlyError] = useState('');
+  const [isSavingDateOnly, setIsSavingDateOnly] = useState(false);
 
   // Auto-sync editGrandTotal when editItems changes
   useEffect(() => {
@@ -193,6 +198,7 @@ export function Documents({
 
     // Populate all modal state BEFORE opening modal
     setEditClientName(printable?.clientName || doc.partyName || '');
+    setEditDocumentDate((printable?.date || doc.date || new Date().toISOString()).slice(0, 10));
     setEditClientNuit(printable?.clientNuit || '');
     setEditClientAddress(printable?.clientAddress || '');
     setEditNotes(printable?.notes || '');
@@ -219,6 +225,7 @@ export function Documents({
       setIsSavingEdit(true);
       setEditError('');
       await onUpdateDocument(editingDoc.id, {
+        documentDate: editDocumentDate,
         clientName: editClientName.trim(),
         clientNuit: editClientNuit.trim(),
         clientAddress: editClientAddress.trim(),
@@ -233,6 +240,20 @@ export function Documents({
       setEditError(err?.message || 'Falha ao guardar alterações do documento.');
     } finally {
       setIsSavingEdit(false);
+    }
+  };
+
+  const handleSaveDateOnly = async () => {
+    if (!editingDateOnlyDoc || !editDateOnlyValue || !onUpdateDocument || isSavingDateOnly) return;
+    try {
+      setIsSavingDateOnly(true);
+      setEditDateOnlyError('');
+      await onUpdateDocument(editingDateOnlyDoc.id, { documentDate: editDateOnlyValue });
+      setEditingDateOnlyDoc(null);
+    } catch (err: any) {
+      setEditDateOnlyError(err?.message || 'Falha ao alterar a data do documento.');
+    } finally {
+      setIsSavingDateOnly(false);
     }
   };
 
@@ -380,13 +401,27 @@ export function Documents({
                         Imprimir
                       </button>
 
-                      {!['CANCELLED','REVERSED'].includes(document.status) && (
+                      {!['CANCELLED','REVERSED'].includes(document.status) && isOperationalSalesDoc && (
                         <button
                           type="button"
-                          onClick={() => isAdviceDoc ? onPrintRecord(document) : handleOpenEdit(document)}
+                          onClick={() => handleOpenEdit(document)}
                           className="inline-flex h-8 min-w-[78px] items-center justify-center rounded bg-amber-600 px-3 font-bold text-white text-[11px] hover:bg-amber-700 transition-colors"
                         >
-                          {isAdviceDoc ? 'Detalhes' : 'Editar'}
+                          Editar
+                        </button>
+                      )}
+
+                      {!['CANCELLED','REVERSED'].includes(document.status) && !isOperationalSalesDoc && onUpdateDocument && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingDateOnlyDoc(document);
+                            setEditDateOnlyValue((document.date || new Date().toISOString()).slice(0,10));
+                            setEditDateOnlyError('');
+                          }}
+                          className="inline-flex h-8 min-w-[78px] items-center justify-center rounded bg-amber-600 px-3 font-bold text-white text-[11px] hover:bg-amber-700 transition-colors"
+                        >
+                          Editar Data
                         </button>
                       )}
 
@@ -492,6 +527,28 @@ export function Documents({
         </div>
       )}
 
+      {editingDateOnlyDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+          <div className="w-full max-w-md rounded-lg border bg-white p-6 shadow-2xl dark:bg-[#1f2325] dark:border-[#43474f] space-y-4">
+            <h3 className="border-b pb-3 font-black text-sm uppercase text-[#003366] dark:text-[#a7c8ff]">
+              Alterar Data — {editingDateOnlyDoc.displayNumber}
+            </h3>
+            {editDateOnlyError && <div role="alert" className="rounded bg-red-50 p-3 text-xs font-bold text-red-700">{editDateOnlyError}</div>}
+            <label className="block text-xs font-bold uppercase text-slate-700 dark:text-slate-300">
+              Data de Emissão *
+              <input type="date" value={editDateOnlyValue} onChange={(event) => setEditDateOnlyValue(event.target.value)} className="mt-1 w-full rounded border p-2 font-mono dark:bg-[#282c2e]" />
+            </label>
+            <p className="text-xs text-slate-600 dark:text-slate-300">O número do documento e o histórico de auditoria serão mantidos.</p>
+            <div className="flex justify-end gap-2 border-t pt-3">
+              <button type="button" disabled={isSavingDateOnly} onClick={() => setEditingDateOnlyDoc(null)} className="rounded border px-4 py-2 text-xs font-bold">Cancelar</button>
+              <button type="button" disabled={isSavingDateOnly || !editDateOnlyValue} onClick={() => void handleSaveDateOnly()} className="rounded bg-[#003366] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">
+                {isSavingDateOnly ? 'A guardar…' : 'Gravar Data'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit Document Modal */}
       {editingDoc && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
@@ -519,7 +576,18 @@ export function Documents({
             )}
 
             <div className="space-y-4 text-xs font-sans">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div>
+                  <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
+                    Data de Emissão *
+                  </label>
+                  <input
+                    type="date"
+                    value={editDocumentDate}
+                    onChange={(e) => setEditDocumentDate(e.target.value)}
+                    className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-mono"
+                  />
+                </div>
                 <div>
                   <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
                     Nome do Cliente / Entidade *
@@ -839,7 +907,7 @@ export function Documents({
               </button>
               <button
                 type="button"
-                disabled={isSavingEdit || !editClientName.trim() || editItems.length === 0}
+                disabled={isSavingEdit || !editDocumentDate || !editClientName.trim() || editItems.length === 0}
                 onClick={handleExecuteSaveEdit}
                 className="rounded bg-[#003366] px-4 py-2 text-xs font-bold text-white hover:bg-[#002244] disabled:opacity-50"
               >

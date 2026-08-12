@@ -25,11 +25,12 @@ interface StockMovementsProps {
   onOpenDocument?: (doc: DocumentRecord) => void;
   canPostEntry: boolean;
   canPostExit: boolean;
+  canAllowNegative: boolean;
   canViewCost?: boolean;
 }
 
 export const StockMovements: React.FC<StockMovementsProps> = ({
-  movements, articles, documents = [], warehouses, operatorName, onAddMovement, onOpenDocument, canPostEntry, canPostExit, canViewCost = true,
+  movements, articles, documents = [], warehouses, operatorName, onAddMovement, onOpenDocument, canPostEntry, canPostExit, canAllowNegative, canViewCost = true,
 }) => {
   const [type, setType] = useState<'entrada' | 'saida'>(canPostEntry ? 'entrada' : 'saida');
   const [warehouseId, setWarehouseId] = useState('');
@@ -50,6 +51,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
   const [historyTotalStock, setHistoryTotalStock] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -103,7 +105,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
       }).finally(() => { if(!cancelled)setHistoryLoading(false); });
     },searchQuery?250:0);
     return()=>{cancelled=true;window.clearTimeout(timer);};
-  },[dateFrom,dateTo,typeFilter,searchQuery,movementsPage,movementsPageSize,movements]);
+  },[dateFrom,dateTo,typeFilter,searchQuery,movementsPage,movementsPageSize,movements,historyRefreshKey]);
 
   useEffect(()=>{setMovementsPage(1);},[dateFrom,dateTo,typeFilter,searchQuery,movementsPageSize]);
 
@@ -178,7 +180,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
       setError('Seleccione um artigo e indique uma quantidade válida.');
       return;
     }
-    if (type === 'saida' && qty > targetArticle.stock) {
+    if (type === 'saida' && qty > targetArticle.stock && !canAllowNegative) {
       setError(`A quantidade de saída (${qty}) excede o stock disponível (${targetArticle.stock}) para o artigo ${targetArticle.code}.`);
       return;
     }
@@ -220,7 +222,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
     const targetArticle = articles.find((a) => a.id === articleId);
     const qty = Number(quantityStr);
     if (targetArticle && qty > 0 && !isNaN(qty)) {
-      if (type === 'saida' && qty > targetArticle.stock) {
+      if (type === 'saida' && qty > targetArticle.stock && !canAllowNegative) {
         setError(`A quantidade de saída (${qty}) excede o stock disponível (${targetArticle.stock}) para o artigo ${targetArticle.code}.`);
         return;
       }
@@ -283,7 +285,15 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
       setPriceWithIvaStr('');
       setGuideNumber('');
       setNotes('');
-      setSuccess(`Guia (${guideDocRef}) com ${currentGuideItems.length} artigo(s) registada com sucesso.`);
+      // A confirmed movement must be visible immediately, independently of
+      // filters or of the page where the operator was consulting the history.
+      setDateFrom('');
+      setDateTo('');
+      setTypeFilter('ALL');
+      setSearchQuery('');
+      setMovementsPage(1);
+      setHistoryRefreshKey((value) => value + 1);
+      setSuccess(`Guia (${guideDocRef}) com ${currentGuideItems.length} artigo(s) registada com sucesso. O movimento já aparece no histórico abaixo.`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Falha ao registar movimento de stock.');
     } finally {
@@ -479,6 +489,9 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                     {expectedStock}
                   </b>
                 </span>
+                {type === 'saida' && expectedStock < 0 && canAllowNegative && (
+                  <span className="font-bold text-red-600">Saída autorizada com stock negativo.</span>
+                )}
               </div>
             )}
           </div>
@@ -521,7 +534,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                       <td className="p-2 font-sans font-medium">{item.articleDescription}</td>
                       <td className="p-2 text-right font-bold text-emerald-700 dark:text-emerald-400">{item.quantity}</td>
                       <td className="p-2 text-right">{item.currentStock}</td>
-                      <td className="p-2 text-right font-bold">{nextStock}</td>
+                      <td className={`p-2 text-right font-bold ${nextStock < 0 ? 'text-red-600' : ''}`}>{nextStock}</td>
                       <td className="p-2 text-right">{item.priceWithIva ? formatMZN(item.priceWithIva) : '—'}</td>
                       <td className="p-2 text-center">
                         <button

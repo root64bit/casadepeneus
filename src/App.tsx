@@ -701,6 +701,7 @@ function App() {
             onOpenDocument={setPrintDocument}
             canPostEntry={permissions.includes('stock.direct_entry') || permissions.includes('stock.entry.confirm')}
             canPostExit={permissions.includes('stock.direct_exit') || permissions.includes('stock.exit.confirm')}
+            canAllowNegative={permissions.includes('stock.allow_negative')}
             canViewCost={permissions.includes('products.view_cost')}
             warehouses={userContext?.warehouses ?? []}
             operatorName={userContext?.fullName ?? ''}
