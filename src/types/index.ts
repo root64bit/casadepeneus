@@ -97,6 +97,30 @@ export interface StockMovement {
   balanceAfter?: number;
 }
 
+export interface StockGuideItem {
+  documentLineId?: string;
+  articleId: string;
+  articleCode: string;
+  articleDescription: string;
+  quantity: number;
+  unitCost?: number;
+  salePriceWithIva?: number;
+  currentStock: number;
+  totalCost?: number;
+}
+
+export interface StockGuideInput {
+  id?: string;
+  type: 'entrada' | 'saida';
+  guideNumber: string;
+  date: string;
+  warehouseId: string;
+  supplierId?: string;
+  supplierName?: string;
+  notes?: string;
+  items: StockGuideItem[];
+}
+
 export interface AccessScope {
   id: string;
   code: string;
@@ -219,6 +243,9 @@ export interface DocumentRecord {
   sourceDocumentId?: string;
   createdAt?: string;
   items?: SaleItem[];
+  warehouseId?: string;
+  externalReference?: string;
+  stockGuideItems?: StockGuideItem[];
 }
 
 export interface PaymentRecord {

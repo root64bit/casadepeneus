@@ -65,6 +65,10 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
     if (!isOpen) return;
     if (article) {
       setSearchCodeQuery(article.code);
+      setDateFrom('');
+      setDateTo('');
+      setMovementTypeFilter('ALL');
+      setExtractPage(1);
     }
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {

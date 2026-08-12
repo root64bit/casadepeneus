@@ -33,7 +33,8 @@ import {
   createSupplierInvoice,
   createSupplierPayment,
   loadAppData,
-  postStockMovement,
+  saveStockGuide,
+  cancelStockGuide,
   createAndConfirmFinancialAdvice,
   cancelFinancialAdvice,
   cancelOperationalDocument,
@@ -360,22 +361,6 @@ function App() {
     return savedQuotation;
   };
 
-  const handleAddMovement = async (mov: StockMovement) => {
-    try {
-      await postStockMovement(mov);
-      const newMovementWithId: StockMovement = {
-        ...mov,
-        id: mov.id || crypto.randomUUID(),
-        date: new Date().toISOString(),
-      };
-      setMovements((prev) => [newMovementWithId, ...prev]);
-      await refreshData();
-    } catch (error) {
-      setDataError(error instanceof Error ? error.message : 'Falha ao registar movimento.');
-      throw error;
-    }
-  };
-
   const handleConfirmPayment = async (
     methodCode: string,
     paidAmount: number,
@@ -697,12 +682,22 @@ function App() {
             movements={movements}
             articles={articles}
             documents={documents}
-            onAddMovement={handleAddMovement}
+            suppliers={suppliers}
+            onSaveGuide={async (guide) => {
+              const id = await saveStockGuide(guide);
+              await refreshData(true, 'stock');
+              return id;
+            }}
+            onCancelGuide={async (documentId, reason) => {
+              await cancelStockGuide(documentId, reason);
+              await refreshData(true, 'stock');
+            }}
             onOpenDocument={setPrintDocument}
             canPostEntry={permissions.includes('stock.direct_entry') || permissions.includes('stock.entry.confirm')}
             canPostExit={permissions.includes('stock.direct_exit') || permissions.includes('stock.exit.confirm')}
             canAllowNegative={permissions.includes('stock.allow_negative')}
             canViewCost={permissions.includes('products.view_cost')}
+            canCancelGuide={permissions.includes('settings.manage')}
             warehouses={userContext?.warehouses ?? []}
             operatorName={userContext?.fullName ?? ''}
           />

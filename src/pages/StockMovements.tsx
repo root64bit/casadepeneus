@@ -1,42 +1,41 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { AccessScope, Article, StockMovement, DocumentRecord } from '../types';
+import type { AccessScope, Article, StockMovement, DocumentRecord, StockGuideInput, StockGuideItem, Supplier } from '../types';
 import { ArticleSearchSelect } from '../components/ArticleSearchSelect';
 import { ArticleLedgerModal } from '../components/ArticleLedgerModal';
 import { Pagination } from '../components/Pagination';
 import { formatMZN } from '../stitch/stitchConfig';
 import { fetchStockMovementsPage } from '../lib/appData';
 
-export interface GuideLineItem {
-  articleId: string;
-  articleCode: string;
-  articleDescription: string;
-  quantity: number;
-  priceWithIva?: number;
-  currentStock: number;
-}
+export type GuideLineItem = StockGuideItem;
 
 interface StockMovementsProps {
   movements: StockMovement[];
   articles: Article[];
+  suppliers: Supplier[];
   documents?: DocumentRecord[];
   warehouses: AccessScope[];
   operatorName: string;
-  onAddMovement: (movement: StockMovement) => Promise<void>;
+  onSaveGuide: (guide: StockGuideInput) => Promise<string>;
+  onCancelGuide: (documentId: string, reason: string) => Promise<void>;
   onOpenDocument?: (doc: DocumentRecord) => void;
   canPostEntry: boolean;
   canPostExit: boolean;
   canAllowNegative: boolean;
   canViewCost?: boolean;
+  canCancelGuide: boolean;
 }
 
 export const StockMovements: React.FC<StockMovementsProps> = ({
-  movements, articles, documents = [], warehouses, operatorName, onAddMovement, onOpenDocument, canPostEntry, canPostExit, canAllowNegative, canViewCost = true,
+  movements, articles, suppliers, documents = [], warehouses, operatorName, onSaveGuide, onCancelGuide, onOpenDocument, canPostEntry, canPostExit, canAllowNegative, canViewCost = true, canCancelGuide,
 }) => {
   const [type, setType] = useState<'entrada' | 'saida'>(canPostEntry ? 'entrada' : 'saida');
   const [warehouseId, setWarehouseId] = useState('');
   const [articleId, setArticleId] = useState('');
   const [quantityStr, setQuantityStr] = useState('');
   const [guideNumber, setGuideNumber] = useState('');
+  const [documentDate, setDocumentDate] = useState(new Date().toISOString().slice(0, 10));
+  const [supplierId, setSupplierId] = useState('');
+  const [unitCostStr, setUnitCostStr] = useState('');
   const [priceWithIvaStr, setPriceWithIvaStr] = useState('');
   const [notes, setNotes] = useState('');
   
@@ -58,10 +57,16 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
   const [success, setSuccess] = useState('');
   const [ledgerArticle, setLedgerArticle] = useState<Article | null>(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [editingGuideId, setEditingGuideId] = useState<string | null>(null);
+  const [lastSavedGuide, setLastSavedGuide] = useState<DocumentRecord | null>(null);
+  const [cancellingGuide, setCancellingGuide] = useState<DocumentRecord | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [isCancelling, setIsCancelling] = useState(false);
 
   const guideNumberRef = useRef<HTMLInputElement>(null);
   const notesRef = useRef<HTMLInputElement>(null);
   const qtyInputRef = useRef<HTMLInputElement>(null);
+  const costInputRef = useRef<HTMLInputElement>(null);
   const priceInputRef = useRef<HTMLInputElement>(null);
 
   // Date and Text Filters
@@ -143,22 +148,34 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
   const article = useMemo(() => articles.find((item) => item.id === articleId), [articles, articleId]);
   const quantity = Number(quantityStr) || 0;
   const expectedStock = article ? article.stock + (type === 'entrada' ? quantity : -quantity) : 0;
+  const stockGuideDocuments = useMemo(() => documents
+    .filter((document) => document.typeCode === 'STOCK_ENTRY_GUIDE' || document.typeCode === 'STOCK_EXIT_GUIDE')
+    .sort((left, right) => {
+      const dateDifference = new Date(right.date).getTime() - new Date(left.date).getTime();
+      return dateDifference || (right.createdAt || '').localeCompare(left.createdAt || '');
+    }), [documents]);
+  const editingDocument = useMemo(
+    () => stockGuideDocuments.find((document) => document.id === editingGuideId),
+    [stockGuideDocuments, editingGuideId],
+  );
+  const supplierCreditTotal = useMemo(
+    () => guideItems.reduce((sum, item) => sum + item.quantity * (item.unitCost ?? 0), 0),
+    [guideItems],
+  );
+
+  const projectedStockFor = (item: GuideLineItem) => {
+    const originalQuantity = editingDocument?.stockGuideItems?.find((original) => original.articleId === item.articleId)?.quantity ?? 0;
+    const direction = type === 'entrada' ? 1 : -1;
+    return item.currentStock + direction * (item.quantity - originalQuantity);
+  };
 
   useEffect(() => { if (!warehouseId && warehouses[0]) setWarehouseId(warehouses[0].id); }, [warehouses, warehouseId]);
   useEffect(() => { if (!canPostEntry && canPostExit) setType('saida'); }, [canPostEntry, canPostExit]);
 
-  useEffect(() => {
-    if (article) {
-      setPriceWithIvaStr(article.sellPriceWithIva ? String(article.sellPriceWithIva) : '');
-    }
-  }, [article]);
-
   const handleSelectArticle = (id: string) => {
     setArticleId(id);
-    const target = articles.find((a) => a.id === id);
-    if (target) {
-      setPriceWithIvaStr(target.sellPriceWithIva ? String(target.sellPriceWithIva) : '');
-    }
+    setUnitCostStr('');
+    setPriceWithIvaStr('');
   };
 
   const handleAfterArticleSelect = () => {
@@ -175,9 +192,14 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
     }
     const targetArticle = articles.find((a) => a.id === articleId);
     const qty = Number(quantityStr);
-    const price = priceWithIvaStr ? Number(priceWithIvaStr) : undefined;
+    const cost = unitCostStr.trim() ? Number(unitCostStr) : undefined;
+    const price = priceWithIvaStr.trim() ? Number(priceWithIvaStr) : undefined;
     if (!targetArticle || qty <= 0 || isNaN(qty)) {
       setError('Seleccione um artigo e indique uma quantidade válida.');
+      return;
+    }
+    if ((cost !== undefined && (!Number.isFinite(cost) || cost < 0)) || (price !== undefined && (!Number.isFinite(price) || price < 0))) {
+      setError('O custo e o preço de venda não podem ser negativos.');
       return;
     }
     if (type === 'saida' && qty > targetArticle.stock && !canAllowNegative) {
@@ -186,20 +208,23 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
     }
 
     setError('');
-    setGuideItems((prev) => [
-      ...prev,
-      {
+    setGuideItems((prev) => {
+      const nextItem: GuideLineItem = {
         articleId: targetArticle.id,
         articleCode: targetArticle.code,
         articleDescription: targetArticle.description,
         quantity: qty,
-        priceWithIva: price,
+        unitCost: type === 'entrada' ? cost : undefined,
+        salePriceWithIva: type === 'entrada' ? price : undefined,
         currentStock: targetArticle.stock,
-      },
-    ]);
+      };
+      const existingIndex = prev.findIndex((item) => item.articleId === targetArticle.id);
+      return existingIndex < 0 ? [...prev, nextItem] : prev.map((item, index) => index === existingIndex ? nextItem : item);
+    });
 
     setArticleId('');
     setQuantityStr('');
+    setUnitCostStr('');
     setPriceWithIvaStr('');
 
     setTimeout(() => {
@@ -222,19 +247,30 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
     const targetArticle = articles.find((a) => a.id === articleId);
     const qty = Number(quantityStr);
     if (targetArticle && qty > 0 && !isNaN(qty)) {
+      const typedCost = unitCostStr.trim() ? Number(unitCostStr) : undefined;
+      const typedPrice = priceWithIvaStr.trim() ? Number(priceWithIvaStr) : undefined;
+      if ((typedCost !== undefined && (!Number.isFinite(typedCost) || typedCost < 0)) || (typedPrice !== undefined && (!Number.isFinite(typedPrice) || typedPrice < 0))) {
+        setError('O custo e o preco de venda nao podem ser negativos.');
+        return;
+      }
       if (type === 'saida' && qty > targetArticle.stock && !canAllowNegative) {
         setError(`A quantidade de saída (${qty}) excede o stock disponível (${targetArticle.stock}) para o artigo ${targetArticle.code}.`);
         return;
       }
       if (currentGuideItems.length < 99) {
-        currentGuideItems.push({
+        const typedItem: GuideLineItem = {
           articleId: targetArticle.id,
           articleCode: targetArticle.code,
           articleDescription: targetArticle.description,
           quantity: qty,
-          priceWithIva: priceWithIvaStr ? Number(priceWithIvaStr) : undefined,
+          unitCost: type === 'entrada' ? typedCost : undefined,
+          salePriceWithIva: type === 'entrada' ? typedPrice : undefined,
           currentStock: targetArticle.stock,
-        });
+        };
+        const existingIndex = currentGuideItems.findIndex((item) => item.articleId === targetArticle.id);
+        currentGuideItems = existingIndex < 0
+          ? [...currentGuideItems, typedItem]
+          : currentGuideItems.map((item, index) => index === existingIndex ? typedItem : item);
       }
     }
 
@@ -247,44 +283,67 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
       setError('Seleccione o armazém antes de confirmar.');
       return;
     }
+    if (!guideNumber.trim()) {
+      setError('Introduza manualmente o número da guia.');
+      return;
+    }
+    if (!documentDate) {
+      setError('Seleccione a data da guia.');
+      return;
+    }
+    if (currentGuideItems.some((item) => item.quantity <= 0 || !Number.isFinite(item.quantity) || (item.unitCost != null && (!Number.isFinite(item.unitCost) || item.unitCost < 0)) || (item.salePriceWithIva != null && (!Number.isFinite(item.salePriceWithIva) || item.salePriceWithIva < 0)))) {
+      setError('Confirme as quantidades, custos e precos da guia antes de gravar.');
+      return;
+    }
 
     setSaving(true);
     setError('');
     setSuccess('');
 
     try {
-      const guideDocRef = guideNumber.trim()
-        ? `Guia: ${guideNumber.trim()}`
-        : `${type === 'entrada' ? 'Guia Entrada' : 'Guia Saída'} ${new Date().toLocaleDateString('pt-PT')}`;
-
-      for (const item of currentGuideItems) {
-        await onAddMovement({
-          id: '',
-          type,
-          warehouseId,
-          warehouseName: warehouses.find((item) => item.id === warehouseId)?.name,
-          docRef: guideDocRef,
-          date: new Date().toISOString(),
-          articleCode: item.articleCode,
-          articleDescription: item.articleDescription,
-          quantity: item.quantity,
-          entityName: '',
-          operator: operatorName,
-          reason: type === 'entrada' ? 'Entrada direta por Guia' : 'Saída direta por Guia',
-          sellPriceWithIva: item.priceWithIva,
-          notes: [
-            item.priceWithIva ? `Preço Compra c/ IVA: ${item.priceWithIva} MZN` : '',
-            notes,
-          ].filter(Boolean).join(' | '),
-        });
-      }
+      const stockGuideItems = currentGuideItems.map((item) => ({
+        ...item,
+        unitCost: type === 'entrada' ? item.unitCost : undefined,
+        salePriceWithIva: type === 'entrada' ? item.salePriceWithIva : undefined,
+      }));
+      const savedId = await onSaveGuide({
+        id: editingGuideId || undefined,
+        type,
+        guideNumber: guideNumber.trim(),
+        date: documentDate,
+        warehouseId,
+        supplierId: type === 'entrada' ? supplierId || undefined : undefined,
+        supplierName: suppliers.find((supplier) => supplier.id === supplierId)?.name,
+        notes,
+        items: stockGuideItems,
+      });
+      const totalCost = stockGuideItems.reduce((sum, item) => sum + item.quantity * (item.unitCost ?? 0), 0);
+      const printable: DocumentRecord = {
+        id: savedId,
+        displayNumber: guideNumber.trim(),
+        externalReference: guideNumber.trim(),
+        date: documentDate,
+        dueDate: documentDate,
+        typeCode: type === 'entrada' ? 'STOCK_ENTRY_GUIDE' : 'STOCK_EXIT_GUIDE',
+        typeName: type === 'entrada' ? 'Guia de Entrada de Stock' : 'Guia de Saída de Stock',
+        partyType: 'SUPPLIER',
+        partyId: type === 'entrada' ? supplierId : '',
+        partyName: type === 'entrada' ? (suppliers.find((supplier) => supplier.id === supplierId)?.name || 'Sem fornecedor') : 'Saida interna de stock',
+        status: 'CONFIRMED', netTotal: totalCost, taxTotal: 0, grandTotal: totalCost, paidAmount: 0,
+        outstandingAmount: type === 'entrada' && supplierId ? totalCost : 0,
+        notes, warehouseId, stockGuideItems,
+      };
+      setLastSavedGuide(printable);
 
       setGuideItems([]);
       setArticleId('');
       setQuantityStr('');
+      setUnitCostStr('');
       setPriceWithIvaStr('');
       setGuideNumber('');
+      setSupplierId('');
       setNotes('');
+      setEditingGuideId(null);
       // A confirmed movement must be visible immediately, independently of
       // filters or of the page where the operator was consulting the history.
       setDateFrom('');
@@ -293,7 +352,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
       setSearchQuery('');
       setMovementsPage(1);
       setHistoryRefreshKey((value) => value + 1);
-      setSuccess(`Guia (${guideDocRef}) com ${currentGuideItems.length} artigo(s) registada com sucesso. O movimento já aparece no histórico abaixo.`);
+      setSuccess(`Guia ${printable.displayNumber} com ${currentGuideItems.length} artigo(s) gravada. O movimento já aparece no histórico abaixo.`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Falha ao registar movimento de stock.');
     } finally {
@@ -311,7 +370,59 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [guideItems, articleId, quantityStr, priceWithIvaStr, guideNumber, notes, type, warehouseId, saving]);
+  }, [guideItems, articleId, quantityStr, unitCostStr, priceWithIvaStr, guideNumber, documentDate, supplierId, notes, type, warehouseId, saving, editingGuideId]);
+
+  const openGuideForEdit = (document: DocumentRecord) => {
+    setEditingGuideId(document.id);
+    setType(document.typeCode === 'STOCK_ENTRY_GUIDE' ? 'entrada' : 'saida');
+    setGuideNumber(document.externalReference || document.displayNumber);
+    setDocumentDate(document.date.slice(0, 10));
+    setWarehouseId(document.warehouseId || warehouses[0]?.id || '');
+    setSupplierId(document.typeCode === 'STOCK_ENTRY_GUIDE' ? document.partyId || '' : '');
+    setNotes(document.notes || '');
+    setGuideItems((document.stockGuideItems || []).map((item) => ({
+      ...item,
+      currentStock: articles.find((article) => article.id === item.articleId)?.stock ?? item.currentStock,
+    })));
+    setError('');
+    setSuccess('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const clearGuideForm = () => {
+    setEditingGuideId(null);
+    setGuideItems([]);
+    setArticleId('');
+    setQuantityStr('');
+    setUnitCostStr('');
+    setPriceWithIvaStr('');
+    setGuideNumber('');
+    setSupplierId('');
+    setNotes('');
+    setDocumentDate(new Date().toISOString().slice(0, 10));
+    setError('');
+  };
+
+  const confirmGuideCancellation = async () => {
+    if (!cancellingGuide || isCancelling) return;
+    if (!cancelReason.trim()) {
+      setError('Indique o motivo da anulação da guia.');
+      return;
+    }
+    setIsCancelling(true);
+    try {
+      await onCancelGuide(cancellingGuide.id, cancelReason.trim());
+      if (editingGuideId === cancellingGuide.id) clearGuideForm();
+      setSuccess(`Guia ${cancellingGuide.externalReference || cancellingGuide.displayNumber} anulada e stock revertido.`);
+      setCancellingGuide(null);
+      setCancelReason('');
+      setHistoryRefreshKey((value) => value + 1);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Falha ao anular a guia.');
+    } finally {
+      setIsCancelling(false);
+    }
+  };
 
   return (
     <div className="space-y-6 font-sans">
@@ -332,12 +443,18 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
           </div>
 
           {/* Header Controls (Operação, Nº da Guia, Observações, Operador) */}
-          <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-6">
             <label className="font-bold text-xs uppercase text-[#737780]">
               Operação
               <select
                 value={type}
-                onChange={(event) => setType(event.target.value as 'entrada' | 'saida')}
+                onChange={(event) => {
+                  const nextType = event.target.value as 'entrada' | 'saida';
+                  setType(nextType);
+                  if (nextType === 'saida') setSupplierId('');
+                  setUnitCostStr('');
+                  setPriceWithIvaStr('');
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -371,6 +488,51 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                 className="mt-1 w-full rounded border border-[#c3c6d1] dark:border-[#43474f] p-2 font-mono uppercase dark:bg-[#282c2e]"
               />
             </label>
+
+            <label className="font-bold text-xs uppercase text-[#737780]">
+              Data da Guia
+              <input
+                type="date"
+                value={documentDate}
+                onChange={(event) => setDocumentDate(event.target.value)}
+                className="mt-1 w-full rounded border border-[#c3c6d1] dark:border-[#43474f] p-2 font-mono dark:bg-[#282c2e]"
+              />
+            </label>
+
+            {type === 'entrada' && (
+              <label className="font-bold text-xs uppercase text-[#737780] lg:col-span-2">
+                Fornecedor (opcional)
+                <select
+                  value={supplierId}
+                  onChange={(event) => setSupplierId(event.target.value)}
+                  className="mt-1 w-full rounded border border-[#c3c6d1] dark:border-[#43474f] p-2 dark:bg-[#282c2e] font-bold"
+                >
+                  <option value="">-- Sem fornecedor --</option>
+                  {suppliers.map((supplier) => (
+                    <option key={supplier.id} value={supplier.id}>
+                      {supplier.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            {warehouses.length > 1 && (
+              <label className="font-bold text-xs uppercase text-[#737780]">
+                Armazem
+                <select
+                  value={warehouseId}
+                  onChange={(event) => setWarehouseId(event.target.value)}
+                  className="mt-1 w-full rounded border border-[#c3c6d1] dark:border-[#43474f] p-2 dark:bg-[#282c2e] font-bold"
+                >
+                  {warehouses.map((warehouse) => (
+                    <option key={warehouse.id} value={warehouse.id}>
+                      {warehouse.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <label className="font-bold text-xs uppercase text-[#737780]">
               Operador
@@ -408,7 +570,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
             </span>
 
             <div className="grid items-end gap-2 grid-cols-1 sm:grid-cols-12">
-              <label className="font-bold text-xs uppercase text-[#737780] sm:col-span-6">
+              <label className={`font-bold text-xs uppercase text-[#737780] ${type === 'entrada' ? 'sm:col-span-4' : 'sm:col-span-8'}`}>
                 Código do Artigo (Pesquisa por Código)
                 <ArticleSearchSelect
                   articles={articles}
@@ -434,9 +596,9 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      if (priceInputRef.current) {
-                        priceInputRef.current.focus();
-                        priceInputRef.current.select();
+                      if (type === 'entrada' && costInputRef.current) {
+                        costInputRef.current.focus();
+                        costInputRef.current.select();
                       } else {
                         addItemToGuide();
                       }
@@ -446,6 +608,30 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                   className="mt-1 w-full rounded border border-[#c3c6d1] dark:border-[#43474f] p-2 text-right font-bold bg-yellow-100 dark:bg-[#1f2325] text-black dark:text-white"
                 />
               </label>
+
+              {type === 'entrada' && (
+                <>
+                  <label className="font-bold text-xs uppercase text-[#737780] sm:col-span-2">
+                    Custo unit. (opcional)
+                    <input
+                      ref={costInputRef}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={unitCostStr}
+                      onChange={(event) => setUnitCostStr(event.target.value)}
+                      onFocus={(e) => e.target.select()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          priceInputRef.current?.focus();
+                          priceInputRef.current?.select();
+                        }
+                      }}
+                      placeholder="Ex: 5000"
+                      className="mt-1 w-full rounded border border-[#c3c6d1] dark:border-[#43474f] p-2 text-right font-mono text-emerald-700 font-bold dark:bg-[#282c2e]"
+                    />
+                  </label>
 
               <label className="font-bold text-xs uppercase text-[#737780] sm:col-span-2">
                 Preço c/ IVA (MZN)
@@ -463,10 +649,12 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                       addItemToGuide();
                     }
                   }}
-                  placeholder="Ex: 928.00"
+                  placeholder="Opcional"
                   className="mt-1 w-full rounded border border-[#c3c6d1] dark:border-[#43474f] p-2 text-right font-mono text-blue-600 font-bold dark:bg-[#282c2e]"
                 />
               </label>
+                </>
+              )}
 
               <div className="sm:col-span-2">
                 <button
@@ -520,13 +708,14 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                   <th className="p-2 text-right">Qtd.</th>
                   <th className="p-2 text-right">Stock Atual</th>
                   <th className="p-2 text-right">Stock Previsto</th>
-                  <th className="p-2 text-right">Preço c/ IVA</th>
+                  {type === 'entrada' && <th className="p-2 text-right">Custo Unit.</th>}
+                  {type === 'entrada' && <th className="p-2 text-right">Preco venda c/ IVA</th>}
                   <th className="p-2 text-center w-16">Acção</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f]">
                 {guideItems.map((item, index) => {
-                  const nextStock = type === 'entrada' ? item.currentStock + item.quantity : item.currentStock - item.quantity;
+                  const nextStock = projectedStockFor(item);
                   return (
                     <tr key={`${item.articleId}-${index}`} className="hover:bg-slate-50 dark:hover:bg-[#282c2e]">
                       <td className="p-2 text-center font-bold text-slate-400">{index + 1}</td>
@@ -535,7 +724,8 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                       <td className="p-2 text-right font-bold text-emerald-700 dark:text-emerald-400">{item.quantity}</td>
                       <td className="p-2 text-right">{item.currentStock}</td>
                       <td className={`p-2 text-right font-bold ${nextStock < 0 ? 'text-red-600' : ''}`}>{nextStock}</td>
-                      <td className="p-2 text-right">{item.priceWithIva ? formatMZN(item.priceWithIva) : '—'}</td>
+                      {type === 'entrada' && <td className="p-2 text-right">{item.unitCost != null ? formatMZN(item.unitCost) : '—'}</td>}
+                      {type === 'entrada' && <td className="p-2 text-right">{item.salePriceWithIva != null ? formatMZN(item.salePriceWithIva) : '—'}</td>}
                       <td className="p-2 text-center">
                         <button
                           type="button"
@@ -551,7 +741,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                 })}
                 {guideItems.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="p-6 text-center text-slate-400 font-sans italic text-xs">
+                    <td colSpan={type === 'entrada' ? 9 : 7} className="p-6 text-center text-slate-400 font-sans italic text-xs">
                       Nenhum artigo inserido na guia. Pesquise e adicione até 99 artigos acima.
                     </td>
                   </tr>
@@ -561,12 +751,27 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
           </div>
 
           {error && <p role="alert" className="rounded bg-red-50 p-3 text-xs font-bold text-red-700">{error}</p>}
-          {success && <p role="status" className="rounded bg-green-50 p-3 text-xs font-bold text-green-800">{success}</p>}
+          {success && (
+            <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded bg-green-50 p-3 text-xs font-bold text-green-800">
+              <span>{success}</span>
+              {lastSavedGuide && onOpenDocument && (
+                <button
+                  type="button"
+                  onClick={() => onOpenDocument(lastSavedGuide)}
+                  className="rounded bg-[#003366] px-3 py-1.5 text-[11px] font-black uppercase text-white hover:brightness-110"
+                >
+                  Imprimir guia
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Bottom Confirmation Section */}
           <div className="flex justify-between items-center pt-2 border-t border-[#c3c6d1] dark:border-[#43474f]">
             <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
-              {guideItems.length > 0 ? `${guideItems.length} artigo(s) prontos para gravar na guia.` : 'Preencha a guia acima.'}
+              {type === 'entrada' && supplierId && supplierCreditTotal > 0
+                ? `${guideItems.length} artigo(s). Credito ao fornecedor: ${formatMZN(supplierCreditTotal)}.`
+                : guideItems.length > 0 ? `${guideItems.length} artigo(s) prontos para gravar na guia.` : 'Preencha a guia acima.'}
             </span>
             <button
               type="button"
@@ -579,6 +784,110 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
           </div>
         </section>
       )}
+
+      <section className="overflow-hidden rounded-lg border border-[#c3c6d1] bg-white shadow-sm dark:border-[#43474f] dark:bg-[#1f2325] print:hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#c3c6d1] bg-slate-100 px-4 py-3 dark:border-[#43474f] dark:bg-slate-800">
+          <h2 className="text-xs font-black uppercase text-slate-800 dark:text-slate-200">
+            Guias de Entrada / Saida de Stock ({stockGuideDocuments.length})
+          </h2>
+          {lastSavedGuide && onOpenDocument && (
+            <button
+              type="button"
+              onClick={() => onOpenDocument(lastSavedGuide)}
+              className="rounded bg-[#003366] px-3 py-1.5 text-xs font-extrabold uppercase text-white hover:brightness-110"
+            >
+              Imprimir ultima guia
+            </button>
+          )}
+        </div>
+
+        {stockGuideDocuments.length === 0 ? (
+          <div className="p-6 text-center text-xs font-bold text-slate-500">
+            Nenhuma guia de entrada ou saida registada.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs font-mono">
+              <thead className="border-b border-[#c3c6d1] bg-[#e7e8e9] text-[11px] font-bold uppercase text-slate-700 dark:border-[#43474f] dark:bg-[#282c2e] dark:text-slate-300">
+                <tr>
+                  <th className="p-3 text-left">Numero</th>
+                  <th className="p-3 text-left">Data</th>
+                  <th className="p-3 text-left">Tipo</th>
+                  <th className="p-3 text-left">Fornecedor / Origem</th>
+                  <th className="p-3 text-right">Itens</th>
+                  <th className="p-3 text-right">Valor Fornecedor</th>
+                  <th className="p-3 text-left">Estado</th>
+                  <th className="p-3 text-center">Acoes</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f]">
+                {stockGuideDocuments.slice(0, 50).map((document) => {
+                  const isCancelled = document.status === 'CANCELLED' || document.status === 'REVERSED';
+                  const isEntry = document.typeCode === 'STOCK_ENTRY_GUIDE';
+                  const itemCount = document.stockGuideItems?.length ?? 0;
+                  return (
+                    <tr key={document.id} className="hover:bg-slate-50 dark:hover:bg-[#282c2e]">
+                      <td className="p-3 font-black text-[#003366] dark:text-[#a7c8ff]">{document.externalReference || document.displayNumber}</td>
+                      <td className="p-3">{document.date}</td>
+                      <td className="p-3">
+                        <span className={`rounded px-2 py-0.5 text-[10px] font-extrabold uppercase ${isEntry ? 'bg-emerald-100 text-emerald-900' : 'bg-red-100 text-red-900'}`}>
+                          {isEntry ? 'Entrada' : 'Saida'}
+                        </span>
+                      </td>
+                      <td className="p-3 font-bold">{document.partyName || (isEntry ? 'Sem fornecedor' : 'Saida interna')}</td>
+                      <td className="p-3 text-right font-bold">{itemCount}</td>
+                      <td className="p-3 text-right font-bold">{formatMZN(document.grandTotal || 0)}</td>
+                      <td className="p-3">
+                        <span className={`rounded px-2 py-0.5 text-[10px] font-extrabold uppercase ${isCancelled ? 'bg-red-100 text-red-900' : 'bg-emerald-100 text-emerald-900'}`}>
+                          {isCancelled ? 'Anulada' : 'Confirmada'}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center justify-center gap-1">
+                          {onOpenDocument && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenDocument(document)}
+                              className="rounded bg-[#003366] px-2 py-1 text-[11px] font-bold text-white hover:brightness-110"
+                              title="Imprimir guia"
+                            >
+                              Imprimir
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => openGuideForEdit(document)}
+                            disabled={isCancelled}
+                            className="rounded bg-orange-600 px-2 py-1 text-[11px] font-bold text-white hover:brightness-110 disabled:opacity-40"
+                            title="Editar guia"
+                          >
+                            Editar
+                          </button>
+                          {canCancelGuide && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCancellingGuide(document);
+                                setCancelReason('');
+                                setError('');
+                              }}
+                              disabled={isCancelled}
+                              className="rounded bg-red-700 px-2 py-1 text-[11px] font-bold text-white hover:brightness-110 disabled:opacity-40"
+                              title="Anular guia e reverter stock"
+                            >
+                              Anular
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {/* History of stock movements */}
       <section className={`overflow-hidden rounded-lg border bg-white shadow-sm dark:bg-[#1f2325] ${
@@ -803,6 +1112,53 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
           </div>
         )}
       </section>
+
+      {cancellingGuide && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 print:hidden">
+          <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-2xl dark:bg-[#1f2325]">
+            <div className="mb-3 flex items-center justify-between border-b border-[#c3c6d1] pb-2 dark:border-[#43474f]">
+              <h3 className="text-sm font-black uppercase text-[#003366] dark:text-[#a7c8ff]">Anular guia de stock</h3>
+              <button
+                type="button"
+                onClick={() => setCancellingGuide(null)}
+                className="text-xl font-black text-slate-500 hover:text-red-700"
+              >
+                x
+              </button>
+            </div>
+            <p className="mb-3 text-xs font-bold text-slate-700 dark:text-slate-200">
+              A guia {cancellingGuide.externalReference || cancellingGuide.displayNumber} sera anulada e o movimento de stock sera revertido.
+            </p>
+            <label className="text-xs font-bold uppercase text-[#737780]">
+              Motivo da anulacao
+              <textarea
+                value={cancelReason}
+                onChange={(event) => setCancelReason(event.target.value)}
+                rows={3}
+                className="mt-1 w-full rounded border border-[#c3c6d1] p-2 text-sm dark:border-[#43474f] dark:bg-[#282c2e]"
+                placeholder="Ex: erro de lancamento, guia duplicada..."
+              />
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setCancellingGuide(null)}
+                className="rounded border border-[#c3c6d1] px-4 py-2 text-xs font-bold uppercase dark:border-[#43474f]"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmGuideCancellation()}
+                disabled={isCancelling}
+                className="rounded bg-red-700 px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-50"
+              >
+                {isCancelling ? 'A anular...' : 'Confirmar anulacao'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Extracto Modal */}
       <ArticleLedgerModal

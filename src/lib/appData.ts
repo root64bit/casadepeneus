@@ -279,6 +279,41 @@ async function resolveOrRegisterCustomer(
   return String(data);
 }
 
+export async function saveStockGuide(input: import('../types').StockGuideInput): Promise<string> {
+  const client = requireSupabase();
+  const params = {
+    p_guide_number: input.guideNumber.trim(),
+    p_document_date: input.date,
+    p_warehouse_id: input.warehouseId,
+    p_supplier_id: input.type === 'entrada' && input.supplierId ? input.supplierId : null,
+    p_notes: input.notes?.trim() || null,
+    p_items: input.items.map((item) => ({
+      product_id: item.articleId,
+      quantity: item.quantity,
+      unit_cost: item.unitCost ?? null,
+      sale_price_incl: input.type === 'entrada' ? (item.salePriceWithIva ?? null) : null,
+    })),
+  };
+  const result = input.id
+    ? await client.rpc('update_stock_guide_v2', { p_document_id: input.id, ...params })
+    : await client.rpc('create_stock_guide_v2', {
+        p_guide_type: input.type === 'entrada' ? 'STOCK_ENTRY_GUIDE' : 'STOCK_EXIT_GUIDE',
+        p_idempotency_key: crypto.randomUUID(),
+        ...params,
+      });
+  if (result.error) throw new Error(result.error.message || 'Falha ao guardar a guia de stock.');
+  return String(result.data);
+}
+
+export async function cancelStockGuide(documentId: string, reason: string): Promise<void> {
+  const { error } = await requireSupabase().rpc('cancel_stock_guide_v2', {
+    p_document_id: documentId,
+    p_reason: reason.trim(),
+    p_idempotency_key: crypto.randomUUID(),
+  });
+  if (error) throw new Error(error.message || 'Falha ao anular a guia de stock.');
+}
+
 export async function updateOperationalParty(
   type: 'customer' | 'supplier',
   partyId: string,
@@ -598,7 +633,7 @@ export async function loadAppData(scope: AppDataScope = 'all'): Promise<AppData>
   const skipped = () => Promise.resolve({ data: [] as Row[], error: null });
   const wantsProducts = wants('sales', 'stock', 'documents', 'reports', 'after-sale');
   const wantsCustomers = wants('sales', 'stock', 'documents', 'entities', 'reports', 'after-sale');
-  const wantsSuppliers = wants('documents', 'entities', 'reports');
+  const wantsSuppliers = wants('stock', 'documents', 'entities', 'reports');
   const wantsDocuments = wants('sales', 'stock', 'documents', 'entities', 'reports', 'after-sale');
 
   const [contextResult, metricsResult, permissionsResult, modeResult, companyResult, productsResult, balancesResult, customersResult, suppliersResult, documentsResult, movementsResult, paymentsResult, ledgerResult, usersResult, paymentTermsResult, paymentMethodsResult, categoriesResult, brandsResult, unitsResult, taxCodesResult, supplierPurchasesRpcResult] =
@@ -909,6 +944,12 @@ export async function loadAppData(scope: AppDataScope = 'all'): Promise<AppData>
     const typeName = documentType?.name || (isCot ? 'Cotação' : isGr ? 'Guia de Remessa' : isVd ? 'Venda a Dinheiro' : isFt ? 'Factura' : '');
 
     let partyName = customer?.name ?? supplier?.name ?? 'Cliente Pontual';
+    if (!customer && !supplier && typeCode === 'STOCK_ENTRY_GUIDE') {
+      partyName = 'Sem fornecedor';
+    }
+    if (!customer && !supplier && typeCode === 'STOCK_EXIT_GUIDE') {
+      partyName = 'Saida interna de stock';
+    }
     if (row.notes && row.notes.includes('[CLIENTE:')) {
       const match = row.notes.match(/\[CLIENTE:\s*([^|]+)/);
       if (match && match[1].trim() && match[1].trim() !== 'N/A') {
@@ -919,6 +960,8 @@ export async function loadAppData(scope: AppDataScope = 'all'): Promise<AppData>
     return {
       id: row.id,
       displayNumber: row.display_number ?? 'Rascunho',
+      externalReference: row.external_reference ?? undefined,
+      warehouseId: row.warehouse_id ?? undefined,
       date: row.document_date,
       dueDate: row.due_date ?? '',
       typeCode: typeCode,
@@ -959,6 +1002,17 @@ export async function loadAppData(scope: AppDataScope = 'all'): Promise<AppData>
           stockEffectEnabled: Boolean(line.stock_effect_enabled),
         } as SaleItem;
       }),
+      stockGuideItems: (typeCode === 'STOCK_ENTRY_GUIDE' || typeCode === 'STOCK_EXIT_GUIDE') ? ((row.document_lines ?? []) as Row[]).map((line) => ({
+        documentLineId: line.id,
+        articleId: line.product_id ?? line.id,
+        articleCode: line.product_code_snapshot ?? '',
+        articleDescription: line.description_snapshot ?? '',
+        quantity: numberValue(line.quantity),
+        unitCost: line.cost_was_provided ? numberValue(line.unit_cost_snapshot) : undefined,
+        salePriceWithIva: line.sale_price_incl == null ? undefined : numberValue(line.sale_price_incl),
+        currentStock: articles.find((article) => article.id === line.product_id)?.stock ?? 0,
+        totalCost: numberValue(line.total_amount),
+      })) : undefined,
     };
   });
 

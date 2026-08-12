@@ -26,6 +26,8 @@ export function PrintRecordModal({
       : 'Comprovativo de Pagamento a Fornecedor';
   const partyName = document?.partyName ?? payment?.partyName ?? '';
   const total = document?.grandTotal ?? payment?.totalAmount ?? 0;
+  const stockGuideItems = document?.stockGuideItems ?? [];
+  const saleItems = document?.items ?? [];
 
   const handlePrint = () => {
     window.document.body.classList.add('printing-modal');
@@ -77,6 +79,66 @@ export function PrintRecordModal({
               <strong>{document?.status ?? payment?.status}</strong>
             </div>
           </section>
+
+          {stockGuideItems.length > 0 && (
+            <section className="overflow-hidden rounded border text-xs print:text-[9px]">
+              <table className="w-full border-collapse">
+                <thead className="bg-gray-100 font-bold uppercase text-gray-700">
+                  <tr>
+                    <th className="border px-2 py-1 text-left">Codigo</th>
+                    <th className="border px-2 py-1 text-left">Descricao</th>
+                    <th className="border px-2 py-1 text-right">Qtd.</th>
+                    <th className="border px-2 py-1 text-right">Custo</th>
+                    <th className="border px-2 py-1 text-right">Preco venda c/ IVA</th>
+                    <th className="border px-2 py-1 text-right">Total custo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stockGuideItems.map((item, index) => (
+                    <tr key={`${item.articleId}-${index}`}>
+                      <td className="border px-2 py-1 font-mono font-bold">{item.articleCode}</td>
+                      <td className="border px-2 py-1">{item.articleDescription}</td>
+                      <td className="border px-2 py-1 text-right font-mono">{item.quantity}</td>
+                      <td className="border px-2 py-1 text-right font-mono">{item.unitCost != null ? formatMZN(item.unitCost) : '-'}</td>
+                      <td className="border px-2 py-1 text-right font-mono">{item.salePriceWithIva != null ? formatMZN(item.salePriceWithIva) : '-'}</td>
+                      <td className="border px-2 py-1 text-right font-mono">{formatMZN(item.quantity * (item.unitCost ?? 0))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
+
+          {stockGuideItems.length === 0 && saleItems.length > 0 && (
+            <section className="overflow-hidden rounded border text-xs print:text-[9px]">
+              <table className="w-full border-collapse">
+                <thead className="bg-gray-100 font-bold uppercase text-gray-700">
+                  <tr>
+                    <th className="border px-2 py-1 text-left">Codigo</th>
+                    <th className="border px-2 py-1 text-left">Descricao</th>
+                    <th className="border px-2 py-1 text-right">Qtd.</th>
+                    <th className="border px-2 py-1 text-right">Preco</th>
+                    <th className="border px-2 py-1 text-right">Desc.</th>
+                    <th className="border px-2 py-1 text-right">IVA</th>
+                    <th className="border px-2 py-1 text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {saleItems.map((item, index) => (
+                    <tr key={`${item.articleId}-${index}`}>
+                      <td className="border px-2 py-1 font-mono font-bold">{item.code}</td>
+                      <td className="border px-2 py-1">{item.description}</td>
+                      <td className="border px-2 py-1 text-right font-mono">{item.quantity}</td>
+                      <td className="border px-2 py-1 text-right font-mono">{formatMZN(item.unitPrice)}</td>
+                      <td className="border px-2 py-1 text-right font-mono">{formatMZN(item.discountAmount ?? 0)}</td>
+                      <td className="border px-2 py-1 text-right font-mono">{item.ivaPercent}%</td>
+                      <td className="border px-2 py-1 text-right font-mono">{formatMZN(item.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
 
           <section className="ml-auto w-full max-w-sm space-y-1 border-t pt-3 print:pt-2 text-xs print:text-[11px] font-mono">
             <div className="flex justify-between text-sm print:text-xs font-black">
