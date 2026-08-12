@@ -22,6 +22,7 @@ export interface Article {
 }
 
 export interface SaleItem {
+  documentLineId?: string;
   articleId: string;
   code: string;
   description: string;
@@ -68,6 +69,7 @@ export interface SaleInvoice {
   bankNibBim?: string;
   validityDays?: string;
   keepAsWalkIn?: boolean;
+  createdAt?: string;
 }
 
 export interface StockMovement {
@@ -126,6 +128,7 @@ export interface DashboardMetrics {
   outOfStockProducts: number;
   salesToday: number;
   receivables: number;
+  debtorCount?: number;
   payables: number;
   draftDocuments: number;
   serverDate: string;
@@ -213,6 +216,9 @@ export interface DocumentRecord {
   outstandingAmount: number;
   salespersonName?: string;
   notes?: string;
+  sourceDocumentId?: string;
+  createdAt?: string;
+  items?: SaleItem[];
 }
 
 export interface PaymentRecord {
@@ -225,6 +231,8 @@ export interface PaymentRecord {
   allocatedAmount: number;
   unappliedAmount: number;
   status: string;
+  reference?: string;
+  description?: string;
 }
 
 export interface LedgerRecord {

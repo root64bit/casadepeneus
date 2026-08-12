@@ -123,7 +123,8 @@ function App() {
   const [isPaymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentModalAmount, setPaymentModalAmount] = useState(0);
   const [paymentModalClient, setPaymentModalClient] = useState('');
-  const [paymentSale, setPaymentSale] = useState<SaleInvoice | null>(null);
+  const [paymentDocument, setPaymentDocument] = useState<DocumentRecord | null>(null);
+  const [paymentDirection, setPaymentDirection] = useState<'CUSTOMER' | 'SUPPLIER'>('CUSTOMER');
   const [isPrintModalOpen, setPrintModalOpen] = useState(false);
   const [printInvoice, setPrintInvoice] = useState<SaleInvoice | null>(null);
   const [printDocument, setPrintDocument] = useState<DocumentRecord | null>(null);
@@ -379,14 +380,15 @@ function App() {
     paidAmount: number,
     reference: string,
   ) => {
-    if (!paymentSale) throw new Error('Fatura do pagamento não identificada.');
+    if (!paymentDocument) throw new Error('Documento do pagamento não identificado.');
 
-    await createCustomerPayment(paymentSale, methodCode, paidAmount, reference);
-    await refreshData();
+    const payment = paymentDirection === 'CUSTOMER'
+      ? await createCustomerPayment(paymentDocument, methodCode, paidAmount, reference)
+      : await createSupplierPayment(paymentDocument, methodCode as 'CASH' | 'BANK_TRANSFER', paidAmount, reference);
+    await refreshData(true, 'documents');
     setPaymentModalOpen(false);
-    setPrintInvoice({ ...paymentSale, paidAmount, pendingAmount: 0, status: 'Concluída' });
-    setPrintModalOpen(true);
-    setPaymentSale(null);
+    setPrintPayment(payment);
+    setPaymentDocument(null);
   };
 
   const handleOpenPrintModal = (sale: SaleInvoice) => {
@@ -552,6 +554,7 @@ function App() {
 
   // Global keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (activeTab === 'sales' && ['F2', 'F3', 'F5', 'F9'].includes(e.key)) return;
     switch (e.key) {
       case 'F1':
         e.preventDefault();
@@ -576,7 +579,7 @@ function App() {
         else if (isPrintModalOpen) setPrintModalOpen(false);
         break;
     }
-  }, [isNewArticleModalOpen, isPaymentModalOpen, isPrintModalOpen]);
+  }, [activeTab, isNewArticleModalOpen, isPaymentModalOpen, isPrintModalOpen]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -716,9 +719,12 @@ function App() {
             isAdmin={permissions.includes('settings.manage')}
             onUpdateParty={handleUpdateParty}
             onConfirmAdvice={async (payload) => {
-              const docId = await createAndConfirmFinancialAdvice(payload);
-              await refreshData();
-              return docId;
+              const document = await createAndConfirmFinancialAdvice(payload);
+              const entity = payload.entityType === 'CUSTOMER'
+                ? clients.find((client) => client.id === payload.entityId)
+                : suppliers.find((supplier) => supplier.id === payload.entityId);
+              await refreshData(true, 'documents');
+              return { ...document, partyName: entity?.name || '' };
             }}
             onPrintRecord={setPrintDocument}
           />
@@ -744,7 +750,7 @@ function App() {
             onPrint={handleOpenPrintModal}
             onPrintRecord={setPrintDocument}
             permissions={permissions}
-            canCancelAdvice={permissions.includes('financial_adjustments.cancel')}
+            canCancelAdvice={permissions.includes('financial_adjustments.cancel') || permissions.includes('settings.manage')}
             onCancelAdvice={async (docId, reason) => {
               const idempotencyKey = crypto.randomUUID();
               await cancelFinancialAdvice(docId, reason, idempotencyKey);
@@ -764,6 +770,22 @@ function App() {
             clients={clients}
             documents={documents}
             onPrintPayment={setPrintPayment}
+            canReceive={permissions.includes('payments.receive') && (permissions.includes('payments.allocate') || permissions.includes('payments.allocate_customer'))}
+            canPay={permissions.includes('payments.pay_supplier') && (permissions.includes('payments.allocate') || permissions.includes('payments.allocate_supplier'))}
+            onReceiveDocument={(document) => {
+              setPaymentDocument(document);
+              setPaymentDirection('CUSTOMER');
+              setPaymentModalAmount(document.outstandingAmount);
+              setPaymentModalClient(document.partyName);
+              setPaymentModalOpen(true);
+            }}
+            onPayDocument={(document) => {
+              setPaymentDocument(document);
+              setPaymentDirection('SUPPLIER');
+              setPaymentModalAmount(document.outstandingAmount);
+              setPaymentModalClient(document.partyName);
+              setPaymentModalOpen(true);
+            }}
           />
         );
       case 'administration':
@@ -850,8 +872,10 @@ function App() {
         onClose={() => setPaymentModalOpen(false)}
         totalAmount={paymentModalAmount}
         clientName={paymentModalClient}
+        partyType={paymentDirection}
+        documentNumber={paymentDocument?.displayNumber}
         onConfirmPayment={handleConfirmPayment}
-        paymentMethods={paymentMethods.filter((method) => method.allowsCustomerReceipt)}
+        paymentMethods={paymentMethods.filter((method) => paymentDirection === 'CUSTOMER' ? method.allowsCustomerReceipt : method.allowsSupplierPayment)}
       />
       <PrintInvoiceModal
         isOpen={isPrintModalOpen}

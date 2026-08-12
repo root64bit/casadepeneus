@@ -123,7 +123,7 @@ export const Entities: React.FC<EntitiesProps> = ({
             Gestão de Clientes e Fornecedores
           </h1>
           <p className="text-xs text-slate-500">
-            Directorias de contactos, extractos de conta corrente e emissão de avisos financeiros.
+            Directorias de contactos, extractos de conta corrente e emissão de notas de crédito.
           </p>
         </div>
 
@@ -204,7 +204,7 @@ export const Entities: React.FC<EntitiesProps> = ({
             }`}
           >
             <span className="material-symbols-outlined text-sm">savings</span>
-            <span>Aviso de Crédito</span>
+            <span>Nota de Crédito</span>
           </button>
         </div>
 
@@ -407,7 +407,7 @@ export const Entities: React.FC<EntitiesProps> = ({
         </section>
       )}
 
-      {/* Render Subtab 3: Aviso de Crédito */}
+      {/* Render Subtab 3: Nota de Crédito */}
       {subTab === 'CREDIT_ADVICE' && (
         <FinancialAdviceDocument
           entityType={mainTab === 'CLIENTES' ? 'CUSTOMER' : 'SUPPLIER'}

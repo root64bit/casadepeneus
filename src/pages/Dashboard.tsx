@@ -24,6 +24,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const lowStockArticles = articles.filter(a => a.stock <= a.minStock);
   const totalSalesToday = metrics?.salesToday ?? 0;
   const totalPendingDebt = metrics?.receivables ?? 0;
+  const debtorCount = metrics?.debtorCount ?? clients.filter((client) => client.pendingBalance > 0).length;
+  const operationalDate = metrics?.serverDate;
+  const isMonday = operationalDate
+    ? new Date(`${operationalDate}T00:00:00Z`).getUTCDay() === 1
+    : new Date().getDay() === 1;
+  const salesToday = sales.filter((sale) =>
+    (!operationalDate || sale.date === operationalDate)
+    && ['CUSTOMER_INVOICE', 'CASH_SALE'].includes(sale.documentTypeCode ?? '')
+    && sale.status !== 'Cancelada'
+  );
   const canSell = permissions.includes('sales.create') && permissions.includes('sales.confirm');
   const canEntry = permissions.includes('stock.direct_entry') || permissions.includes('stock.entry.confirm');
   const canExit = permissions.includes('stock.direct_exit') || permissions.includes('stock.exit.confirm');
@@ -33,7 +43,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   return (
     <div className="space-y-6">
       {/* Weekly Debtors Reminder Banner for Administrator & Manager */}
-      {isManagerOrAdmin && (
+      {isManagerOrAdmin && isMonday && totalPendingDebt > 0 && (
         <div className="bg-[#fff8f6] dark:bg-[#2b1917] border-l-4 border-[#ba1a1a] p-4 rounded shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center space-x-3">
             <div className="p-2.5 bg-[#ffdad6] text-[#ba1a1a] rounded-full flex items-center justify-center">
@@ -45,7 +55,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <span className="text-[10px] bg-[#ba1a1a] text-white font-extrabold px-2 py-0.5 rounded uppercase">Recorrente • Segunda-feira</span>
               </h4>
               <p className="text-xs text-[#43474f] dark:text-[#c3c6d1] mt-0.5">
-                Existem <strong className="text-[#ba1a1a]">{clients.filter(c => c.pendingBalance > 0).length} clientes devedores</strong> registados com um total pendente de <strong className="text-[#ba1a1a] font-mono">{formatMZN(totalPendingDebt)}</strong> por cobrar.
+                Existem <strong className="text-[#ba1a1a]">{debtorCount} clientes devedores</strong> registados com um total pendente de <strong className="text-[#ba1a1a] font-mono">{formatMZN(totalPendingDebt)}</strong> por cobrar.
               </p>
             </div>
           </div>
@@ -134,8 +144,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f] font-mono">
-                {sales.length === 0 && <tr><td colSpan={4} className="p-6 text-center font-sans text-slate-500">Sem vendas para apresentar.</td></tr>}
-                {sales.map((sale) => (
+                {salesToday.length === 0 && <tr><td colSpan={4} className="p-6 text-center font-sans text-slate-500">{totalSalesToday > 0 ? 'O total está actualizado. Abra Documentos para consultar os detalhes.' : 'Sem vendas para apresentar.'}</td></tr>}
+                {salesToday.map((sale) => (
                   <tr key={sale.id} className="hover:bg-[#f3f4f5] dark:hover:bg-[#282c2e] transition-colors">
                     <td className="p-2.5 font-bold text-[#003366] dark:text-[#a7c8ff]">{sale.docNumber}</td>
                     <td className="p-2.5 font-sans font-medium">{sale.clientName}</td>
@@ -196,7 +206,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </span>
           </div>
           <div className="divide-y divide-[#c3c6d1] dark:divide-[#43474f] text-xs">
-            {clients.filter(c => c.pendingBalance > 0).length === 0 && <p className="p-6 text-center text-slate-500">Sem cobranças pendentes.</p>}
+            {clients.filter(c => c.pendingBalance > 0).length === 0 && <button type="button" onClick={() => setActiveTab('accounts')} className="w-full p-6 text-center text-slate-500 hover:text-[#003366]">{totalPendingDebt > 0 ? `${debtorCount} cliente(s) com saldo. Abrir contas a receber.` : 'Sem cobranças pendentes.'}</button>}
             {clients.filter(c => c.pendingBalance > 0).map((client) => (
               <div key={client.id} className="p-3 flex justify-between items-center hover:bg-[#f3f4f5] dark:hover:bg-[#282c2e]">
                 <div>
@@ -221,7 +231,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </h3>
           </div>
           <div className="p-3 space-y-2.5 text-xs">
-            {sales.length === 0 && <p className="p-6 text-center text-slate-500">Sem documentos recentes.</p>}
+            {sales.length === 0 && <button type="button" onClick={() => setActiveTab('documents')} className="w-full p-6 text-center text-slate-500 hover:text-[#003366]">Abrir Documentos para consultar o histórico.</button>}
             {sales.map((s) => (
               <div
                 key={s.id}

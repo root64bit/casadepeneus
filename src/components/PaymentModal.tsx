@@ -7,6 +7,8 @@ interface PaymentModalProps {
   onClose: () => void;
   totalAmount: number;
   clientName: string;
+  partyType?: 'CUSTOMER' | 'SUPPLIER';
+  documentNumber?: string;
   onConfirmPayment: (
     paymentMethodCode: string,
     paidAmount: number,
@@ -20,6 +22,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   onClose,
   totalAmount,
   clientName,
+  partyType = 'CUSTOMER',
+  documentNumber,
   onConfirmPayment,
   paymentMethods,
 }) => {
@@ -36,7 +40,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       setError('');
       setMethod(paymentMethods[0]?.code ?? '');
     }
-  }, [isOpen, totalAmount]);
+  }, [isOpen, totalAmount, paymentMethods[0]?.code]);
 
   if (!isOpen) return null;
 
@@ -46,6 +50,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     e.preventDefault();
     const selectedMethod = paymentMethods.find((item) => item.code === method);
     if (!selectedMethod) return;
+    if (!Number.isFinite(paidInput) || paidInput <= 0 || paidInput > totalAmount) {
+      setError(`O valor deve ser superior a zero e não pode exceder ${formatMZN(totalAmount)}.`);
+      return;
+    }
     if (selectedMethod.requiresReference && !reference.trim()) {
       setError('Introduza a referência da transferência ou pagamento móvel.');
       return;
@@ -67,7 +75,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         <div className="bg-[#001e40] text-white px-6 py-4 flex justify-between items-center">
           <h3 className="font-bold text-lg flex items-center">
             <span className="material-symbols-outlined mr-2">payments</span>
-            Finalizar Pagamento - Venda Balcão
+            {partyType === 'CUSTOMER' ? 'Registar Recebimento' : 'Registar Pagamento'}
           </h3>
           <button onClick={onClose} className="text-white/80 hover:text-white">
             <span className="material-symbols-outlined">close</span>
@@ -77,8 +85,9 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           <div className="bg-[#f3f4f5] dark:bg-[#282c2e] p-4 rounded border border-[#c3c6d1] dark:border-[#43474f] text-center">
             <span className="text-xs uppercase text-[#43474f] dark:text-[#c3c6d1] font-bold tracking-wider block mb-1">
-              Cliente: {clientName || 'Consumidor Final'}
+              {partyType === 'CUSTOMER' ? 'Cliente' : 'Fornecedor'}: {clientName || 'Entidade não identificada'}
             </span>
+            {documentNumber && <span className="mb-1 block text-xs font-bold text-[#737780]">Documento: {documentNumber}</span>}
             <div className="text-3xl font-extrabold text-[#001e40] dark:text-[#a7c8ff] font-mono">
               {formatMZN(totalAmount)}
             </div>
@@ -110,7 +119,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
           <div>
             <label className="block text-xs font-bold text-[#43474f] dark:text-[#c3c6d1] uppercase mb-1">
-              Valor Entregue (MZN)
+              {partyType === 'CUSTOMER' ? 'Valor Recebido (MZN)' : 'Valor Pago (MZN)'}
             </label>
             <input
               type="number"
@@ -121,7 +130,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             />
           </div>
 
-          {!paymentMethods.find((item) => item.code === method)?.requiresReference && (
+          {partyType === 'CUSTOMER' && !paymentMethods.find((item) => item.code === method)?.requiresReference && changeDue > 0 && (
             <div className="flex justify-between items-center bg-[#80f98b]/20 text-[#007327] p-3 rounded border border-[#006e25]/30">
               <span className="text-xs font-bold uppercase">Troco a Devolver:</span>
               <strong className="text-xl font-mono">{formatMZN(changeDue)}</strong>
@@ -148,7 +157,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               className="px-6 py-2.5 bg-[#006e25] text-white rounded font-bold text-xs uppercase hover:brightness-110 transition-all shadow-md flex items-center disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="material-symbols-outlined mr-2">check_circle</span>
-              {saving ? 'A confirmar…' : 'Confirmar & Emitir Recibo'}
+              {saving ? 'A confirmar…' : partyType === 'CUSTOMER' ? 'Confirmar e Emitir Recibo' : 'Confirmar Pagamento'}
             </button>
           </div>
         </form>

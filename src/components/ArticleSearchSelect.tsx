@@ -12,6 +12,8 @@ interface ArticleSearchSelectProps {
   placeholder?: string;
   searchByCodeOnly?: boolean;
   disabled?: boolean;
+  inputId?: string;
+  onEmptyEnter?: () => void;
 }
 
 export const ArticleSearchSelect: React.FC<ArticleSearchSelectProps> = ({
@@ -24,6 +26,8 @@ export const ArticleSearchSelect: React.FC<ArticleSearchSelectProps> = ({
   placeholder = 'Pesquisar por código ou descrição…',
   searchByCodeOnly = false,
   disabled = false,
+  inputId,
+  onEmptyEnter,
 }) => {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -99,6 +103,12 @@ export const ArticleSearchSelect: React.FC<ArticleSearchSelectProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !query.trim() && onEmptyEnter) {
+      e.preventDefault();
+      setIsOpen(false);
+      onEmptyEnter();
+      return;
+    }
     if (!isOpen && (e.key === 'ArrowDown' || e.key === 'Enter')) {
       if (e.key === 'Enter' && query.trim()) {
         const topMatch = filtered[0];
@@ -155,6 +165,7 @@ export const ArticleSearchSelect: React.FC<ArticleSearchSelectProps> = ({
           search
         </span>
         <input
+          id={inputId}
           ref={inputRef}
           type="text"
           disabled={disabled}

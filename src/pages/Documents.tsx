@@ -102,7 +102,7 @@ export function Documents({
       setCancellingDoc(null);
       setCancelReason('');
     } catch (err: any) {
-      setCancelError(err?.message || 'Falha ao cancelar aviso financeiro.');
+      setCancelError(err?.message || 'Falha ao cancelar a nota de crédito.');
     } finally {
       setIsSubmittingCancel(false);
     }
@@ -289,9 +289,9 @@ export function Documents({
                   <option value="CASH_SALE">Venda a Dinheiro</option>
                   <option value="CUSTOMER_DELIVERY_NOTE">Guia de Remessa</option>
                   <option value="CUSTOMER_QUOTATION">Cotação</option>
-                  <option value="CUSTOMER_CREDIT_ADVICE">Aviso de Crédito a Cliente</option>
+                  <option value="CUSTOMER_CREDIT_NOTE">Nota de Crédito a Cliente</option>
                   <option value="SUPPLIER_INVOICE">Factura de Fornecedor</option>
-                  <option value="SUPPLIER_CREDIT_ADVICE">Aviso de Crédito Fornecedor</option>
+                  <option value="SUPPLIER_CREDIT_ADVICE">Nota de Crédito de Fornecedor</option>
                 </>
               )}
             </select>
@@ -318,7 +318,7 @@ export function Documents({
             <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f]">
               {filtered.map((document) => {
                 const printable = sales.find((sale) => sale.id === document.id);
-                const isAdviceDoc = document.typeCode === 'CUSTOMER_CREDIT_ADVICE' || document.typeCode === 'SUPPLIER_CREDIT_ADVICE';
+                const isAdviceDoc = document.typeCode === 'CUSTOMER_CREDIT_NOTE' || document.typeCode === 'SUPPLIER_CREDIT_ADVICE';
                 const canCancelThisDoc = canCancelAdvice && isAdviceDoc && document.status === 'CONFIRMED';
                 const formattedDate = document.date ? document.date.substring(0, 10) : '—';
 
@@ -368,10 +368,10 @@ export function Documents({
 
                       <button
                         type="button"
-                        onClick={() => handleOpenEdit(document)}
+                        onClick={() => isAdviceDoc ? onPrintRecord(document) : handleOpenEdit(document)}
                         className="inline-flex h-8 min-w-[78px] items-center justify-center rounded bg-amber-600 px-3 font-bold text-white text-[11px] hover:bg-amber-700 transition-colors"
                       >
-                        Editar
+                        {isAdviceDoc ? 'Detalhes' : 'Editar'}
                       </button>
 
                       {canCancelThisDoc && (
@@ -411,7 +411,7 @@ export function Documents({
             <div className="flex items-center space-x-2 border-b pb-3 text-red-700 dark:text-red-400">
               <span className="material-symbols-outlined text-2xl">cancel</span>
               <h3 className="font-black text-sm uppercase tracking-wide">
-                Cancelar Aviso {cancellingDoc.displayNumber}
+                Cancelar Nota {cancellingDoc.displayNumber}
               </h3>
             </div>
 
@@ -424,7 +424,7 @@ export function Documents({
             <div className="space-y-2 text-xs font-mono bg-slate-50 dark:bg-[#282c2e] p-3 rounded border">
               <div>Documento: <b>{cancellingDoc.displayNumber}</b></div>
               <div>Entidade: <b>{cancellingDoc.partyName}</b></div>
-              <div>Total do Aviso: <b>{formatMZN(cancellingDoc.grandTotal)}</b></div>
+              <div>Total da Nota: <b>{formatMZN(cancellingDoc.grandTotal)}</b></div>
             </div>
 
             <div>

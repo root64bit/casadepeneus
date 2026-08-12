@@ -362,7 +362,7 @@ export async function createCustomerSale(
     totalAmount: numberValue(document.grand_total),
     paidAmount: numberValue(document.amount_paid),
     pendingAmount: numberValue(document.outstanding_amount),
-    status: document.status === 'CONFIRMED' ? 'Concluída' : 'Pendente',
+    status: ['CONFIRMED', 'PAID'].includes(document.status) ? 'Concluída' : 'Pendente',
   };
 
 }
@@ -424,21 +424,38 @@ export async function createQuotation(
 }
 
 export async function createCustomerPayment(
-  sale: SaleInvoice,
+  sale: SaleInvoice | DocumentRecord,
   methodCode: string,
   amount: number,
   reference: string,
-): Promise<void> {
-  if (!sale.clientId) throw new Error('Cliente do pagamento não identificado.');
-  const { error } = await requireSupabase().rpc('create_and_confirm_customer_payment', {
-    p_customer_id: sale.clientId,
+): Promise<PaymentRecord> {
+  const isDocumentRecord = 'partyId' in sale;
+  const customerId = isDocumentRecord ? sale.partyId : sale.clientId;
+  const pendingAmount = isDocumentRecord ? sale.outstandingAmount : sale.pendingAmount;
+  if (!customerId) throw new Error('Cliente do pagamento não identificado.');
+  const { data, error } = await requireSupabase().rpc('create_and_confirm_customer_payment', {
+    p_customer_id: customerId,
     p_document_id: sale.id,
     p_method_code: methodCode,
-    p_amount: Math.min(amount, sale.pendingAmount ?? sale.totalAmount),
+    p_amount: Math.min(amount, pendingAmount),
     p_reference: methodCode === 'CASH' ? null : reference.trim(),
     p_idempotency_key: crypto.randomUUID(),
   });
   if (error) throw error;
+  const payment = Array.isArray(data) ? data[0] : data;
+  return {
+    id: payment.id,
+    displayNumber: payment.display_number,
+    date: payment.payment_date,
+    direction: 'CUSTOMER_RECEIPT',
+    partyName: 'clientName' in sale ? sale.clientName : sale.partyName,
+    totalAmount: numberValue(payment.total_amount),
+    allocatedAmount: numberValue(payment.allocated_amount),
+    unappliedAmount: numberValue(payment.unapplied_amount),
+    status: payment.status,
+    reference: payment.external_reference ?? reference,
+    description: payment.description ?? undefined,
+  };
 }
 
 export async function createSupplierInvoice(
@@ -492,12 +509,12 @@ export async function createSupplierInvoice(
 
 export async function createSupplierPayment(
   document: DocumentRecord,
-  methodCode: 'CASH' | 'BANK_TRANSFER',
+  methodCode: string,
   amount: number,
   reference: string,
-): Promise<void> {
+): Promise<PaymentRecord> {
   const client = requireSupabase();
-  const { error } = await client.rpc(
+  const { data, error } = await client.rpc(
     'create_and_confirm_supplier_payment',
     {
       p_supplier_id: document.partyId,
@@ -510,6 +527,20 @@ export async function createSupplierPayment(
   );
 
   if (error) throw new Error(error.message || 'Falha ao registar pagamento do fornecedor.');
+  const payment = Array.isArray(data) ? data[0] : data;
+  return {
+    id: payment.id,
+    displayNumber: payment.display_number,
+    date: payment.payment_date,
+    direction: 'SUPPLIER_PAYMENT',
+    partyName: document.partyName,
+    totalAmount: numberValue(payment.total_amount),
+    allocatedAmount: numberValue(payment.allocated_amount),
+    unappliedAmount: numberValue(payment.unapplied_amount),
+    status: payment.status,
+    reference: payment.external_reference ?? reference,
+    description: payment.description ?? undefined,
+  };
 }
 
 type Row = Record<string, any>;
@@ -602,11 +633,7 @@ export async function loadAppData(scope: AppDataScope = 'all'): Promise<AppData>
         .eq('active', true)
         .order('name')
         .limit(500) : skipped(),
-      wantsDocuments ? client
-        .from('documents')
-        .select('id,display_number,document_date,due_date,status,notes,subtotal,discount_total,general_discount_amount,net_total,tax_total,grand_total,amount_paid,outstanding_amount,salesperson_name,customer_id,supplier_id,customers(customer_number,name,tax_number),suppliers(supplier_number,name,tax_number),payment_terms(code,name),document_types(code,name),document_lines(id,product_id,product_code_snapshot,description_snapshot,quantity,unit_price,discount_percentage,discount_amount,tax_rate_snapshot,total_amount,stock_effect_enabled)')
-        .order('document_date', { ascending: false })
-        .limit(1000) : skipped(),
+      wantsDocuments ? client.rpc('get_operational_documents_page_v2', { p_limit: 1000, p_offset: 0 }) : skipped(),
       wants('stock', 'after-sale') ? client
         .from('stock_movements')
         .select('id,movement_type,legacy_ref,source_document_id,created_at,quantity_in,quantity_out,unit_cost,products(code,description),warehouses(id,name),user_profiles(full_name)')
@@ -614,7 +641,7 @@ export async function loadAppData(scope: AppDataScope = 'all'): Promise<AppData>
         .limit(100) : skipped(),
       wants('documents', 'entities', 'reports') ? client
         .from('payments')
-        .select('id,display_number,payment_date,direction,total_amount,allocated_amount,unapplied_amount,status,customers(name),suppliers(name)')
+        .select('id,display_number,payment_date,direction,total_amount,allocated_amount,unapplied_amount,status,external_reference,description,customers(name),suppliers(name)')
         .order('payment_date', { ascending: false })
         .limit(2000) : skipped(),
       wants('documents', 'entities', 'reports') ? client
@@ -679,6 +706,7 @@ export async function loadAppData(scope: AppDataScope = 'all'): Promise<AppData>
     outOfStockProducts: numberValue(rawMetrics.out_of_stock_products),
     salesToday: numberValue(rawMetrics.sales_today),
     receivables: numberValue(rawMetrics.receivables),
+    debtorCount: numberValue(rawMetrics.debtor_count),
     payables: numberValue(rawMetrics.payables),
     draftDocuments: numberValue(rawMetrics.draft_documents),
     serverDate: rawMetrics.server_date ?? '',
@@ -825,10 +853,11 @@ export async function loadAppData(scope: AppDataScope = 'all'): Promise<AppData>
           ? discountAmount
           : numberValue(line.unit_price) * qty * legacyDiscountPercent / 100;
         const priceWithIva = (tot > 0 && qty > 0)
-          ? Math.round(((tot + legacyDiscountAmount) / qty) * 100) / 100
+          ? Math.round(((tot + legacyDiscountAmount) / qty) * 10000) / 10000
           : Math.round(numberValue(line.unit_price) * (1 + numberValue(line.tax_rate_snapshot) / 100) * 100) / 100;
 
         return {
+          documentLineId: line.id,
           articleId: line.product_id ?? line.id,
           code: line.product_code_snapshot ?? '',
           description: line.description_snapshot,
@@ -857,6 +886,7 @@ export async function loadAppData(scope: AppDataScope = 'all'): Promise<AppData>
             : 'Pendente',
       time: '',
       notes: notesStr,
+      createdAt: row.created_at ?? undefined,
     };
     });
 
@@ -903,6 +933,30 @@ export async function loadAppData(scope: AppDataScope = 'all'): Promise<AppData>
       outstandingAmount: numberValue(row.outstanding_amount),
       salespersonName: row.salesperson_name ?? '',
       notes: row.notes ?? '',
+      sourceDocumentId: row.source_document_id ?? undefined,
+      createdAt: row.created_at ?? undefined,
+      items: ((row.document_lines ?? []) as Row[]).map((line) => {
+        const qty = numberValue(line.quantity) || 1;
+        const lineTotal = numberValue(line.total_amount);
+        const discountAmount = numberValue(line.discount_amount);
+        const unitPriceWithTax = qty > 0
+          ? Math.round(((lineTotal + discountAmount) / qty) * 10000) / 10000
+          : numberValue(line.unit_price);
+        return {
+          documentLineId: line.id,
+          articleId: line.product_id ?? line.id,
+          code: line.product_code_snapshot ?? 'DIV',
+          description: line.description_snapshot,
+          quantity: qty,
+          unitPrice: unitPriceWithTax,
+          discountPercent: numberValue(line.discount_percentage),
+          discountAmount,
+          ivaPercent: numberValue(line.tax_rate_snapshot),
+          total: lineTotal,
+          lineType: line.product_id ? 'STOCK' : 'MANUAL',
+          stockEffectEnabled: Boolean(line.stock_effect_enabled),
+        } as SaleItem;
+      }),
     };
   });
 
@@ -984,6 +1038,8 @@ export async function loadAppData(scope: AppDataScope = 'all'): Promise<AppData>
     allocatedAmount: numberValue(row.allocated_amount),
     unappliedAmount: numberValue(row.unapplied_amount),
     status: row.status,
+    reference: row.external_reference ?? undefined,
+    description: row.description ?? undefined,
   }));
 
   const ledger: LedgerRecord[] = (ledgerResult.data ?? []).map((row: Row) => ({
@@ -1208,31 +1264,39 @@ export async function createAndConfirmFinancialAdvice(payload: {
   adviceType: 'CREDIT';
   entityId: string;
   documentDate: string;
-  targetDocumentId?: string;
+  targetDocumentId: string;
   reason: string;
   notes: string;
+  returnStock: boolean;
   items: {
-    description: string;
-    net_amount: number;
-    tax_rate: number;
-    tax_amount: number;
-    total_amount: number;
+    source_line_id: string;
+    quantity: number;
   }[];
-}): Promise<string> {
+}): Promise<DocumentRecord> {
   const client = requireSupabase();
-  const { data, error } = await client.rpc('create_and_confirm_financial_advice', {
+  const { data, error } = await client.rpc('create_and_confirm_credit_note_v2', {
     p_entity_type: payload.entityType,
-    p_advice_type: payload.adviceType,
     p_entity_id: payload.entityId,
+    p_source_document_id: payload.targetDocumentId,
     p_document_date: payload.documentDate,
-    p_target_document_id: payload.targetDocumentId || null,
     p_reason: payload.reason,
     p_notes: payload.notes || null,
     p_items: payload.items,
+    p_return_stock: payload.returnStock,
+    p_idempotency_key: crypto.randomUUID(),
   });
 
-  if (error) throw new Error(error.message || 'Falha ao confirmar o aviso financeiro na base de dados.');
-  return data as string;
+  if (error) throw new Error(error.message || 'Falha ao confirmar a nota de crédito na base de dados.');
+  const document = Array.isArray(data) ? data[0] : data;
+  return {
+    id: document.id, displayNumber: document.display_number, date: document.document_date,
+    dueDate: document.due_date ?? '', typeCode: payload.entityType === 'CUSTOMER' ? 'CUSTOMER_CREDIT_NOTE' : 'SUPPLIER_CREDIT_ADVICE',
+    typeName: payload.entityType === 'CUSTOMER' ? 'Nota de Crédito a Cliente' : 'Nota de Crédito de Fornecedor',
+    partyType: payload.entityType, partyId: payload.entityId, partyName: '', status: document.status,
+    netTotal: numberValue(document.net_total), taxTotal: numberValue(document.tax_total), grandTotal: numberValue(document.grand_total),
+    paidAmount: numberValue(document.amount_paid), outstandingAmount: numberValue(document.outstanding_amount),
+    notes: document.notes ?? '', sourceDocumentId: document.source_document_id ?? payload.targetDocumentId,
+  };
 }
 
 export async function cancelFinancialAdvice(
@@ -1241,13 +1305,13 @@ export async function cancelFinancialAdvice(
   idempotencyKey: string
 ): Promise<boolean> {
   const client = requireSupabase();
-  const { data, error } = await client.rpc('cancel_financial_advice', {
-    p_advice_document_id: documentId,
-    p_cancellation_reason: reason,
+  const { data, error } = await client.rpc('cancel_credit_note_v2', {
+    p_document_id: documentId,
+    p_reason: reason,
     p_idempotency_key: idempotencyKey,
   });
 
-  if (error) throw new Error(error.message || 'Falha ao cancelar o aviso financeiro na base de dados.');
+  if (error) throw new Error(error.message || 'Falha ao cancelar a nota de crédito na base de dados.');
   return Boolean(data);
 }
 
