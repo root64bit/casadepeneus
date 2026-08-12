@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CompanyProfile, SaleInvoice } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
+import { calculateDocumentLine, roundMoney } from '../lib/documentCalculations';
 
 interface PrintInvoiceModalProps {
   isOpen: boolean;
@@ -11,10 +12,9 @@ interface PrintInvoiceModalProps {
 }
 
 export function numberToExtensoMZN(amount: number): string {
-  const intVal = Math.floor(Math.abs(amount));
-  const centsVal = Math.round((Math.abs(amount) - intVal) * 100);
-
-  if (intVal === 0) return 'zero meticais';
+  const totalCents = Math.round(Math.abs(amount) * 100);
+  const intVal = Math.floor(totalCents / 100);
+  const centsVal = totalCents % 100;
 
   const units = ['', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove', 'dez', 'onze', 'doze', 'treze', 'catorze', 'quinze', 'dezasseis', 'dezassete', 'dezoito', 'dezanove'];
   const tens = ['', '', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
@@ -32,7 +32,7 @@ export function numberToExtensoMZN(amount: number): string {
     return rem ? `${hundreds[h]} e ${convertGroup(rem)}` : hundreds[h];
   };
 
-  let result = '';
+  let result = intVal === 0 ? 'zero meticais' : '';
   if (intVal >= 1000000) {
     const millions = Math.floor(intVal / 1000000);
     const rem = intVal % 1000000;
@@ -47,26 +47,37 @@ export function numberToExtensoMZN(amount: number): string {
     result = convertGroup(intVal);
   }
 
-  result += ' meticais';
+  if (intVal > 0) result += intVal === 1 ? ' metical' : ' meticais';
   if (centsVal > 0) {
-    result += ` e ${convertGroup(centsVal)} centavos`;
+    result += ` e ${convertGroup(centsVal)} ${centsVal === 1 ? 'centavo' : 'centavos'}`;
   }
   return result;
 }
 
 export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, onClose, invoice, company }) => {
-  if (!isOpen || !invoice) return null;
-
   // Editable Bank & Document Details
   const [bankAccounts, setBankAccounts] = useState<import('../types').BankAccount[]>(
     company?.bankAccounts?.length ? company.bankAccounts : [
-      { bankName: 'BCI', account: invoice.bankAccountBci || company.bankBciAccount || '9109 8531 0001', nib: invoice.bankNibBci || company.bankBciNib || '0008 0000 0910 9853 101 80' },
-      { bankName: 'Millennium BIM', account: invoice.bankAccountBim || company.bankBimAccount || '5579 3819', nib: invoice.bankNibBim || company.bankBimNib || '0001 0000 0005 5793 8195 7' },
+      { bankName: 'BCI', account: invoice?.bankAccountBci || company.bankBciAccount || '9109 8531 0001', nib: invoice?.bankNibBci || company.bankBciNib || '0008 0000 0910 9853 101 80' },
+      { bankName: 'Millennium BIM', account: invoice?.bankAccountBim || company.bankBimAccount || '5579 3819', nib: invoice?.bankNibBim || company.bankBimNib || '0001 0000 0005 5793 8195 7' },
     ]
   );
-  const [validityDays, setValidityDays] = useState(invoice.validityDays || company.quotationValidityDays || (invoice.documentTypeCode === 'CUSTOMER_QUOTATION' ? '7 dias' : 'Pronto pag.'));
-  const [customNotes, setCustomNotes] = useState(invoice.notes || company.quotationDefaultNotes || '');
+  const [validityDays, setValidityDays] = useState(invoice?.validityDays || company.quotationValidityDays || (invoice?.documentTypeCode === 'CUSTOMER_QUOTATION' ? '7 dias' : 'Pronto pag.'));
+  const [customNotes, setCustomNotes] = useState(invoice?.notes || company.quotationDefaultNotes || '');
   const [showEditPanel, setShowEditPanel] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen || !invoice) return;
+    setBankAccounts(company?.bankAccounts?.length ? company.bankAccounts : [
+      { bankName: 'BCI', account: invoice.bankAccountBci || company.bankBciAccount || '9109 8531 0001', nib: invoice.bankNibBci || company.bankBciNib || '0008 0000 0910 9853 101 80' },
+      { bankName: 'Millennium BIM', account: invoice.bankAccountBim || company.bankBimAccount || '5579 3819', nib: invoice.bankNibBim || company.bankBimNib || '0001 0000 0005 5793 8195 7' },
+    ]);
+    setValidityDays(invoice.validityDays || company.quotationValidityDays || (invoice.documentTypeCode === 'CUSTOMER_QUOTATION' ? '7 dias' : 'Pronto pag.'));
+    setCustomNotes(invoice.notes || company.quotationDefaultNotes || '');
+    setShowEditPanel(false);
+  }, [company, invoice, isOpen]);
+
+  if (!isOpen || !invoice) return null;
 
   const isQuotation = invoice.documentTypeCode === 'CUSTOMER_QUOTATION';
   const docTitleName = isQuotation
@@ -83,32 +94,62 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
     year: 'numeric',
   });
 
-  // Whole-Metical non-decimal calculations for Subtotal, IVA, and Total
+  // Preserve the exact cent values confirmed by the document engine.
   const calculatedItems = invoice.items.map((item) => {
     const ivaRate = item.ivaPercent ?? 16;
-    const itemTotalComIva = item.total > 0
-      ? item.total
-      : item.unitPrice * item.quantity * (1 - item.discountPercent / 100) * (1 + ivaRate / 100);
-
-    const lineTotalRounded = Math.round(itemTotalComIva);
-    const lineSubtotal = Math.round((lineTotalRounded / (1 + ivaRate / 100)) * 100) / 100;
-    const lineIva = Math.round((lineTotalRounded - lineSubtotal) * 100) / 100;
-    const lineUnitPriceExcl = item.quantity > 0 ? lineSubtotal / item.quantity : item.unitPrice;
+    const calculatedLine = calculateDocumentLine(item);
+    const lineTotal = roundMoney(Number.isFinite(item.total) ? item.total : calculatedLine.totalWithTax);
+    const divisor = 1 + ivaRate / 100;
+    const lineSubtotal = divisor > 0 ? roundMoney(lineTotal / divisor) : lineTotal;
+    const lineIva = roundMoney(lineTotal - lineSubtotal);
+    const lineUnitPriceExcl = divisor > 0 ? roundMoney(item.unitPrice / divisor) : roundMoney(item.unitPrice);
 
     return {
       ...item,
-      lineTotalRounded,
+      lineTotal,
       lineSubtotal,
       lineIva,
       lineUnitPriceExcl,
     };
   });
 
-  const totalDocAmount = Math.round(calculatedItems.reduce((acc, i) => acc + i.lineTotalRounded, 0));
-  const subtotalDocCalculated = Math.round(calculatedItems.reduce((acc, i) => acc + i.lineSubtotal, 0) * 100) / 100;
-  const ivaDocCalculated = Math.round((totalDocAmount - subtotalDocCalculated) * 100) / 100;
-  const totalItemDiscounts = calculatedItems.reduce((acc, i) => acc + (i.discountAmount || 0), 0);
-  const descontoTotalCalculado = (invoice.descontoTotal && invoice.descontoTotal > 0) ? invoice.descontoTotal : totalItemDiscounts;
+  const linesTotal = roundMoney(calculatedItems.reduce((acc, item) => acc + item.lineTotal, 0));
+  const totalDocAmount = roundMoney(Number.isFinite(invoice.totalAmount) ? invoice.totalAmount : linesTotal);
+  const storedNetTotal = roundMoney(invoice.subtotalLiquido ?? 0);
+  const storedTaxTotal = roundMoney(invoice.ivaTotal ?? 0);
+  const storedTotalsAreConsistent = Math.abs(storedNetTotal + storedTaxTotal - totalDocAmount) <= 0.02;
+  const proportionalFactor = linesTotal > 0 ? totalDocAmount / linesTotal : 0;
+  const calculatedNetBeforeGeneral = roundMoney(calculatedItems.reduce((acc, item) => acc + item.lineSubtotal, 0));
+  const subtotalDocCalculated = storedTotalsAreConsistent
+    ? storedNetTotal
+    : roundMoney(calculatedNetBeforeGeneral * proportionalFactor);
+  const ivaDocCalculated = storedTotalsAreConsistent
+    ? storedTaxTotal
+    : roundMoney(totalDocAmount - subtotalDocCalculated);
+  const totalItemDiscounts = roundMoney(calculatedItems.reduce((acc, item) => acc + (item.discountAmount || 0), 0));
+  const descontoTotalCalculado = roundMoney(
+    Number(invoice.descontoTotal) > 0 ? Number(invoice.descontoTotal) : totalItemDiscounts
+  );
+
+  const groupedTaxes = Array.from(calculatedItems.reduce((groups, item) => {
+    const rate = Number(item.ivaPercent) || 0;
+    const current = groups.get(rate) || { rate, net: 0, tax: 0 };
+    current.net += item.lineSubtotal;
+    current.tax += item.lineIva;
+    groups.set(rate, current);
+    return groups;
+  }, new Map<number, { rate: number; net: number; tax: number }>()).values()).sort((a, b) => b.rate - a.rate);
+
+  let allocatedNet = 0;
+  let allocatedTax = 0;
+  const taxGroups = (groupedTaxes.length ? groupedTaxes : [{ rate: 0, net: subtotalDocCalculated, tax: ivaDocCalculated }]).map((group, index, all) => {
+    const isLast = index === all.length - 1;
+    const net = isLast ? roundMoney(subtotalDocCalculated - allocatedNet) : roundMoney(group.net * proportionalFactor);
+    const tax = isLast ? roundMoney(ivaDocCalculated - allocatedTax) : roundMoney(group.tax * proportionalFactor);
+    allocatedNet = roundMoney(allocatedNet + net);
+    allocatedTax = roundMoney(allocatedTax + tax);
+    return { rate: group.rate, net, tax };
+  });
 
   const minRows = 8;
   const fillerCount = Math.max(0, minRows - calculatedItems.length);
@@ -335,7 +376,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
                           : '0,00'}
                     </td>
                     <td className="p-1 text-right border-r border-black">{item.lineIva.toFixed(2)}</td>
-                    <td className="p-1 text-right font-bold">{item.lineTotalRounded.toFixed(2)}</td>
+                    <td className="p-1 text-right font-bold">{item.lineTotal.toFixed(2)}</td>
                   </tr>
                 ))}
 
@@ -378,12 +419,14 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td className="p-1 text-center border-r border-black">16%</td>
-                    <td className="p-1 text-right border-r border-black font-bold">{subtotalDocCalculated.toFixed(2)}</td>
-                    <td className="p-1 text-right border-r border-black">{ivaDocCalculated.toFixed(2)}</td>
-                    <td className="p-1 text-left">-</td>
-                  </tr>
+                  {taxGroups.map((group) => (
+                    <tr key={group.rate}>
+                      <td className="p-1 text-center border-r border-black">{group.rate}%</td>
+                      <td className="p-1 text-right border-r border-black font-bold">{group.net.toFixed(2)}</td>
+                      <td className="p-1 text-right border-r border-black">{group.tax.toFixed(2)}</td>
+                      <td className="p-1 text-left">{group.rate === 0 ? 'Isento / taxa 0%' : '-'}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
