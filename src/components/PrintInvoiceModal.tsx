@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CompanyProfile, SaleInvoice } from '../types';
-import { formatMZN } from '../stitch/stitchConfig';
 import { calculateDocumentLine, roundMoney } from '../lib/documentCalculations';
 
 interface PrintInvoiceModalProps {
@@ -12,9 +11,7 @@ interface PrintInvoiceModalProps {
 }
 
 export function numberToExtensoMZN(amount: number): string {
-  const totalCents = Math.round(Math.abs(amount) * 100);
-  const intVal = Math.floor(totalCents / 100);
-  const centsVal = totalCents % 100;
+  const intVal = Math.round(Math.abs(amount));
 
   const units = ['', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove', 'dez', 'onze', 'doze', 'treze', 'catorze', 'quinze', 'dezasseis', 'dezassete', 'dezoito', 'dezanove'];
   const tens = ['', '', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
@@ -32,27 +29,36 @@ export function numberToExtensoMZN(amount: number): string {
     return rem ? `${hundreds[h]} e ${convertGroup(rem)}` : hundreds[h];
   };
 
-  let result = intVal === 0 ? 'zero meticais' : '';
-  if (intVal >= 1000000) {
-    const millions = Math.floor(intVal / 1000000);
-    const rem = intVal % 1000000;
-    result += millions === 1 ? 'um milhão' : `${convertGroup(millions)} milhões`;
-    if (rem > 0) result += ` e ${convertGroup(rem)}`;
-  } else if (intVal >= 1000) {
-    const thousands = Math.floor(intVal / 1000);
-    const rem = intVal % 1000;
-    const thousandStr = thousands === 1 ? 'mil' : `${convertGroup(thousands)} mil`;
-    result += rem ? `${thousandStr} e ${convertGroup(rem)}` : thousandStr;
-  } else {
-    result = convertGroup(intVal);
-  }
+  const convertInteger = (n: number): string => {
+    if (n < 1000) return convertGroup(n);
+    if (n < 1000000) {
+      const thousands = Math.floor(n / 1000);
+      const rem = n % 1000;
+      const prefix = thousands === 1 ? 'mil' : `${convertGroup(thousands)} mil`;
+      return rem > 0 ? `${prefix} e ${convertGroup(rem)}` : prefix;
+    }
+
+    const millions = Math.floor(n / 1000000);
+    const rem = n % 1000000;
+    const prefix = millions === 1 ? 'um milhão' : `${convertInteger(millions)} milhões`;
+    return rem > 0 ? `${prefix} e ${convertInteger(rem)}` : prefix;
+  };
+
+  let result = intVal === 0 ? 'zero meticais' : convertInteger(intVal);
 
   if (intVal > 0) result += intVal === 1 ? ' metical' : ' meticais';
-  if (centsVal > 0) {
-    result += ` e ${convertGroup(centsVal)} ${centsVal === 1 ? 'centavo' : 'centavos'}`;
-  }
   return result;
 }
+
+const wholeMeticalFormatter = new Intl.NumberFormat('pt-MZ', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+
+const formatWholeMeticalValue = (value: number): string =>
+  wholeMeticalFormatter.format(Math.round(Number.isFinite(value) ? value : 0));
+
+const formatWholeMZN = (value: number): string => `${formatWholeMeticalValue(value)} MZN`;
 
 export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, onClose, invoice, company }) => {
   // Editable Bank & Document Details
@@ -94,7 +100,8 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
     year: 'numeric',
   });
 
-  // Preserve the exact cent values confirmed by the document engine.
+  // Keep the exact stored values for calculations, while the fiscal print view
+  // presents monetary amounts as whole meticais, as required by the business.
   const calculatedItems = invoice.items.map((item) => {
     const ivaRate = item.ivaPercent ?? 16;
     const calculatedLine = calculateDocumentLine(item);
@@ -148,6 +155,20 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
     const tax = isLast ? roundMoney(ivaDocCalculated - allocatedTax) : roundMoney(group.tax * proportionalFactor);
     allocatedNet = roundMoney(allocatedNet + net);
     allocatedTax = roundMoney(allocatedTax + tax);
+    return { rate: group.rate, net, tax };
+  });
+
+  const totalDocWhole = Math.round(totalDocAmount);
+  const subtotalDocWhole = Math.round(subtotalDocCalculated);
+  const ivaDocWhole = totalDocWhole - subtotalDocWhole;
+  let allocatedWholeNet = 0;
+  let allocatedWholeTax = 0;
+  const taxGroupsWhole = taxGroups.map((group, index, all) => {
+    const isLast = index === all.length - 1;
+    const net = isLast ? subtotalDocWhole - allocatedWholeNet : Math.round(group.net);
+    const tax = isLast ? ivaDocWhole - allocatedWholeTax : Math.round(group.tax);
+    allocatedWholeNet += net;
+    allocatedWholeTax += tax;
     return { rate: group.rate, net, tax };
   });
 
@@ -339,8 +360,8 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
           </div>
           <div className="grid grid-cols-12 py-1 text-[10px] text-center font-mono">
             <span className="col-span-2">MT</span>
-            <span className="col-span-2">00,00</span>
-            <span className="col-span-2">00,00</span>
+            <span className="col-span-2">0</span>
+            <span className="col-span-2">0</span>
             <span className="col-span-3 font-sans font-medium">{isQuotation ? 'pronto pagamento' : 'Pronto pag.'}</span>
             <span className="col-span-3 font-sans font-medium">{invoice.sellerName || 'usuario'}</span>
           </div>
@@ -367,16 +388,16 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
                     <td className="p-1 border-r border-black font-bold">{item.code}</td>
                     <td className="p-1 border-r border-black font-sans font-medium">{item.description}</td>
                     <td className="p-1 text-center border-r border-black font-bold">{item.quantity}</td>
-                    <td className="p-1 text-right border-r border-black">{item.lineUnitPriceExcl.toFixed(2)}</td>
+                    <td className="p-1 text-right border-r border-black">{formatWholeMeticalValue(item.lineUnitPriceExcl)}</td>
                     <td className="p-1 text-right border-r border-black font-bold">
                       {item.discountAmount && item.discountAmount > 0
-                        ? item.discountAmount.toFixed(2)
+                        ? formatWholeMeticalValue(item.discountAmount)
                         : item.discountPercent > 0
-                          ? ((item.unitPrice * (item.discountPercent / 100)) * item.quantity).toFixed(2)
-                          : '0,00'}
+                          ? formatWholeMeticalValue((item.unitPrice * (item.discountPercent / 100)) * item.quantity)
+                          : '0'}
                     </td>
-                    <td className="p-1 text-right border-r border-black">{item.lineIva.toFixed(2)}</td>
-                    <td className="p-1 text-right font-bold">{item.lineTotal.toFixed(2)}</td>
+                    <td className="p-1 text-right border-r border-black">{formatWholeMeticalValue(item.lineIva)}</td>
+                    <td className="p-1 text-right font-bold">{formatWholeMeticalValue(item.lineTotal)}</td>
                   </tr>
                 ))}
 
@@ -419,11 +440,11 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
                   </tr>
                 </thead>
                 <tbody>
-                  {taxGroups.map((group) => (
+                  {taxGroupsWhole.map((group) => (
                     <tr key={group.rate}>
                       <td className="p-1 text-center border-r border-black">{group.rate}%</td>
-                      <td className="p-1 text-right border-r border-black font-bold">{group.net.toFixed(2)}</td>
-                      <td className="p-1 text-right border-r border-black">{group.tax.toFixed(2)}</td>
+                      <td className="p-1 text-right border-r border-black font-bold">{formatWholeMeticalValue(group.net)}</td>
+                      <td className="p-1 text-right border-r border-black">{formatWholeMeticalValue(group.tax)}</td>
                       <td className="p-1 text-left">{group.rate === 0 ? 'Isento / taxa 0%' : '-'}</td>
                     </tr>
                   ))}
@@ -435,30 +456,30 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
             <div className="col-span-6 border border-black rounded p-2 space-y-1">
               <div className="flex justify-between">
                 <span>Mercadoria/serviços | subtotal</span>
-                <span className="font-bold">{formatMZN(subtotalDocCalculated)}</span>
+                <span className="font-bold">{formatWholeMZN(subtotalDocWhole)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Mão-de-obra</span>
-                <span>0,00</span>
+                <span>0</span>
               </div>
               <div className="flex justify-between">
                 <span>Total descontos</span>
-                <span>{formatMZN(descontoTotalCalculado)}</span>
+                <span>{formatWholeMZN(descontoTotalCalculado)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Total Iva</span>
-                <span>{formatMZN(ivaDocCalculated)}</span>
+                <span>{formatWholeMZN(ivaDocWhole)}</span>
               </div>
               <div className="flex justify-between text-sm print:text-xs font-black border-t border-black pt-1">
                 <span>Total [MT]</span>
-                <span>{formatMZN(totalDocAmount)}</span>
+                <span>{formatWholeMZN(totalDocWhole)}</span>
               </div>
             </div>
           </div>
 
           {/* Total Extenso */}
           <div className="text-[11px] print:text-[10px] font-bold border-t border-gray-300 pt-1">
-            Total Extenso: <span className="underline italic lowercase font-normal">{numberToExtensoMZN(totalDocAmount)}</span>
+            Total Extenso: <span className="underline italic lowercase font-normal">{numberToExtensoMZN(totalDocWhole)}</span>
           </div>
 
           {/* Promotional Free Service Banners matching Image 3 Model */}
