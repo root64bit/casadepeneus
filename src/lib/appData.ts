@@ -1315,6 +1315,22 @@ export async function cancelFinancialAdvice(
   return Boolean(data);
 }
 
+export async function cancelOperationalDocument(
+  documentId: string,
+  reason: string,
+  idempotencyKey: string
+): Promise<boolean> {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('admin_cancel_operational_document_v2', {
+    p_document_id: documentId,
+    p_reason: reason.trim(),
+    p_idempotency_key: idempotencyKey,
+  });
+
+  if (error) throw new Error(error.message || 'Falha ao anular o documento na base de dados.');
+  return Boolean(data);
+}
+
 export async function saveCompanyQuotationSettings(companyId: string, settings: {
   bankBciAccount: string;
   bankBciNib: string;

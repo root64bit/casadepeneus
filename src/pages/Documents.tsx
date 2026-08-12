@@ -13,6 +13,8 @@ interface DocumentsProps {
   onPrintRecord: (document: DocumentRecord) => void;
   canCancelAdvice?: boolean;
   onCancelAdvice?: (documentId: string, reason: string) => Promise<void>;
+  canCancelDocument?: boolean;
+  onCancelDocument?: (documentId: string, reason: string) => Promise<void>;
   onUpdateDocument?: (documentId: string, payload: { clientName?: string; clientNuit?: string; clientAddress?: string; grandTotal?: number; notes?: string; items?: SaleItem[]; generalDiscount?: number; keepAsWalkIn?: boolean }) => Promise<void>;
   permissions?: string[];
 }
@@ -25,6 +27,8 @@ export function Documents({
   onPrintRecord,
   canCancelAdvice,
   onCancelAdvice,
+  canCancelDocument,
+  onCancelDocument,
   onUpdateDocument,
   permissions = [],
 }: DocumentsProps) {
@@ -94,11 +98,18 @@ export function Documents({
   }, [documents, partyType, search, status, typeFilter, isCashier]);
 
   const handleExecuteCancel = async () => {
-    if (!cancellingDoc || !cancelReason.trim() || !onCancelAdvice || isSubmittingCancel) return;
+    if (!cancellingDoc || !cancelReason.trim() || isSubmittingCancel) return;
     try {
       setIsSubmittingCancel(true);
       setCancelError('');
-      await onCancelAdvice(cancellingDoc.id, cancelReason.trim());
+      const isAdvice = cancellingDoc.typeCode === 'CUSTOMER_CREDIT_NOTE' || cancellingDoc.typeCode === 'SUPPLIER_CREDIT_ADVICE';
+      if (isAdvice) {
+        if (!onCancelAdvice) return;
+        await onCancelAdvice(cancellingDoc.id, cancelReason.trim());
+      } else {
+        if (!onCancelDocument) return;
+        await onCancelDocument(cancellingDoc.id, cancelReason.trim());
+      }
       setCancellingDoc(null);
       setCancelReason('');
     } catch (err: any) {
@@ -266,6 +277,7 @@ export function Documents({
               <option value="PAID">Pago</option>
               <option value="PARTIALLY_PAID">Parcialmente Pago</option>
               <option value="CANCELLED">Cancelado</option>
+              <option value="REVERSED">Anulado</option>
             </select>
           </label>
 
@@ -320,6 +332,8 @@ export function Documents({
                 const printable = sales.find((sale) => sale.id === document.id);
                 const isAdviceDoc = document.typeCode === 'CUSTOMER_CREDIT_NOTE' || document.typeCode === 'SUPPLIER_CREDIT_ADVICE';
                 const canCancelThisDoc = canCancelAdvice && isAdviceDoc && document.status === 'CONFIRMED';
+                const isOperationalSalesDoc = ['CUSTOMER_INVOICE','CASH_SALE','CUSTOMER_DELIVERY_NOTE','CUSTOMER_QUOTATION','QUOTATION','COT'].includes(document.typeCode);
+                const canAdminCancelThisDoc = canCancelDocument && isOperationalSalesDoc && ['CONFIRMED','PAID','PARTIALLY_PAID','OVERDUE'].includes(document.status);
                 const formattedDate = document.date ? document.date.substring(0, 10) : '—';
 
                 return (
@@ -352,7 +366,7 @@ export function Documents({
                     <td className="p-3 text-right font-mono text-[#006e25]">{formatMZN(document.paidAmount)}</td>
                     <td className="p-3 text-right font-mono text-[#ba1a1a]">{formatMZN(document.outstandingAmount)}</td>
                     <td className="p-3 text-center">
-                      <span className={`rounded px-2 py-1 text-[10px] font-black ${document.status === 'CANCELLED' ? 'bg-red-100 text-red-800 border border-red-300' : 'bg-[#e7e8e9] text-slate-800'}`}>
+                      <span className={`rounded px-2 py-1 text-[10px] font-black ${['CANCELLED','REVERSED'].includes(document.status) ? 'bg-red-100 text-red-800 border border-red-300' : 'bg-[#e7e8e9] text-slate-800'}`}>
                         {document.status}
                       </span>
                     </td>
@@ -366,13 +380,15 @@ export function Documents({
                         Imprimir
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => isAdviceDoc ? onPrintRecord(document) : handleOpenEdit(document)}
-                        className="inline-flex h-8 min-w-[78px] items-center justify-center rounded bg-amber-600 px-3 font-bold text-white text-[11px] hover:bg-amber-700 transition-colors"
-                      >
-                        {isAdviceDoc ? 'Detalhes' : 'Editar'}
-                      </button>
+                      {!['CANCELLED','REVERSED'].includes(document.status) && (
+                        <button
+                          type="button"
+                          onClick={() => isAdviceDoc ? onPrintRecord(document) : handleOpenEdit(document)}
+                          className="inline-flex h-8 min-w-[78px] items-center justify-center rounded bg-amber-600 px-3 font-bold text-white text-[11px] hover:bg-amber-700 transition-colors"
+                        >
+                          {isAdviceDoc ? 'Detalhes' : 'Editar'}
+                        </button>
+                      )}
 
                       {canCancelThisDoc && (
                         <button
@@ -385,6 +401,19 @@ export function Documents({
                           className="inline-flex h-8 min-w-[78px] items-center justify-center rounded bg-red-700 px-3 font-bold text-white text-[11px] hover:bg-red-800"
                         >
                           Cancelar
+                        </button>
+                      )}
+                      {canAdminCancelThisDoc && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCancellingDoc(document);
+                            setCancelReason('');
+                            setCancelError('');
+                          }}
+                          className="inline-flex h-8 min-w-[78px] items-center justify-center rounded bg-red-700 px-3 font-bold text-white text-[11px] hover:bg-red-800"
+                        >
+                          Anular
                         </button>
                       )}
                       </div>
@@ -411,7 +440,7 @@ export function Documents({
             <div className="flex items-center space-x-2 border-b pb-3 text-red-700 dark:text-red-400">
               <span className="material-symbols-outlined text-2xl">cancel</span>
               <h3 className="font-black text-sm uppercase tracking-wide">
-                Cancelar Nota {cancellingDoc.displayNumber}
+                Anular Documento {cancellingDoc.displayNumber}
               </h3>
             </div>
 
@@ -424,7 +453,8 @@ export function Documents({
             <div className="space-y-2 text-xs font-mono bg-slate-50 dark:bg-[#282c2e] p-3 rounded border">
               <div>Documento: <b>{cancellingDoc.displayNumber}</b></div>
               <div>Entidade: <b>{cancellingDoc.partyName}</b></div>
-              <div>Total da Nota: <b>{formatMZN(cancellingDoc.grandTotal)}</b></div>
+              <div>Total: <b>{formatMZN(cancellingDoc.grandTotal)}</b></div>
+              <div className="text-red-700 dark:text-red-300">O número e o histórico serão preservados. Se houver stock, será devolvido automaticamente.</div>
             </div>
 
             <div>
@@ -455,7 +485,7 @@ export function Documents({
                 onClick={handleExecuteCancel}
                 className="px-4 py-2 rounded bg-red-700 hover:bg-red-800 text-white font-black text-xs uppercase shadow disabled:opacity-50"
               >
-                {isSubmittingCancel ? 'A Reverter...' : 'Confirmar Cancelamento'}
+                {isSubmittingCancel ? 'A Reverter...' : 'Confirmar Anulação'}
               </button>
             </div>
           </div>

@@ -36,6 +36,7 @@ import {
   postStockMovement,
   createAndConfirmFinancialAdvice,
   cancelFinancialAdvice,
+  cancelOperationalDocument,
   saveCompanyQuotationSettings,
   updateDocumentDetails,
   updateOperationalParty,
@@ -751,10 +752,15 @@ function App() {
             onPrintRecord={setPrintDocument}
             permissions={permissions}
             canCancelAdvice={permissions.includes('financial_adjustments.cancel') || permissions.includes('settings.manage')}
+            canCancelDocument={permissions.includes('settings.manage')}
             onCancelAdvice={async (docId, reason) => {
               const idempotencyKey = crypto.randomUUID();
               await cancelFinancialAdvice(docId, reason, idempotencyKey);
               await refreshData(true);
+            }}
+            onCancelDocument={async (docId, reason) => {
+              await cancelOperationalDocument(docId, reason, crypto.randomUUID());
+              await refreshData(true, 'documents');
             }}
             onUpdateDocument={async (docId, payload) => {
               await updateDocumentDetails(docId, payload);
