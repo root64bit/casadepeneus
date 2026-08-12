@@ -3,6 +3,7 @@ import type { Article, DocumentRecord, SaleInvoice, SaleItem } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
 import { ArticleSearchSelect } from '../components/ArticleSearchSelect';
 import { requireSupabase } from '../lib/supabase';
+import { calculateDocumentLine, calculateDocumentTotals, recalculateSaleItem, recalculateSaleItems } from '../lib/documentCalculations';
 
 interface DocumentsProps {
   documents: DocumentRecord[];
@@ -12,7 +13,7 @@ interface DocumentsProps {
   onPrintRecord: (document: DocumentRecord) => void;
   canCancelAdvice?: boolean;
   onCancelAdvice?: (documentId: string, reason: string) => Promise<void>;
-  onUpdateDocument?: (documentId: string, payload: { clientName?: string; clientNuit?: string; clientAddress?: string; grandTotal?: number; notes?: string; items?: SaleItem[] }) => Promise<void>;
+  onUpdateDocument?: (documentId: string, payload: { clientName?: string; clientNuit?: string; clientAddress?: string; grandTotal?: number; notes?: string; items?: SaleItem[]; generalDiscount?: number; keepAsWalkIn?: boolean }) => Promise<void>;
   permissions?: string[];
 }
 
@@ -48,19 +49,17 @@ export function Documents({
   const [editGrandTotal, setEditGrandTotal] = useState(0);
   const [editNotes, setEditNotes] = useState('');
   const [editItems, setEditItems] = useState<SaleItem[]>([]);
+  const [editGeneralDiscount, setEditGeneralDiscount] = useState(0);
+  const [editKeepAsWalkIn, setEditKeepAsWalkIn] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editError, setEditError] = useState('');
 
   // Auto-sync editGrandTotal when editItems changes
   useEffect(() => {
     if (editingDoc) {
-      const grand = editItems.reduce(
-        (acc, item) => acc + Math.round((item.quantity || 1) * (item.unitPrice || 0) * (1 - (item.discountPercent || 0) / 100) * 100) / 100,
-        0
-      );
-      setEditGrandTotal(Math.round(grand * 100) / 100);
+      setEditGrandTotal(calculateDocumentTotals(editItems, editGeneralDiscount).grandTotal);
     }
-  }, [editItems, editingDoc]);
+  }, [editItems, editGeneralDiscount, editingDoc]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -137,10 +136,12 @@ export function Documents({
           loadedItems = dbLines.map((line: any) => {
             const qty = Number(line.quantity) || 1;
             const tot = Number(line.total_amount) || 0;
+            const discountAmount = Number(line.discount_amount) || 0;
             const disc = Number(line.discount_percentage) || 0;
+            const taxRate = Number(line.tax_rate_snapshot) || 16;
             const priceWithIva = (tot > 0 && qty > 0)
-              ? Math.round((tot / (qty * (1 - disc / 100))) * 100) / 100
-              : Number(line.unit_price) || 0;
+              ? Math.round(((tot + discountAmount) / qty) * 100) / 100
+              : Math.round(Number(line.unit_price) * (1 + taxRate / 100) * 100) / 100;
 
             return {
               articleId: line.product_id ?? line.id,
@@ -149,8 +150,11 @@ export function Documents({
               quantity: qty,
               unitPrice: priceWithIva,
               discountPercent: disc,
-              ivaPercent: Number(line.tax_rate_snapshot) || 16,
-              total: tot > 0 ? tot : Math.round(qty * priceWithIva * (1 - disc / 100) * 100) / 100,
+              discountAmount,
+              ivaPercent: taxRate,
+              total: tot > 0 ? tot : calculateDocumentLine({ quantity: qty, unitPrice: priceWithIva, discountAmount, discountPercent: disc, ivaPercent: taxRate }).totalWithTax,
+              lineType: line.product_id ? 'STOCK' : 'MANUAL',
+              stockEffectEnabled: Boolean(line.stock_effect_enabled),
             };
           });
         }
@@ -171,6 +175,8 @@ export function Documents({
         discountAmount: 0,
         ivaPercent: 16,
         total: gTotal,
+        lineType: 'MANUAL',
+        stockEffectEnabled: false,
       }];
     }
 
@@ -178,9 +184,12 @@ export function Documents({
     setEditClientName(printable?.clientName || doc.partyName || '');
     setEditClientNuit(printable?.clientNuit || '');
     setEditClientAddress(printable?.clientAddress || '');
-    setEditNotes('');
+    setEditNotes(printable?.notes || '');
+    const lineDiscount = loadedItems.reduce((sum, item) => sum + (item.discountAmount || 0), 0);
+    setEditGeneralDiscount(printable?.generalDiscountAmount ?? Math.max(0, (printable?.descontoTotal || 0) - lineDiscount));
+    setEditKeepAsWalkIn(false);
     setEditError('');
-    setEditItems(loadedItems);
+    setEditItems(recalculateSaleItems(loadedItems));
 
     const calculatedGrand = loadedItems.reduce((acc, it) => acc + (it.total || 0), 0);
     setEditGrandTotal(calculatedGrand > 0 ? Math.round(calculatedGrand * 100) / 100 : gTotal);
@@ -191,6 +200,10 @@ export function Documents({
 
   const handleExecuteSaveEdit = async () => {
     if (!editingDoc || !onUpdateDocument || isSavingEdit) return;
+    if (editItems.length === 0) {
+      setEditError('O documento deve manter pelo menos um artigo ou serviço.');
+      return;
+    }
     try {
       setIsSavingEdit(true);
       setEditError('');
@@ -200,7 +213,9 @@ export function Documents({
         clientAddress: editClientAddress.trim(),
         grandTotal: Number(editGrandTotal),
         notes: editNotes.trim(),
-        items: editItems,
+        items: recalculateSaleItems(editItems),
+        generalDiscount: editGeneralDiscount,
+        keepAsWalkIn: editKeepAsWalkIn,
       });
       setEditingDoc(null);
     } catch (err: any) {
@@ -341,11 +356,12 @@ export function Documents({
                         {document.status}
                       </span>
                     </td>
-                    <td className="p-3 text-center space-x-1">
+                    <td className="p-3">
+                      <div className="flex min-w-[168px] flex-wrap items-center justify-center gap-1.5">
                       <button
                         type="button"
                         onClick={() => printable ? onPrint(printable) : onPrintRecord(document)}
-                        className="rounded bg-[#003366] px-2.5 py-1 font-bold text-white text-[11px] hover:bg-[#002244]"
+                        className="inline-flex h-8 min-w-[78px] items-center justify-center rounded bg-[#003366] px-3 font-bold text-white text-[11px] hover:bg-[#002244]"
                       >
                         Imprimir
                       </button>
@@ -353,7 +369,7 @@ export function Documents({
                       <button
                         type="button"
                         onClick={() => handleOpenEdit(document)}
-                        className="rounded bg-amber-600 px-2.5 py-1 font-bold text-white text-[11px] hover:bg-amber-700 transition-colors"
+                        className="inline-flex h-8 min-w-[78px] items-center justify-center rounded bg-amber-600 px-3 font-bold text-white text-[11px] hover:bg-amber-700 transition-colors"
                       >
                         Editar
                       </button>
@@ -366,11 +382,12 @@ export function Documents({
                             setCancelReason('');
                             setCancelError('');
                           }}
-                          className="rounded bg-red-700 px-2 py-1 font-bold text-white text-[11px] hover:bg-red-800"
+                          className="inline-flex h-8 min-w-[78px] items-center justify-center rounded bg-red-700 px-3 font-bold text-white text-[11px] hover:bg-red-800"
                         >
                           Cancelar
                         </button>
                       )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -472,7 +489,7 @@ export function Documents({
             )}
 
             <div className="space-y-4 text-xs font-sans">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
                     Nome do Cliente / Entidade *
@@ -483,6 +500,19 @@ export function Documents({
                     onChange={(e) => setEditClientName(e.target.value)}
                     placeholder="Nome do cliente (ex: AUTO COMPANY)"
                     className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
+                    Desconto Geral (MZN)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={editGeneralDiscount}
+                    onChange={(e) => setEditGeneralDiscount(Math.max(0, Number(e.target.value)))}
+                    className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-mono text-red-600"
                   />
                 </div>
                 <div>
@@ -498,6 +528,14 @@ export function Documents({
                   />
                 </div>
               </div>
+              <label className="flex items-center gap-2 text-[11px] text-gray-600 dark:text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={editKeepAsWalkIn}
+                  onChange={(e) => setEditKeepAsWalkIn(e.target.checked)}
+                />
+                Manter como Cliente Pontual (não criar ficha; guardar os dados apenas neste documento)
+              </label>
 
               {/* Tabela de Edição de Artigos / Items & Prices */}
               <div className="space-y-2 border-t border-b py-3 dark:border-gray-700">
@@ -521,6 +559,8 @@ export function Documents({
                             discountAmount: 0,
                             ivaPercent: 16,
                             total: 0,
+                            lineType: 'MANUAL',
+                            stockEffectEnabled: false,
                           }
                         ]);
                       }}
@@ -552,10 +592,11 @@ export function Documents({
                               discountAmount: 0,
                               ivaPercent: art.taxRate ?? 16,
                               total: priceWithIva,
+                              lineType: 'STOCK' as const,
+                              stockEffectEnabled: true,
                             }
                           ];
-                          const grand = updated.reduce((acc, i) => acc + Math.round(i.quantity * i.unitPrice * (1 - (i.discountPercent || 0) / 100) * 100) / 100, 0);
-                          setEditGrandTotal(Math.round(grand * 100) / 100);
+                          setEditGrandTotal(calculateDocumentTotals(updated, editGeneralDiscount).grandTotal);
                           return updated;
                         });
                       }}
@@ -573,7 +614,7 @@ export function Documents({
                 ) : (
                   <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
                     {editItems.map((item, idx) => {
-                      const lineTotal = Math.round(item.quantity * item.unitPrice * (1 - (item.discountPercent || 0) / 100) * 100) / 100;
+                      const lineTotal = calculateDocumentLine(item).totalWithTax;
                       return (
                       <div key={idx} className="bg-slate-50 dark:bg-[#282c2e] p-2.5 rounded border border-slate-200 dark:border-gray-700 text-xs space-y-1.5">
                         {/* Row 1: Code + Description + Remove */}
@@ -617,8 +658,7 @@ export function Documents({
                             onClick={() => {
                               setEditItems(prev => {
                                 const updated = prev.filter((_, i) => i !== idx);
-                                const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
-                                setEditGrandTotal(Math.round(grand * 100) / 100);
+                                setEditGrandTotal(calculateDocumentTotals(updated, editGeneralDiscount).grandTotal);
                                 return updated;
                               });
                             }}
@@ -628,7 +668,7 @@ export function Documents({
                             ✕
                           </button>
                         </div>
-                        {/* Row 2: Qty, Price c/ IVA, Desc%, IVA%, Total */}
+                        {/* Row 2: quantidade, preço com IVA, desconto em MZN, IVA e total */}
                         <div className="flex items-end gap-2">
                           <div className="w-16">
                             <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5 text-center">Qtd</span>
@@ -640,10 +680,8 @@ export function Documents({
                                 const qty = Number(e.target.value);
                                 setEditItems(prev => {
                                   const updated = [...prev];
-                                  const tot = Math.round(qty * updated[idx].unitPrice * (1 - (updated[idx].discountPercent || 0) / 100) * 100) / 100;
-                                  updated[idx] = { ...updated[idx], quantity: qty, total: tot };
-                                  const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
-                                  setEditGrandTotal(Math.round(grand * 100) / 100);
+                                  updated[idx] = recalculateSaleItem({ ...updated[idx], quantity: qty });
+                                  setEditGrandTotal(calculateDocumentTotals(updated, editGeneralDiscount).grandTotal);
                                   return updated;
                                 });
                               }}
@@ -661,10 +699,8 @@ export function Documents({
                                 const price = Number(e.target.value);
                                 setEditItems(prev => {
                                   const updated = [...prev];
-                                  const tot = Math.round(updated[idx].quantity * price * (1 - (updated[idx].discountPercent || 0) / 100) * 100) / 100;
-                                  updated[idx] = { ...updated[idx], unitPrice: price, total: tot };
-                                  const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
-                                  setEditGrandTotal(Math.round(grand * 100) / 100);
+                                  updated[idx] = recalculateSaleItem({ ...updated[idx], unitPrice: price });
+                                  setEditGrandTotal(calculateDocumentTotals(updated, editGeneralDiscount).grandTotal);
                                   return updated;
                                 });
                               }}
@@ -673,21 +709,18 @@ export function Documents({
                             />
                           </div>
                           <div className="w-16">
-                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5 text-center">Desc %</span>
+                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5 text-center">Desc. MZN</span>
                             <input
                               type="number"
                               step="0.01"
                               min="0"
-                              max="100"
-                              value={item.discountPercent || 0}
+                              value={item.discountAmount || 0}
                               onChange={(e) => {
                                 const disc = Number(e.target.value);
                                 setEditItems(prev => {
                                   const updated = [...prev];
-                                  const tot = Math.round(updated[idx].quantity * updated[idx].unitPrice * (1 - disc / 100) * 100) / 100;
-                                  updated[idx] = { ...updated[idx], discountPercent: disc, total: tot };
-                                  const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
-                                  setEditGrandTotal(Math.round(grand * 100) / 100);
+                                  updated[idx] = recalculateSaleItem({ ...updated[idx], discountAmount: disc, discountPercent: 0 });
+                                  setEditGrandTotal(calculateDocumentTotals(updated, editGeneralDiscount).grandTotal);
                                   return updated;
                                 });
                               }}
@@ -746,8 +779,8 @@ export function Documents({
                     step="0.01"
                     min="0"
                     value={editGrandTotal}
-                    onChange={(e) => setEditGrandTotal(Number(e.target.value))}
-                    className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-mono font-black text-base text-[#006e25]"
+                    readOnly
+                    className="w-full rounded border border-gray-300 p-2 bg-gray-100 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-mono font-black text-base text-[#006e25]"
                   />
                 </div>
               </div>
@@ -776,7 +809,7 @@ export function Documents({
               </button>
               <button
                 type="button"
-                disabled={isSavingEdit || !editClientName.trim()}
+                disabled={isSavingEdit || !editClientName.trim() || editItems.length === 0}
                 onClick={handleExecuteSaveEdit}
                 className="rounded bg-[#003366] px-4 py-2 text-xs font-bold text-white hover:bg-[#002244] disabled:opacity-50"
               >

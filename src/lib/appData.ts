@@ -18,6 +18,7 @@ import type {
 } from '../types';
 import { requireSupabase } from './supabase';
 import { bundleCodesFromRoleCodes } from './responsibilityBundles';
+import { calculateDocumentLine, calculateDocumentTotals, isUuid, recalculateSaleItems } from './documentCalculations';
 
 export interface AppData {
   company: CompanyProfile;
@@ -112,19 +113,24 @@ export interface DocumentUpdatePayload {
   grandTotal?: number;
   notes?: string;
   items?: SaleItem[];
+  generalDiscount?: number;
+  keepAsWalkIn?: boolean;
 }
 
 export async function updateDocumentDetails(documentId: string, payload: DocumentUpdatePayload): Promise<void> {
   const client = requireSupabase();
 
-  const { error } = await client.rpc('update_operational_document', {
+  const lines = payload.items ? recalculateSaleItems(payload.items) : undefined;
+  const { error } = await client.rpc('update_operational_document_v2', {
     p_document_id: documentId,
     p_client_name: payload.clientName?.trim() || null,
     p_client_nuit: payload.clientNuit !== undefined ? payload.clientNuit.trim() : null,
     p_client_address: payload.clientAddress !== undefined ? payload.clientAddress.trim() : null,
     p_grand_total: payload.grandTotal !== undefined ? Number(payload.grandTotal) : null,
     p_notes: payload.notes !== undefined ? payload.notes.trim() : null,
-    p_lines: payload.items && payload.items.length > 0 ? payload.items : null,
+    p_lines: lines && lines.length > 0 ? lines : null,
+    p_general_discount: Math.max(0, Number(payload.generalDiscount) || 0),
+    p_keep_as_walk_in: Boolean(payload.keepAsWalkIn),
   });
 
   if (error) {
@@ -246,88 +252,62 @@ export async function postStockMovement(movement: StockMovement): Promise<void> 
 
 async function resolveOrRegisterCustomer(
   client: any,
-  companyId: string,
   customerId: string,
   clientName?: string,
   clientNuit?: string,
-  clientAddress?: string
+  clientAddress?: string,
+  keepAsWalkIn = false,
 ): Promise<string> {
-  const { data: dbCustomers } = await client
-    .from('customers')
-    .select('id,customer_number,name,nuit')
-    .limit(200);
-
-  const pontualCustomer = (dbCustomers || []).find(
-    (c: any) =>
-      c.customer_number === '1' ||
-      c.customer_number === 'CL-001' ||
-      c.name.toLowerCase().includes('pontual') ||
-      c.name.toLowerCase().includes('final')
-  ) || dbCustomers?.[0];
-
-  const trimmedName = clientName?.trim();
-  const isCustomName =
-    trimmedName &&
-    trimmedName.toLowerCase() !== 'cliente pontual' &&
-    trimmedName.toLowerCase() !== 'cliente final' &&
-    trimmedName.toLowerCase() !== 'pontual' &&
-    trimmedName.toLowerCase() !== 'ibz';
-
-  // If a custom name was specified by the operator for a walk-in sale
-  if (isCustomName) {
-    const existing = (dbCustomers || []).find(
-      (c: any) => c.name.toLowerCase().trim() === trimmedName.toLowerCase()
-    );
-    if (existing) {
-      return existing.id;
-    }
-
-    let maxCode = 1;
-    (dbCustomers || []).forEach((c: any) => {
-      const matches = String(c.customer_number || '').match(/\d+/g);
-      if (matches && matches.length > 0) {
-        const parsed = parseInt(matches[matches.length - 1], 10);
-        if (!isNaN(parsed) && parsed > maxCode) {
-          maxCode = parsed;
-        }
-      }
-    });
-
-    const targetCompanyId = companyId || 'a0000000-0000-0000-0000-000000000001';
-
-    let attemptedCode = maxCode + 1;
-    for (let attempt = 0; attempt < 10; attempt++) {
-      const nextCode = String(attemptedCode);
-      const { data: newCustomer, error } = await client
-        .from('customers')
-        .insert({
-          company_id: targetCompanyId,
-          customer_number: nextCode,
-          name: trimmedName,
-          tax_number: clientNuit?.trim() || null,
-          active: true,
-        })
-        .select('id')
-        .single();
-
-      if (!error && newCustomer?.id) {
-        console.log(`✅ Auto-registered new customer #${nextCode}: ${trimmedName} (${newCustomer.id})`);
-        return newCustomer.id;
-      }
-      attemptedCode++;
-    }
-  }
-
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customerId);
-  if (isUuid && customerId !== pontualCustomer?.id) {
-    return customerId;
+  const { data, error } = await client.rpc('resolve_or_create_operational_customer_v2', {
+    p_customer_id: isUuid ? customerId : null,
+    p_client_name: clientName?.trim() || null,
+    p_client_nuit: clientNuit?.trim() || null,
+    p_client_address: clientAddress?.trim() || null,
+    p_keep_as_walk_in: keepAsWalkIn,
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Falha ao pesquisar ou registar o cliente.');
+  }
+  if (!data) {
+    throw new Error('Cliente inválido. Registe pelo menos um cliente no sistema.');
   }
 
-  if (pontualCustomer?.id) {
-    return pontualCustomer.id;
-  }
+  return String(data);
+}
 
-  throw new Error('Cliente inválido. Registe pelo menos um cliente no sistema.');
+export async function updateOperationalParty(
+  type: 'customer' | 'supplier',
+  partyId: string,
+  input: PartyInput,
+  active = true,
+): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client.rpc('admin_update_operational_party', {
+    p_party_type: type.toUpperCase(),
+    p_party_id: partyId,
+    p_data: {
+      number: input.number.trim(),
+      name: input.name.trim(),
+      tax_number: input.taxNumber.trim() || null,
+      telephone: input.telephone.trim() || null,
+      email: input.email.trim() || null,
+      address: input.address.trim() || null,
+      city: input.city.trim() || null,
+      contact_person: input.contactPerson?.trim() || null,
+    },
+    p_active: active,
+  });
+  if (error) {
+    if (error.message.includes('WALK_IN_CUSTOMER_CANNOT_BE_DEACTIVATED')) {
+      throw new Error('O Cliente Pontual (código 1) é obrigatório e não pode ser apagado.');
+    }
+    if (error.message.includes('duplicate key')) {
+      throw new Error(`O código "${input.number}" já está em uso.`);
+    }
+    throw new Error(error.message || `Falha ao actualizar ${type === 'customer' ? 'cliente' : 'fornecedor'}.`);
+  }
 }
 
 export async function createCustomerSale(
@@ -337,36 +317,37 @@ export async function createCustomerSale(
   const client = requireSupabase();
   const idempotencyKey = crypto.randomUUID();
 
-  const companyIdRes = await client.rpc('get_user_company_id');
-  const companyId = companyIdRes.data;
-
   const targetCustomerId = await resolveOrRegisterCustomer(
     client,
-    companyId,
     customerId,
     sale.clientName,
     sale.clientNuit,
-    sale.clientAddress
+    sale.clientAddress,
+    sale.keepAsWalkIn,
   );
 
   const encodedNotes = `[CLIENTE: ${sale.clientName} | NUIT: ${sale.clientNuit || 'N/A'} | MORADA: ${sale.clientAddress || 'N/A'}] ${sale.notes || ''}`.trim();
 
-  const { data, error } = await client.rpc('create_and_confirm_customer_sale', {
+  const calculated = calculateDocumentTotals(sale.items, sale.descontoTotal - sale.items.reduce((sum, item) => sum + (item.discountAmount || 0), 0));
+  const { data, error } = await client.rpc('create_and_confirm_customer_sale_v2', {
     p_customer_id: targetCustomerId,
     p_document_date: sale.date,
     p_payment_term_code: sale.paymentTermCode ?? 'DINHEIRO',
-    p_items: sale.items.map((item) => ({
+    p_items: calculated.lines.map((item) => ({
       article_id: item.articleId,
       code: item.code || 'DIV',
       description: item.description,
       quantity: item.quantity,
-      unit_price: item.unitPrice || 0,
-      discount_percent: item.discountPercent || 0,
+      unit_price_incl: item.unitPrice || 0,
+      discount_amount: item.discountAmount || 0,
       tax_rate: item.ivaPercent || 16,
+      line_type: item.lineType || (isUuid(item.articleId) ? 'STOCK' : 'MANUAL'),
+      stock_effect_enabled: item.stockEffectEnabled ?? isUuid(item.articleId),
     })),
     p_idempotency_key: idempotencyKey,
     p_document_type_code: sale.documentTypeCode ?? 'CUSTOMER_INVOICE',
     p_notes: encodedNotes,
+    p_general_discount: calculated.generalDiscount,
   });
 
   if (error) throw new Error(error.message || 'Falha ao confirmar a venda.');
@@ -375,6 +356,7 @@ export async function createCustomerSale(
   const document = Array.isArray(data) ? data[0] : data;
   return {
     ...sale,
+    clientId: targetCustomerId,
     id: document.id,
     docNumber: document.display_number,
     totalAmount: numberValue(document.grand_total),
@@ -390,149 +372,54 @@ export async function createQuotation(
   customerId: string,
 ): Promise<SaleInvoice> {
   const client = requireSupabase();
-  const companyIdRes = await client.rpc('get_user_company_id');
-  const companyId = companyIdRes.data;
 
   const targetCustomerId = await resolveOrRegisterCustomer(
     client,
-    companyId,
     customerId,
     sale.clientName,
     sale.clientNuit,
-    sale.clientAddress
+    sale.clientAddress,
+    sale.keepAsWalkIn,
   );
 
-  const year = new Date().getFullYear();
-  const { data: allDocs } = await client
-    .from('documents')
-    .select('display_number');
-
-  let maxSeq = 0;
-  if (allDocs && allDocs.length > 0) {
-    allDocs.forEach((d) => {
-      if (d.display_number && (d.display_number.toUpperCase().startsWith('COT') || d.display_number.toUpperCase().startsWith('CO/'))) {
-        const match = d.display_number.match(/(\d+)/g);
-        if (match && match.length > 0) {
-          const lastPart = match[match.length - 1];
-          const parsed = parseInt(lastPart, 10);
-          if (!isNaN(parsed) && parsed > maxSeq) {
-            maxSeq = parsed;
-          }
-        }
-      }
-    });
-  }
-
-  const nextSeq = maxSeq + 1;
-  const docDisplayNumber = `COT-${year}/${String(nextSeq).padStart(3, '0')}`;
-
-  const { data: docTypeRes } = await client
-    .from('document_types')
-    .select('id')
-    .or('code.eq.CUSTOMER_QUOTATION,code.eq.QUOTATION,code.eq.COT')
-    .limit(1);
-
-  let docTypeId = docTypeRes?.[0]?.id;
-  if (!docTypeId) {
-    const { data: fallbackDocType } = await client.from('document_types').select('id').limit(1);
-    docTypeId = fallbackDocType?.[0]?.id;
-  }
-
-  const { data: branchRes } = await client.from('branches').select('id').eq('company_id', companyId).limit(1);
-  const branchId = branchRes?.[0]?.id;
-
-  const { data: warehouseRes } = await client.from('warehouses').select('id').eq('company_id', companyId).limit(1);
-  const warehouseId = warehouseRes?.[0]?.id;
-
-  const { data: periodRes } = await client.from('fiscal_periods').select('id').eq('company_id', companyId).limit(1);
-  const periodId = periodRes?.[0]?.id;
-
-  const { data: userData } = await client.auth.getUser();
-  let currentUserId = userData?.user?.id;
-  if (!currentUserId) {
-    const { data: firstProfile } = await client.from('user_profiles').select('id').limit(1);
-    currentUserId = firstProfile?.[0]?.id;
-  }
-
   const encodedNotes = `[CLIENTE: ${sale.clientName} | NUIT: ${sale.clientNuit || 'N/A'} | MORADA: ${sale.clientAddress || 'N/A'}] ${sale.notes || ''}`.trim();
-
-  // Insert quotation into documents table without stock deduction
-  const { data: insertedDoc, error: insertErr } = await client
-    .from('documents')
-    .insert({
-      company_id: companyId,
-      branch_id: branchId,
-      warehouse_id: warehouseId,
-      fiscal_period_id: periodId,
-      customer_id: targetCustomerId,
-      document_type_id: docTypeId,
-      display_number: docDisplayNumber,
-      document_date: sale.date,
-      due_date: sale.date,
-      status: 'CONFIRMED',
-      subtotal: sale.subtotalBruto,
-      discount_total: sale.descontoTotal,
-      tax_total: sale.ivaTotal,
-      net_total: sale.subtotalLiquido,
-      grand_total: sale.totalAmount,
-      amount_paid: 0,
-      outstanding_amount: sale.totalAmount,
-      salesperson_name: sale.sellerName,
-      notes: encodedNotes,
-      created_by: currentUserId,
-    })
-    .select()
-    .single();
-
-  if (insertErr) {
-    console.error('❌ Error inserting quotation into documents table:', insertErr);
-    throw new Error(`Falha ao guardar cotação na base de dados: ${insertErr.message}`);
-  }
-
-  if (sale.items.length > 0) {
-    const isUuid = (str?: string) => !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-
-    const lines = sale.items.map((item, index) => {
-      const gross = (item.unitPrice || 0) * (item.quantity || 1);
-      const descVal = Math.round((gross * (item.discountPercent || 0) / 100) * 100) / 100;
-      const totalVal = item.total || gross;
-      const netVal = Math.round((totalVal / (1 + (item.ivaPercent || 16) / 100)) * 100) / 100;
-      const taxVal = Math.round((totalVal - netVal) * 100) / 100;
-
-      return {
-        company_id: companyId,
-        document_id: insertedDoc.id,
-        line_number: index + 1,
-        product_id: isUuid(item.articleId) ? item.articleId : null,
-        product_code_snapshot: item.code || '',
-        description_snapshot: item.description || item.code || 'Artigo sem descrição',
-        unit_code_snapshot: 'UN',
-        quantity: item.quantity || 1,
-        unit_price: item.unitPrice || 0,
-        discount_percentage: item.discountPercent || 0,
-        discount_amount: descVal,
-        tax_rate_snapshot: item.ivaPercent || 16,
-        net_amount: netVal,
-        tax_amount: taxVal,
-        total_amount: totalVal,
-      };
-    });
-
-    const { error: lineErr } = await client.from('document_lines').insert(lines);
-    if (lineErr) {
-      console.error('❌ Error inserting quotation lines into document_lines:', lineErr);
-      throw new Error(`Falha ao guardar os artigos da cotação: ${lineErr.message}`);
-    }
-  }
+  const calculated = calculateDocumentTotals(sale.items, sale.descontoTotal - sale.items.reduce((sum, item) => sum + (item.discountAmount || 0), 0));
+  const { data, error } = await client.rpc('create_and_confirm_customer_quotation_v2', {
+    p_customer_id: targetCustomerId,
+    p_document_date: sale.date,
+    p_items: calculated.lines.map((item) => ({
+      article_id: item.articleId,
+      code: item.code || 'DIV',
+      description: item.description,
+      quantity: item.quantity,
+      unit_price_incl: item.unitPrice || 0,
+      discount_amount: item.discountAmount || 0,
+      tax_rate: item.ivaPercent || 16,
+      line_type: item.lineType || (isUuid(item.articleId) ? 'STOCK' : 'MANUAL'),
+      stock_effect_enabled: false,
+    })),
+    p_notes: encodedNotes,
+    p_idempotency_key: crypto.randomUUID(),
+    p_general_discount: calculated.generalDiscount,
+  });
+  if (error) throw new Error(error.message || 'Falha ao guardar cotação na base de dados.');
+  if (!data) throw new Error('A cotação não devolveu um documento confirmado.');
+  const insertedDoc = Array.isArray(data) ? data[0] : data;
 
   return {
     ...sale,
+    clientId: targetCustomerId,
     id: insertedDoc.id,
-    docNumber: docDisplayNumber,
+    docNumber: insertedDoc.display_number,
     documentTypeCode: 'CUSTOMER_QUOTATION',
     status: 'Concluída',
     paidAmount: 0,
-    pendingAmount: sale.totalAmount,
+    subtotalBruto: numberValue(insertedDoc.subtotal),
+    descontoTotal: numberValue(insertedDoc.discount_total),
+    subtotalLiquido: numberValue(insertedDoc.net_total),
+    ivaTotal: numberValue(insertedDoc.tax_total),
+    totalAmount: numberValue(insertedDoc.grand_total),
+    pendingAmount: numberValue(insertedDoc.outstanding_amount),
   };
 }
 
@@ -665,12 +552,21 @@ export async function loadOperationalReport(
   };
 }
 
-export async function loadAppData(): Promise<AppData> {
+export type AppDataScope = 'all' | 'core' | 'sales' | 'stock' | 'documents' | 'entities' | 'users' | 'reports' | 'after-sale';
+
+export async function loadAppData(scope: AppDataScope = 'all'): Promise<AppData> {
   const client = requireSupabase();
   const companyIdResult = await client.rpc('get_user_company_id');
   if (companyIdResult.error || !companyIdResult.data) {
     throw companyIdResult.error ?? new Error('Empresa do utilizador não definida.');
   }
+
+  const wants = (...scopes: AppDataScope[]) => scope === 'all' || scopes.includes(scope);
+  const skipped = () => Promise.resolve({ data: [] as Row[], error: null });
+  const wantsProducts = wants('sales', 'stock', 'documents', 'reports', 'after-sale');
+  const wantsCustomers = wants('sales', 'stock', 'documents', 'entities', 'reports', 'after-sale');
+  const wantsSuppliers = wants('documents', 'entities', 'reports');
+  const wantsDocuments = wants('sales', 'stock', 'documents', 'entities', 'reports', 'after-sale');
 
   const [contextResult, metricsResult, permissionsResult, modeResult, companyResult, productsResult, balancesResult, customersResult, suppliersResult, documentsResult, movementsResult, paymentsResult, ledgerResult, usersResult, paymentTermsResult, paymentMethodsResult, categoriesResult, brandsResult, unitsResult, taxCodesResult, supplierPurchasesRpcResult] =
     await Promise.all([
@@ -687,50 +583,50 @@ export async function loadAppData(): Promise<AppData> {
         .select('id,name,tax_number,address,city,country,phone,email,currency,bank_bci_account,bank_bci_nib,bank_bim_account,bank_bim_nib,quotation_validity_days,quotation_default_notes,bank_accounts')
         .eq('id', companyIdResult.data)
         .single(),
-      client
+      wantsProducts ? client
         .from('products')
         .select('id,code,description,min_stock,avg_cost,profit_pct,sale_price_excl,sale_price_incl,tax_code_id,tax_codes(id,code,description,rate),product_categories(id,name),brands(id,name),units_of_measure(id,abbreviation)')
         .eq('is_active', true)
         .order('code')
-        .limit(2000),
-      client.from('inventory_balances').select('product_id,quantity').limit(2000),
-      client
+        .limit(2000) : skipped(),
+      wantsProducts ? client.from('inventory_balances').select('product_id,quantity').limit(2000) : skipped(),
+      wantsCustomers ? client
         .from('customers')
         .select('id,customer_number,name,tax_number,telephone,email,current_balance,customer_addresses(address_line_1,is_primary)')
         .eq('active', true)
         .order('name')
-        .limit(2000),
-      client
+        .limit(2000) : skipped(),
+      wantsSuppliers ? client
         .from('suppliers')
         .select('id,supplier_number,name,tax_number,telephone,email,contact_person,current_balance,supplier_addresses(address_line_1,is_primary)')
         .eq('active', true)
         .order('name')
-        .limit(500),
-      client
+        .limit(500) : skipped(),
+      wantsDocuments ? client
         .from('documents')
-        .select('id,display_number,document_date,due_date,status,notes,subtotal,discount_total,net_total,tax_total,grand_total,amount_paid,outstanding_amount,salesperson_name,customer_id,supplier_id,customers(customer_number,name,tax_number),suppliers(supplier_number,name,tax_number),payment_terms(code,name),document_types(code,name),document_lines(id,product_id,product_code_snapshot,description_snapshot,quantity,unit_price,discount_percentage,tax_rate_snapshot,total_amount)')
+        .select('id,display_number,document_date,due_date,status,notes,subtotal,discount_total,general_discount_amount,net_total,tax_total,grand_total,amount_paid,outstanding_amount,salesperson_name,customer_id,supplier_id,customers(customer_number,name,tax_number),suppliers(supplier_number,name,tax_number),payment_terms(code,name),document_types(code,name),document_lines(id,product_id,product_code_snapshot,description_snapshot,quantity,unit_price,discount_percentage,discount_amount,tax_rate_snapshot,total_amount,stock_effect_enabled)')
         .order('document_date', { ascending: false })
-        .limit(1000),
-      client
+        .limit(1000) : skipped(),
+      wants('stock', 'after-sale') ? client
         .from('stock_movements')
         .select('id,movement_type,legacy_ref,source_document_id,created_at,quantity_in,quantity_out,unit_cost,products(code,description),warehouses(id,name),user_profiles(full_name)')
         .order('created_at', { ascending: false })
-        .limit(1000),
-      client
+        .limit(1000) : skipped(),
+      wants('documents', 'entities', 'reports') ? client
         .from('payments')
         .select('id,display_number,payment_date,direction,total_amount,allocated_amount,unapplied_amount,status,customers(name),suppliers(name)')
         .order('payment_date', { ascending: false })
-        .limit(2000),
-      client
+        .limit(2000) : skipped(),
+      wants('documents', 'entities', 'reports') ? client
         .from('ledger_entries')
         .select('id,entry_date,party_type,entry_type,debit_amount,credit_amount,outstanding_amount,status,customers(name),suppliers(name)')
         .order('entry_date', { ascending: false })
-        .limit(1000),
-      client
+        .limit(1000) : skipped(),
+      wants('users') ? client
         .from('user_profiles')
         .select('id,full_name,email,phone,is_active,user_roles(roles(code,name))')
         .order('full_name')
-        .limit(250),
+        .limit(250) : skipped(),
       client
         .from('payment_terms')
         .select('id,code,name,requires_immediate_payment')
@@ -743,11 +639,11 @@ export async function loadAppData(): Promise<AppData> {
         .eq('active', true)
         .order('display_order')
         .limit(100),
-      client.from('product_categories').select('id,code,name').order('name').limit(250),
-      client.from('brands').select('id,name').order('name').limit(250),
-      client.from('units_of_measure').select('id,name,abbreviation').order('name').limit(100),
-      client.from('tax_codes').select('id,code,description,rate').eq('is_active', true).order('rate', { ascending: false }).limit(50),
-      client.rpc('get_supplier_total_purchases_summary'),
+      wantsProducts ? client.from('product_categories').select('id,code,name').order('name').limit(250) : skipped(),
+      wantsProducts ? client.from('brands').select('id,name').order('name').limit(250) : skipped(),
+      wantsProducts ? client.from('units_of_measure').select('id,name,abbreviation').order('name').limit(100) : skipped(),
+      wantsProducts ? client.from('tax_codes').select('id,code,description,rate').eq('is_active', true).order('rate', { ascending: false }).limit(50) : skipped(),
+      wantsSuppliers ? client.rpc('get_supplier_total_purchases_summary') : skipped(),
     ]);
 
   const criticalFailed = [
@@ -910,6 +806,7 @@ export async function loadAppData(): Promise<AppData> {
 
     return {
       id: row.id,
+      clientId: row.customer_id ?? undefined,
       documentTypeCode: docTypeCode,
       docNumber: row.display_number ?? 'Rascunho',
       date: row.document_date,
@@ -922,10 +819,14 @@ export async function loadAppData(): Promise<AppData> {
       items: ((row.document_lines ?? []) as Row[]).map((line) => {
         const qty = numberValue(line.quantity) || 1;
         const tot = numberValue(line.total_amount);
-        const disc = numberValue(line.discount_percentage) || 0;
+        const discountAmount = numberValue(line.discount_amount);
+        const legacyDiscountPercent = numberValue(line.discount_percentage) || 0;
+        const legacyDiscountAmount = discountAmount > 0
+          ? discountAmount
+          : numberValue(line.unit_price) * qty * legacyDiscountPercent / 100;
         const priceWithIva = (tot > 0 && qty > 0)
-          ? Math.round((tot / (qty * (1 - disc / 100))) * 100) / 100
-          : numberValue(line.unit_price);
+          ? Math.round(((tot + legacyDiscountAmount) / qty) * 100) / 100
+          : Math.round(numberValue(line.unit_price) * (1 + numberValue(line.tax_rate_snapshot) / 100) * 100) / 100;
 
         return {
           articleId: line.product_id ?? line.id,
@@ -933,13 +834,17 @@ export async function loadAppData(): Promise<AppData> {
           description: line.description_snapshot,
           quantity: qty,
           unitPrice: priceWithIva,
-          discountPercent: disc,
+          discountPercent: legacyDiscountPercent,
+          discountAmount: Math.round(legacyDiscountAmount * 100) / 100,
           ivaPercent: numberValue(line.tax_rate_snapshot) || 16,
-          total: tot > 0 ? tot : Math.round(qty * priceWithIva * (1 - disc / 100) * 100) / 100,
+          total: tot > 0 ? tot : calculateDocumentLine({ quantity: qty, unitPrice: priceWithIva, discountAmount: legacyDiscountAmount, discountPercent: 0, ivaPercent: numberValue(line.tax_rate_snapshot) || 16 }).totalWithTax,
+          lineType: line.product_id ? 'STOCK' : (String(line.product_code_snapshot || '').toUpperCase().startsWith('SERV') ? 'SERVICE' : 'MANUAL'),
+          stockEffectEnabled: Boolean(line.stock_effect_enabled),
         };
       }),
       subtotalBruto: numberValue(row.subtotal),
       descontoTotal: numberValue(row.discount_total),
+      generalDiscountAmount: numberValue(row.general_discount_amount),
       ivaTotal: numberValue(row.tax_total),
       totalAmount: numberValue(row.grand_total),
       paidAmount: numberValue(row.amount_paid),
@@ -951,6 +856,7 @@ export async function loadAppData(): Promise<AppData> {
             ? 'Concluída'
             : 'Pendente',
       time: '',
+      notes: notesStr,
     };
     });
 

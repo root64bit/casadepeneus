@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { createClient, type Session } from '@supabase/supabase-js';
 import { Layout } from './components/Layout';
 import { AuthGate } from './components/AuthGate';
@@ -7,18 +7,6 @@ import { NewArticleModal } from './components/NewArticleModal';
 import { PaymentModal } from './components/PaymentModal';
 import { PrintInvoiceModal } from './components/PrintInvoiceModal';
 import { PrintRecordModal } from './components/PrintRecordModal';
-import { Dashboard } from './pages/Dashboard';
-import { Inventory } from './pages/Inventory';
-import { NewSale } from './pages/NewSale';
-import { StockMovements } from './pages/StockMovements';
-import { Entities } from './pages/Entities';
-import { Reports } from './pages/Reports';
-import { Documents } from './pages/Documents';
-import { Purchases } from './pages/Purchases';
-import { Accounts } from './pages/Accounts';
-import { Administration } from './pages/Administration';
-import { StitchConnection } from './pages/StitchConnection';
-import { Quotation } from './pages/Quotation';
 import {
   Article,
   CompanyProfile,
@@ -50,8 +38,34 @@ import {
   cancelFinancialAdvice,
   saveCompanyQuotationSettings,
   updateDocumentDetails,
+  updateOperationalParty,
 } from './lib/appData';
-import type { PartyInput } from './lib/appData';
+import type { AppDataScope, PartyInput } from './lib/appData';
+
+const Dashboard = lazy(() => import('./pages/Dashboard').then((module) => ({ default: module.Dashboard })));
+const Inventory = lazy(() => import('./pages/Inventory').then((module) => ({ default: module.Inventory })));
+const NewSale = lazy(() => import('./pages/NewSale').then((module) => ({ default: module.NewSale })));
+const StockMovements = lazy(() => import('./pages/StockMovements').then((module) => ({ default: module.StockMovements })));
+const Entities = lazy(() => import('./pages/Entities').then((module) => ({ default: module.Entities })));
+const Reports = lazy(() => import('./pages/Reports').then((module) => ({ default: module.Reports })));
+const Documents = lazy(() => import('./pages/Documents').then((module) => ({ default: module.Documents })));
+const Purchases = lazy(() => import('./pages/Purchases').then((module) => ({ default: module.Purchases })));
+const Accounts = lazy(() => import('./pages/Accounts').then((module) => ({ default: module.Accounts })));
+const Administration = lazy(() => import('./pages/Administration').then((module) => ({ default: module.Administration })));
+const StitchConnection = lazy(() => import('./pages/StitchConnection').then((module) => ({ default: module.StitchConnection })));
+const Quotation = lazy(() => import('./pages/Quotation').then((module) => ({ default: module.Quotation })));
+
+const selectiveLoadingEnabled = String(import.meta.env.VITE_ENABLE_SELECTIVE_LOADING ?? 'true').toLowerCase() !== 'false';
+const dataScopeForTab = (tab: string): AppDataScope => {
+  if (tab === 'sales' || tab === 'quotation') return 'sales';
+  if (tab === 'inventory' || tab === 'movements') return 'stock';
+  if (tab === 'documents' || tab === 'accounts') return 'documents';
+  if (tab === 'entities') return 'entities';
+  if (tab === 'reports') return 'reports';
+  if (tab === 'administration') return 'users';
+  if (tab === 'dashboard') return 'core';
+  return 'all';
+};
 
 const emptyCompany: CompanyProfile = {
   name: 'Casa de Pneus', taxNumber: '', address: '', city: '',
@@ -117,35 +131,40 @@ function App() {
   const [partyModalType, setPartyModalType] = useState<'customer' | 'supplier' | null>(null);
 
   const initialLoadedRef = useRef(false);
+  const loadedScopesRef = useRef(new Set<AppDataScope>());
 
-  const refreshData = useCallback(async (isSilent = false) => {
+  const refreshData = useCallback(async (isSilent = false, requestedScope?: AppDataScope) => {
     if (!session) return;
     if (!isSilent && !userContext) {
       setDataLoading(true);
     }
     setDataError('');
     try {
-      const data = await loadAppData();
+      const scope = selectiveLoadingEnabled ? (requestedScope ?? dataScopeForTab(activeTab)) : 'all';
+      const data = await loadAppData(scope);
       setCompany(data.company);
       setPermissions(data.permissions);
-      setArticles(data.articles);
-      setSales(data.sales);
-      setClients(data.clients);
-      setSuppliers(data.suppliers);
-      setMovements(data.movements);
-      setDocuments(data.documents);
-      setPayments(data.payments);
-      setLedger(data.ledger);
-      setUsers(data.users);
+      if (scope === 'all' || ['sales', 'stock', 'documents', 'reports', 'after-sale'].includes(scope)) setArticles(data.articles);
+      if (scope === 'all' || ['sales', 'stock', 'documents', 'entities', 'reports', 'after-sale'].includes(scope)) setSales(data.sales);
+      if (scope === 'all' || ['sales', 'stock', 'documents', 'entities', 'reports', 'after-sale'].includes(scope)) setClients(data.clients);
+      if (scope === 'all' || ['documents', 'entities', 'reports'].includes(scope)) setSuppliers(data.suppliers);
+      if (scope === 'all' || ['stock', 'after-sale'].includes(scope)) setMovements(data.movements);
+      if (scope === 'all' || ['sales', 'stock', 'documents', 'entities', 'reports', 'after-sale'].includes(scope)) setDocuments(data.documents);
+      if (scope === 'all' || ['documents', 'entities', 'reports'].includes(scope)) setPayments(data.payments);
+      if (scope === 'all' || ['documents', 'entities', 'reports'].includes(scope)) setLedger(data.ledger);
+      if (scope === 'all' || scope === 'users') setUsers(data.users);
       setSystemMode(data.systemMode === 'MIGRATION' ? 'PRODUCTION' : data.systemMode);
       setUserContext(data.userContext);
       setDashboardMetrics(data.dashboardMetrics);
       setPaymentTerms(data.paymentTerms);
       setPaymentMethods(data.paymentMethods);
-      setProductCategories(data.productCategories);
-      setBrands(data.brands);
-      setUnits(data.units);
-      setTaxCodes(data.taxCodes);
+      if (scope === 'all' || ['sales', 'stock', 'documents', 'reports', 'after-sale'].includes(scope)) {
+        setProductCategories(data.productCategories);
+        setBrands(data.brands);
+        setUnits(data.units);
+        setTaxCodes(data.taxCodes);
+      }
+      loadedScopesRef.current.add(scope);
     } catch (error) {
       const message = error instanceof Error ? error.message : String((error as { message?: string })?.message ?? '');
       if (message.includes('USER_INACTIVE')) {
@@ -157,7 +176,7 @@ function App() {
     } finally {
       setDataLoading(false);
     }
-  }, [session, userContext]);
+  }, [activeTab, session, userContext]);
 
   useEffect(() => {
     if (!supabase) {
@@ -186,11 +205,25 @@ function App() {
     if (!session) return;
     if (!initialLoadedRef.current) {
       initialLoadedRef.current = true;
-      void refreshData(false);
+      void refreshData(false, selectiveLoadingEnabled ? 'core' : 'all');
     } else {
       void refreshData(true);
     }
   }, [session]);
+
+  useEffect(() => {
+    if (!session || !userContext || !selectiveLoadingEnabled) return;
+    const scope = dataScopeForTab(activeTab);
+    if (!loadedScopesRef.current.has(scope)) void refreshData(true, scope);
+  }, [activeTab, refreshData, session, userContext]);
+
+  useEffect(() => {
+    if (!session || !userContext || !selectiveLoadingEnabled || activeTab !== 'dashboard') return;
+    const timer = window.setTimeout(() => {
+      if (!loadedScopesRef.current.has('sales')) void refreshData(true, 'sales');
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, refreshData, session, userContext]);
 
   useEffect(() => {
     const onPopState = () => setActiveTab(pathToTab());
@@ -279,7 +312,7 @@ function App() {
         typeCode: savedSale.documentTypeCode ?? 'CUSTOMER_INVOICE',
         typeName: savedSale.documentTypeCode === 'CUSTOMER_DELIVERY_NOTE' ? 'Guia de Remessa' : savedSale.documentTypeCode === 'CASH_SALE' ? 'Venda a Dinheiro' : 'Factura',
         partyType: 'CUSTOMER',
-        partyId: sale.clientId || '',
+        partyId: savedSale.clientId || '',
         partyCode: '',
         partyName: savedSale.clientName || 'Cliente Pontual',
         status: 'CONFIRMED',
@@ -291,7 +324,7 @@ function App() {
       },
       ...prev.filter((d) => d.id !== savedSale.id),
     ]);
-    await refreshData();
+    await refreshData(true, 'after-sale');
     return savedSale;
   };
 
@@ -309,7 +342,7 @@ function App() {
         typeCode: 'CUSTOMER_QUOTATION',
         typeName: 'Cotação',
         partyType: 'CUSTOMER',
-        partyId: quotation.clientId || '',
+        partyId: savedQuotation.clientId || '',
         partyCode: '',
         partyName: savedQuotation.clientName || 'Cliente Pontual',
         status: 'CONFIRMED',
@@ -321,7 +354,7 @@ function App() {
       },
       ...prev.filter((d) => d.id !== savedQuotation.id),
     ]);
-    await refreshData();
+    await refreshData(true, 'after-sale');
     return savedQuotation;
   };
 
@@ -367,7 +400,17 @@ function App() {
   ) => {
     if (type === 'customer') await createCustomer(input);
     else await createSupplier(input);
-    await refreshData();
+    await refreshData(true, 'entities');
+  };
+
+  const handleUpdateParty = async (
+    type: 'customer' | 'supplier',
+    partyId: string,
+    input: PartyInput,
+    active: boolean,
+  ) => {
+    await updateOperationalParty(type, partyId, input, active);
+    await refreshData(true, 'entities');
   };
 
   const handleCreateSupplierInvoice = async (invoice: import('./types').PurchaseInvoiceInput) => {
@@ -670,6 +713,8 @@ function App() {
             onNewSupplier={() => setPartyModalType('supplier')}
             canCreateCustomer={permissions.includes('customers.create')}
             canCreateSupplier={permissions.includes('suppliers.create')}
+            isAdmin={permissions.includes('settings.manage')}
+            onUpdateParty={handleUpdateParty}
             onConfirmAdvice={async (payload) => {
               const docId = await createAndConfirmFinancialAdvice(payload);
               await refreshData();
@@ -768,7 +813,7 @@ function App() {
         {dataError && (
           <div role="alert" className="mb-4 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             <span>{dataError}</span>
-            <button className="font-bold underline" onClick={() => void refreshData()}>
+            <button className="font-bold underline" onClick={() => void refreshData(false, 'all')}>
               Tentar novamente
             </button>
           </div>
@@ -778,7 +823,9 @@ function App() {
             A carregar dados operacionais…
           </div>
         ) : (
-          renderActiveView()
+          <Suspense fallback={<div className="grid min-h-[35vh] place-items-center text-sm font-bold text-slate-500">A abrir módulo…</div>}>
+            {renderActiveView()}
+          </Suspense>
         )}
       </Layout>
 

@@ -3,6 +3,7 @@ import type { Article, Client, DocumentRecord, SaleInvoice, SaleItem } from '../
 import { ArticleSearchSelect } from '../components/ArticleSearchSelect';
 import { Pagination } from '../components/Pagination';
 import { formatMZN } from '../stitch/stitchConfig';
+import { calculateDocumentLine, calculateDocumentTotals, recalculateSaleItem, recalculateSaleItems } from '../lib/documentCalculations';
 
 interface QuotationProps {
   articles: Article[];
@@ -12,7 +13,7 @@ interface QuotationProps {
   onCreateQuotation: (quotation: SaleInvoice) => Promise<SaleInvoice>;
   onOpenPrintModal: (doc: SaleInvoice) => void;
   operatorName: string;
-  onUpdateDocument?: (documentId: string, payload: { clientName?: string; clientNuit?: string; clientAddress?: string; grandTotal?: number; notes?: string; items?: SaleItem[] }) => Promise<void>;
+  onUpdateDocument?: (documentId: string, payload: { clientName?: string; clientNuit?: string; clientAddress?: string; grandTotal?: number; notes?: string; items?: SaleItem[]; generalDiscount?: number; keepAsWalkIn?: boolean }) => Promise<void>;
 }
 
 export const Quotation: React.FC<QuotationProps> = ({
@@ -36,6 +37,7 @@ export const Quotation: React.FC<QuotationProps> = ({
   const [selectedClientName, setSelectedClientName] = useState('Cliente Pontual');
   const [clientNuit, setClientNuit] = useState('');
   const [clientAddress, setClientAddress] = useState('');
+  const [keepAsWalkIn, setKeepAsWalkIn] = useState(false);
 
   // Item Entry State
   const [selectedArticleId, setSelectedArticleId] = useState('');
@@ -64,27 +66,28 @@ export const Quotation: React.FC<QuotationProps> = ({
   const [editGrandTotal, setEditGrandTotal] = useState(0);
   const [editNotes, setEditNotes] = useState('');
   const [editItems, setEditItems] = useState<SaleItem[]>([]);
+  const [editGeneralDiscount, setEditGeneralDiscount] = useState(0);
+  const [editKeepAsWalkIn, setEditKeepAsWalkIn] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editError, setEditError] = useState('');
 
   // Auto-sync editGrandTotal when editItems changes
   useEffect(() => {
     if (editingQuotation) {
-      const grand = editItems.reduce(
-        (acc, item) => acc + Math.round((item.quantity || 1) * (item.unitPrice || 0) * (1 - (item.discountPercent || 0) / 100) * 100) / 100,
-        0
-      );
-      setEditGrandTotal(Math.round(grand * 100) / 100);
+      setEditGrandTotal(calculateDocumentTotals(editItems, editGeneralDiscount).grandTotal);
     }
-  }, [editItems, editingQuotation]);
+  }, [editItems, editGeneralDiscount, editingQuotation]);
 
-  const handleOpenEditQuotation = (doc: { id: string; docNumber: string; clientName: string; clientNuit?: string; clientAddress?: string; totalAmount?: number; notes?: string; items?: SaleItem[] }) => {
+  const handleOpenEditQuotation = (doc: { id: string; docNumber: string; clientName: string; clientNuit?: string; clientAddress?: string; totalAmount?: number; descontoTotal?: number; generalDiscountAmount?: number; notes?: string; items?: SaleItem[] }) => {
     setEditingQuotation({ id: doc.id, docNumber: doc.docNumber });
     setEditClientName(doc.clientName || '');
     setEditClientNuit(doc.clientNuit || '');
     setEditClientAddress(doc.clientAddress || '');
     setEditGrandTotal(doc.totalAmount || 0);
     setEditNotes(doc.notes || '');
+    const lineDiscount = (doc.items || []).reduce((sum, item) => sum + (item.discountAmount || 0), 0);
+    setEditGeneralDiscount(doc.generalDiscountAmount ?? Math.max(0, (doc.descontoTotal || 0) - lineDiscount));
+    setEditKeepAsWalkIn(false);
     
     let loadedItems: SaleItem[] = doc.items && doc.items.length > 0 ? JSON.parse(JSON.stringify(doc.items)) : [];
     if (loadedItems.length === 0 && (doc.totalAmount || 0) > 0) {
@@ -98,14 +101,20 @@ export const Quotation: React.FC<QuotationProps> = ({
         discountAmount: 0,
         ivaPercent: 16,
         total: doc.totalAmount || 0,
+        lineType: 'MANUAL',
+        stockEffectEnabled: false,
       }];
     }
-    setEditItems(loadedItems);
+    setEditItems(recalculateSaleItems(loadedItems));
     setEditError('');
   };
 
   const handleExecuteSaveEditQuotation = async () => {
     if (!editingQuotation || !onUpdateDocument || isSavingEdit) return;
+    if (editItems.length === 0) {
+      setEditError('A cotação deve manter pelo menos um artigo ou serviço.');
+      return;
+    }
     try {
       setIsSavingEdit(true);
       setEditError('');
@@ -115,7 +124,9 @@ export const Quotation: React.FC<QuotationProps> = ({
         clientAddress: editClientAddress.trim(),
         grandTotal: Number(editGrandTotal),
         notes: editNotes.trim(),
-        items: editItems,
+        items: recalculateSaleItems(editItems),
+        generalDiscount: editGeneralDiscount,
+        keepAsWalkIn: editKeepAsWalkIn,
       });
       setEditingQuotation(null);
     } catch (err: any) {
@@ -145,6 +156,8 @@ export const Quotation: React.FC<QuotationProps> = ({
 
   // Initialize Client Code 1 (Cliente Pontual) on mount
   useEffect(() => {
+    if (selectedClientId && selectedClientId !== 'client-pontual') return;
+    if (selectedClientName.trim() && !['cliente pontual', 'cliente final'].includes(selectedClientName.trim().toLowerCase())) return;
     const pontual = clients.find(
       (c) => c.number === '1' || c.code === '1' || c.name.toLowerCase().includes('pontual')
     ) || clients[0];
@@ -158,11 +171,16 @@ export const Quotation: React.FC<QuotationProps> = ({
       setSelectedClientName('Cliente Pontual');
       setClientCodeInput('1');
     }
-  }, [clients]);
+  }, [clients, selectedClientId, selectedClientName]);
 
   const lookupClientByCode = (query: string) => {
     const clean = query.trim().toLowerCase();
-    if (!clean) return;
+    if (!clean) {
+      const hasDetails = selectedClientName.trim() !== ''
+        && !['cliente pontual', 'cliente final'].includes(selectedClientName.trim().toLowerCase());
+      if (!hasDetails && !clientNuit.trim() && !clientAddress.trim()) lookupClientByCode('1');
+      return;
+    }
 
     if (clean === '1' || clean === '01') {
       const pontualInDb = clients.find(
@@ -174,6 +192,7 @@ export const Quotation: React.FC<QuotationProps> = ({
       setClientCodeInput('1');
       setClientNuit('');
       setClientAddress('');
+      setKeepAsWalkIn(false);
       return;
     }
 
@@ -194,6 +213,7 @@ export const Quotation: React.FC<QuotationProps> = ({
       setClientNuit(found.nuit || '');
       setClientAddress(found.address || '');
       setClientCodeInput(found.number || found.code || query);
+      setKeepAsWalkIn(false);
     } else {
       setSelectedClientId('client-pontual');
       setSelectedClientName('Cliente Pontual');
@@ -207,7 +227,7 @@ export const Quotation: React.FC<QuotationProps> = ({
       return art.sellPriceWithIva;
     }
     if (art.sellPrice && art.sellPrice > 0) {
-      return art.sellPrice;
+      return Math.round(art.sellPrice * (1 + (art.taxRate ?? 16) / 100) * 100) / 100;
     }
     return 0;
   };
@@ -242,22 +262,19 @@ export const Quotation: React.FC<QuotationProps> = ({
     if (!finalDesc || inputQty <= 0) return;
 
     const priceWithIva = inputUnitPrice > 0 ? inputUnitPrice : (art ? getArticlePriceWithIva(art) : 0);
-    const grossTotalWithIva = priceWithIva * inputQty;
-    const itemTotalWithIva = Math.round(Math.max(0, grossTotalWithIva - inputDiscount));
-    const unitPriceExclIva = inputQty > 0 ? (itemTotalWithIva / inputQty) / (1 + inputIva / 100) : 0;
-    const discountPct = grossTotalWithIva > 0 ? Math.round((inputDiscount / grossTotalWithIva) * 10000) / 100 : 0;
-
-    const newItem: SaleItem = {
+    const newItem = recalculateSaleItem({
       articleId: art?.id || `custom-${Date.now()}`,
       code: art?.code || 'DIV',
       description: finalDesc,
       quantity: inputQty,
-      unitPrice: Math.round(unitPriceExclIva * 100) / 100,
-      discountPercent: discountPct,
-      discountAmount: inputDiscount,
+      unitPrice: Math.round(priceWithIva * 100) / 100,
+      discountPercent: 0,
+      discountAmount: Math.max(0, inputDiscount),
       ivaPercent: inputIva,
-      total: itemTotalWithIva,
-    };
+      total: 0,
+      lineType: art ? 'STOCK' : 'SERVICE',
+      stockEffectEnabled: false,
+    });
 
     setItems((current) => [...current, newItem]);
     setInputQty(1);
@@ -279,15 +296,13 @@ export const Quotation: React.FC<QuotationProps> = ({
     setItems((current) => current.filter((_, i) => i !== index));
   };
 
-  const grossTotalWithIva = items.reduce((acc, item) => acc + item.total, 0);
-  const descontoGeralValor = generalDiscount || 0;
-  const netTotalWithIva = Math.max(0, grossTotalWithIva - descontoGeralValor);
-
-  const subtotalBruto = items.reduce((acc, item) => acc + (Math.round((item.total / (1 + (item.ivaPercent || 16) / 100)) * 100) / 100), 0);
-  const descontoLinhas = items.reduce((acc, item) => acc + (item.discountAmount || 0), 0);
-  const subtotalLiquido = Math.round((netTotalWithIva / 1.16) * 100) / 100;
-  const ivaTotal = Math.round((netTotalWithIva - subtotalLiquido) * 100) / 100;
-  const totalFinalAmount = netTotalWithIva;
+  const totals = calculateDocumentTotals(items, generalDiscount);
+  const descontoGeralValor = totals.generalDiscount;
+  const subtotalBruto = totals.grossTotal;
+  const descontoLinhas = totals.lineDiscountTotal;
+  const subtotalLiquido = totals.netTotal;
+  const ivaTotal = totals.taxTotal;
+  const totalFinalAmount = totals.grandTotal;
 
   const handleSaveQuotation = async (shouldPrint = false) => {
     if (docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY') {
@@ -317,16 +332,17 @@ export const Quotation: React.FC<QuotationProps> = ({
         clientAddress,
         paymentMethod: 'CASH',
         sellerName: operatorName,
-        items,
+        items: totals.lines,
         subtotalBruto,
         descontoTotal: descontoLinhas + descontoGeralValor,
         subtotalLiquido,
         ivaTotal,
         totalAmount: totalFinalAmount,
         paidAmount: 0,
-        pendingAmount: totalFinalAmount,
+        pendingAmount: 0,
         status: 'Concluída',
         notes: notes ? `${notes} (Validade: ${validityDays} dias)` : `Proposta válida por ${validityDays} dias`,
+        keepAsWalkIn,
       };
 
       const savedQuotation = await onCreateQuotation(quotation);
@@ -357,6 +373,7 @@ export const Quotation: React.FC<QuotationProps> = ({
     setSaveError('');
     setConfirmedQuotationRecord(null);
     setGeneralDiscount(0);
+    setKeepAsWalkIn(false);
     setNotes('');
 
     const pontualInDb = clients.find(
@@ -692,6 +709,15 @@ export const Quotation: React.FC<QuotationProps> = ({
                 placeholder="Nome do Cliente"
                 className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-bold border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 text-xs focus-ring disabled:opacity-60"
               />
+              <label className="mt-1 flex items-center gap-1.5 text-[10px] text-[#43474f] dark:text-[#c3c6d1]">
+                <input
+                  type="checkbox"
+                  checked={keepAsWalkIn}
+                  disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
+                  onChange={(e) => setKeepAsWalkIn(e.target.checked)}
+                />
+                Manter como Cliente Pontual (não criar ficha; dados apenas nesta cotação)
+              </label>
             </div>
           </div>
 
@@ -839,12 +865,12 @@ export const Quotation: React.FC<QuotationProps> = ({
           </div>
 
           <div className="col-span-6 md:col-span-1">
-            <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[10px]">Desc %</label>
+            <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[10px]">Desc. MZN</label>
             <input
               ref={discountInputRef}
               type="number"
               min="0"
-              max="100"
+              step="0.01"
               disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
               value={inputDiscount}
               onChange={(e) => setInputDiscount(Number(e.target.value))}
@@ -862,7 +888,7 @@ export const Quotation: React.FC<QuotationProps> = ({
           <div className="col-span-6 md:col-span-2">
             <button
               type="button"
-              disabled={!selectedArticleId || docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
+              disabled={!customDescription.trim() || docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
               onClick={handleAddItem}
               className="w-full bg-[#003366] text-white font-bold py-1.5 px-3 rounded text-xs hover:bg-[#002244] disabled:opacity-50 uppercase"
             >
@@ -1208,6 +1234,14 @@ export const Quotation: React.FC<QuotationProps> = ({
                   />
                 </div>
               </div>
+              <label className="flex items-center gap-2 text-[11px] text-gray-600 dark:text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={editKeepAsWalkIn}
+                  onChange={(e) => setEditKeepAsWalkIn(e.target.checked)}
+                />
+                Manter como Cliente Pontual (não criar ficha; guardar os dados apenas nesta cotação)
+              </label>
 
               {/* Tabela de Edição de Artigos / Items & Prices */}
               <div className="space-y-2 border-t border-b py-3 dark:border-gray-700">
@@ -1231,6 +1265,8 @@ export const Quotation: React.FC<QuotationProps> = ({
                             discountAmount: 0,
                             ivaPercent: 16,
                             total: 0,
+                            lineType: 'MANUAL',
+                            stockEffectEnabled: false,
                           }
                         ]);
                       }}
@@ -1262,10 +1298,11 @@ export const Quotation: React.FC<QuotationProps> = ({
                               discountAmount: 0,
                               ivaPercent: art.taxRate ?? 16,
                               total: priceWithIva,
+                              lineType: 'STOCK' as const,
+                              stockEffectEnabled: false,
                             }
                           ];
-                          const grand = updated.reduce((acc, i) => acc + i.total, 0);
-                          setEditGrandTotal(Math.round(grand * 100) / 100);
+                          setEditGrandTotal(calculateDocumentTotals(updated, editGeneralDiscount).grandTotal);
                           return updated;
                         });
                       }}
@@ -1283,7 +1320,7 @@ export const Quotation: React.FC<QuotationProps> = ({
                 ) : (
                   <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
                     {editItems.map((item, idx) => {
-                      const lineTotal = Math.round(item.quantity * item.unitPrice * (1 - (item.discountPercent || 0) / 100) * 100) / 100;
+                      const lineTotal = calculateDocumentLine(item).totalWithTax;
                       return (
                       <div key={idx} className="bg-slate-50 dark:bg-[#282c2e] p-2.5 rounded border border-slate-200 dark:border-gray-700 text-xs space-y-1.5">
                         {/* Row 1: Code + Description + Remove */}
@@ -1327,8 +1364,7 @@ export const Quotation: React.FC<QuotationProps> = ({
                             onClick={() => {
                               setEditItems(prev => {
                                 const updated = prev.filter((_, i) => i !== idx);
-                                const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
-                                setEditGrandTotal(Math.round(grand * 100) / 100);
+                                setEditGrandTotal(calculateDocumentTotals(updated, editGeneralDiscount).grandTotal);
                                 return updated;
                               });
                             }}
@@ -1338,7 +1374,7 @@ export const Quotation: React.FC<QuotationProps> = ({
                             ✕
                           </button>
                         </div>
-                        {/* Row 2: Qty, Price c/ IVA, Desc%, IVA%, Total */}
+                        {/* Row 2: quantidade, preço com IVA, desconto em MZN, IVA e total */}
                         <div className="flex items-end gap-2">
                           <div className="w-16">
                             <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5 text-center">Qtd</span>
@@ -1350,10 +1386,8 @@ export const Quotation: React.FC<QuotationProps> = ({
                                 const qty = Number(e.target.value);
                                 setEditItems(prev => {
                                   const updated = [...prev];
-                                  const tot = Math.round(qty * updated[idx].unitPrice * (1 - (updated[idx].discountPercent || 0) / 100) * 100) / 100;
-                                  updated[idx] = { ...updated[idx], quantity: qty, total: tot };
-                                  const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
-                                  setEditGrandTotal(Math.round(grand * 100) / 100);
+                                  updated[idx] = recalculateSaleItem({ ...updated[idx], quantity: qty });
+                                  setEditGrandTotal(calculateDocumentTotals(updated, editGeneralDiscount).grandTotal);
                                   return updated;
                                 });
                               }}
@@ -1371,10 +1405,8 @@ export const Quotation: React.FC<QuotationProps> = ({
                                 const price = Number(e.target.value);
                                 setEditItems(prev => {
                                   const updated = [...prev];
-                                  const tot = Math.round(updated[idx].quantity * price * (1 - (updated[idx].discountPercent || 0) / 100) * 100) / 100;
-                                  updated[idx] = { ...updated[idx], unitPrice: price, total: tot };
-                                  const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
-                                  setEditGrandTotal(Math.round(grand * 100) / 100);
+                                  updated[idx] = recalculateSaleItem({ ...updated[idx], unitPrice: price });
+                                  setEditGrandTotal(calculateDocumentTotals(updated, editGeneralDiscount).grandTotal);
                                   return updated;
                                 });
                               }}
@@ -1383,21 +1415,18 @@ export const Quotation: React.FC<QuotationProps> = ({
                             />
                           </div>
                           <div className="w-16">
-                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5 text-center">Desc %</span>
+                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5 text-center">Desc. MZN</span>
                             <input
                               type="number"
                               step="0.01"
                               min="0"
-                              max="100"
-                              value={item.discountPercent || 0}
+                              value={item.discountAmount || 0}
                               onChange={(e) => {
                                 const disc = Number(e.target.value);
                                 setEditItems(prev => {
                                   const updated = [...prev];
-                                  const tot = Math.round(updated[idx].quantity * updated[idx].unitPrice * (1 - disc / 100) * 100) / 100;
-                                  updated[idx] = { ...updated[idx], discountPercent: disc, total: tot };
-                                  const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
-                                  setEditGrandTotal(Math.round(grand * 100) / 100);
+                                  updated[idx] = recalculateSaleItem({ ...updated[idx], discountAmount: disc, discountPercent: 0 });
+                                  setEditGrandTotal(calculateDocumentTotals(updated, editGeneralDiscount).grandTotal);
                                   return updated;
                                 });
                               }}
@@ -1434,7 +1463,7 @@ export const Quotation: React.FC<QuotationProps> = ({
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
                     Morada do Cliente
@@ -1449,6 +1478,19 @@ export const Quotation: React.FC<QuotationProps> = ({
                 </div>
                 <div>
                   <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
+                    Desconto Geral (MZN)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={editGeneralDiscount}
+                    onChange={(e) => setEditGeneralDiscount(Math.max(0, Number(e.target.value)))}
+                    className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-mono text-red-600"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
                     Valor Total da Cotação (MZN) *
                   </label>
                   <input
@@ -1456,8 +1498,8 @@ export const Quotation: React.FC<QuotationProps> = ({
                     step="0.01"
                     min="0"
                     value={editGrandTotal}
-                    onChange={(e) => setEditGrandTotal(Number(e.target.value))}
-                    className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-mono font-black text-base text-[#006e25]"
+                    readOnly
+                    className="w-full rounded border border-gray-300 p-2 bg-gray-100 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-mono font-black text-base text-[#006e25]"
                   />
                 </div>
               </div>

@@ -31,6 +31,8 @@ export interface SaleItem {
   discountAmount?: number;
   ivaPercent: number;
   total: number;
+  lineType?: 'STOCK' | 'SERVICE' | 'MANUAL';
+  stockEffectEnabled?: boolean;
 }
 
 export interface SaleInvoice {
@@ -50,6 +52,7 @@ export interface SaleInvoice {
   items: SaleItem[];
   subtotalBruto: number;
   descontoTotal: number;
+  generalDiscountAmount?: number;
   subtotalLiquido?: number;
   ivaTotal: number;
   totalAmount: number;
@@ -64,6 +67,7 @@ export interface SaleInvoice {
   bankAccountBim?: string;
   bankNibBim?: string;
   validityDays?: string;
+  keepAsWalkIn?: boolean;
 }
 
 export interface StockMovement {
@@ -143,6 +147,7 @@ export interface Client {
   phone: string;
   email: string;
   pendingBalance: number;
+  active?: boolean;
 }
 
 export interface Supplier {
@@ -157,6 +162,7 @@ export interface Supplier {
   contactPerson: string;
   totalPurchases: number;
   pendingBalance: number;
+  active?: boolean;
 }
 
 export interface BankAccount {

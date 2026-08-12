@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Client, Supplier, DocumentRecord, LedgerRecord } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
 import { FinancialAdviceDocument } from '../components/FinancialAdviceDocument';
+import type { PartyInput } from '../lib/appData';
 
 interface EntitiesProps {
   clients: Client[];
@@ -14,6 +15,8 @@ interface EntitiesProps {
   canCreateSupplier: boolean;
   onConfirmAdvice?: (data: any) => Promise<DocumentRecord | string>;
   onPrintRecord?: (doc: DocumentRecord) => void;
+  isAdmin?: boolean;
+  onUpdateParty?: (type: 'customer' | 'supplier', id: string, input: PartyInput, active: boolean) => Promise<void>;
 }
 
 type MainTab = 'CLIENTES' | 'FORNECEDORES';
@@ -30,10 +33,69 @@ export const Entities: React.FC<EntitiesProps> = ({
   canCreateSupplier,
   onConfirmAdvice,
   onPrintRecord,
+  isAdmin = false,
+  onUpdateParty,
 }) => {
   const [mainTab, setMainTab] = useState<MainTab>('CLIENTES');
   const [subTab, setSubTab] = useState<SubTab>('LIST');
   const [selectedEntityId, setSelectedEntityId] = useState('');
+  const [editingParty, setEditingParty] = useState<{ type: 'customer' | 'supplier'; id: string } | null>(null);
+  const [partyInput, setPartyInput] = useState<PartyInput>({
+    number: '', name: '', taxNumber: '', telephone: '', email: '', address: '', city: '',
+    contactPerson: '', creditLimit: 0, paymentTermCode: 'DINHEIRO',
+  });
+  const [partySaving, setPartySaving] = useState(false);
+  const [partyError, setPartyError] = useState('');
+
+  const openPartyEditor = (type: 'customer' | 'supplier', party: Client | Supplier) => {
+    setEditingParty({ type, id: party.id });
+    setPartyInput({
+      number: party.number || party.code || '',
+      name: party.name,
+      taxNumber: party.nuit || '',
+      telephone: party.phone || '',
+      email: party.email || '',
+      address: party.address || '',
+      city: '',
+      contactPerson: type === 'supplier' ? (party as Supplier).contactPerson || '' : '',
+      creditLimit: 0,
+      paymentTermCode: 'DINHEIRO',
+    });
+    setPartyError('');
+  };
+
+  const savePartyEdit = async () => {
+    if (!editingParty || !onUpdateParty || !partyInput.name.trim() || !partyInput.number.trim()) return;
+    try {
+      setPartySaving(true);
+      setPartyError('');
+      await onUpdateParty(editingParty.type, editingParty.id, partyInput, true);
+      setEditingParty(null);
+    } catch (error) {
+      setPartyError(error instanceof Error ? error.message : 'Falha ao guardar a entidade.');
+    } finally {
+      setPartySaving(false);
+    }
+  };
+
+  const deactivateParty = async (type: 'customer' | 'supplier', party: Client | Supplier) => {
+    if (!onUpdateParty || !window.confirm(`Apagar ${party.name}? O histórico dos documentos será preservado.`)) return;
+    const input: PartyInput = {
+      number: party.number || party.code || '', name: party.name, taxNumber: party.nuit || '',
+      telephone: party.phone || '', email: party.email || '', address: party.address || '', city: '',
+      contactPerson: type === 'supplier' ? (party as Supplier).contactPerson || '' : '', creditLimit: 0,
+      paymentTermCode: 'DINHEIRO',
+    };
+    try {
+      setPartySaving(true);
+      setPartyError('');
+      await onUpdateParty(type, party.id, input, false);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Falha ao apagar a entidade.');
+    } finally {
+      setPartySaving(false);
+    }
+  };
 
   const totalCustomerPending = useMemo(() => clients.reduce((acc, c) => acc + c.pendingBalance, 0), [clients]);
   const totalSupplierPending = useMemo(() => suppliers.reduce((acc, s) => acc + (s.pendingBalance ?? s.totalPurchases ?? 0), 0), [suppliers]);
@@ -197,6 +259,7 @@ export const Entities: React.FC<EntitiesProps> = ({
                   <th className="p-3 border-r border-[#c3c6d1] dark:border-[#43474f]">Telefone</th>
                   <th className="p-3 border-r border-[#c3c6d1] dark:border-[#43474f]">Email</th>
                   <th className="p-3 text-right">Saldo Pendente</th>
+                  {isAdmin && <th className="p-3 text-center">Acções</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f]">
@@ -225,6 +288,14 @@ export const Entities: React.FC<EntitiesProps> = ({
                             {formatMZN(client.pendingBalance)}
                           </span>
                         </td>
+                        {isAdmin && (
+                          <td className="p-3">
+                            <div className="flex justify-center gap-1.5">
+                              <button type="button" onClick={() => openPartyEditor('customer', client)} className="h-8 rounded bg-amber-600 px-3 text-[11px] font-bold text-white hover:bg-amber-700">Editar</button>
+                              <button type="button" disabled={partySaving} onClick={() => void deactivateParty('customer', client)} className="h-8 rounded bg-red-700 px-3 text-[11px] font-bold text-white hover:bg-red-800 disabled:opacity-50">Apagar</button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     ))
                   : suppliers.map((sup) => (
@@ -251,6 +322,14 @@ export const Entities: React.FC<EntitiesProps> = ({
                             {formatMZN(sup.pendingBalance ?? sup.totalPurchases ?? 0)}
                           </span>
                         </td>
+                        {isAdmin && (
+                          <td className="p-3">
+                            <div className="flex justify-center gap-1.5">
+                              <button type="button" onClick={() => openPartyEditor('supplier', sup)} className="h-8 rounded bg-amber-600 px-3 text-[11px] font-bold text-white hover:bg-amber-700">Editar</button>
+                              <button type="button" disabled={partySaving} onClick={() => void deactivateParty('supplier', sup)} className="h-8 rounded bg-red-700 px-3 text-[11px] font-bold text-white hover:bg-red-800 disabled:opacity-50">Apagar</button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     ))}
               </tbody>
@@ -339,6 +418,58 @@ export const Entities: React.FC<EntitiesProps> = ({
           onConfirmAdvice={onConfirmAdvice || (async () => 'mock-id')}
           onPrintRecord={onPrintRecord}
         />
+      )}
+
+      {editingParty && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
+          <div className="w-full max-w-2xl overflow-hidden rounded-lg bg-white shadow-2xl dark:bg-[#1f2325]">
+            <header className="flex items-center justify-between bg-[#001e40] px-5 py-3 text-white">
+              <h2 className="text-sm font-black uppercase">
+                Editar {editingParty.type === 'customer' ? 'Cliente' : 'Fornecedor'}
+              </h2>
+              <button type="button" onClick={() => setEditingParty(null)} aria-label="Fechar">✕</button>
+            </header>
+            <div className="grid gap-3 p-5 text-xs md:grid-cols-2">
+              {partyError && <div className="md:col-span-2 rounded bg-red-50 p-3 font-bold text-red-700">{partyError}</div>}
+              <label>
+                <span className="mb-1 block font-bold uppercase">Código *</span>
+                <input required readOnly={partyInput.number === '1'} value={partyInput.number} onChange={(e) => setPartyInput((v) => ({ ...v, number: e.target.value }))} className="w-full rounded border p-2 read-only:bg-slate-100" />
+              </label>
+              <label>
+                <span className="mb-1 block font-bold uppercase">Nome *</span>
+                <input required value={partyInput.name} onChange={(e) => setPartyInput((v) => ({ ...v, name: e.target.value }))} className="w-full rounded border p-2" />
+              </label>
+              <label>
+                <span className="mb-1 block font-bold uppercase">NUIT</span>
+                <input value={partyInput.taxNumber} onChange={(e) => setPartyInput((v) => ({ ...v, taxNumber: e.target.value }))} className="w-full rounded border p-2" />
+              </label>
+              <label>
+                <span className="mb-1 block font-bold uppercase">Telefone</span>
+                <input value={partyInput.telephone} onChange={(e) => setPartyInput((v) => ({ ...v, telephone: e.target.value }))} className="w-full rounded border p-2" />
+              </label>
+              <label>
+                <span className="mb-1 block font-bold uppercase">Email</span>
+                <input type="email" value={partyInput.email} onChange={(e) => setPartyInput((v) => ({ ...v, email: e.target.value }))} className="w-full rounded border p-2" />
+              </label>
+              {editingParty.type === 'supplier' && (
+                <label>
+                  <span className="mb-1 block font-bold uppercase">Pessoa de contacto</span>
+                  <input value={partyInput.contactPerson || ''} onChange={(e) => setPartyInput((v) => ({ ...v, contactPerson: e.target.value }))} className="w-full rounded border p-2" />
+                </label>
+              )}
+              <label className="md:col-span-2">
+                <span className="mb-1 block font-bold uppercase">Morada</span>
+                <input value={partyInput.address} onChange={(e) => setPartyInput((v) => ({ ...v, address: e.target.value }))} className="w-full rounded border p-2" />
+              </label>
+            </div>
+            <footer className="flex justify-end gap-2 border-t px-5 py-3">
+              <button type="button" onClick={() => setEditingParty(null)} className="rounded bg-slate-200 px-4 py-2 text-xs font-black uppercase">Cancelar</button>
+              <button type="button" disabled={partySaving || !partyInput.name.trim() || !partyInput.number.trim()} onClick={() => void savePartyEdit()} className="rounded bg-[#006e25] px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-50">
+                {partySaving ? 'A guardar…' : 'Gravar Alterações'}
+              </button>
+            </footer>
+          </div>
+        </div>
       )}
     </div>
   );

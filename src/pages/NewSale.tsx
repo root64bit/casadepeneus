@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Article, SaleInvoice, SaleItem, Client, ReferenceOption, DocumentRecord } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
 import { ArticleSearchSelect } from '../components/ArticleSearchSelect';
+import { calculateDocumentLine, calculateDocumentTotals, recalculateSaleItem, recalculateSaleItems } from '../lib/documentCalculations';
 
 interface NewSaleProps {
   articles: Article[];
@@ -15,7 +16,7 @@ interface NewSaleProps {
   paymentMethods: ReferenceOption[];
   documents?: DocumentRecord[];
   permissions?: string[];
-  onUpdateDocument?: (documentId: string, payload: { clientName?: string; clientNuit?: string; clientAddress?: string; grandTotal?: number; notes?: string; items?: SaleItem[] }) => Promise<void>;
+  onUpdateDocument?: (documentId: string, payload: { clientName?: string; clientNuit?: string; clientAddress?: string; grandTotal?: number; notes?: string; items?: SaleItem[]; generalDiscount?: number; keepAsWalkIn?: boolean }) => Promise<void>;
 }
 
 export const NewSale: React.FC<NewSaleProps> = ({
@@ -61,6 +62,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
   const [selectedClientName, setSelectedClientName] = useState(clients[0]?.name ?? '');
   const [clientNuit, setClientNuit] = useState('');
   const [clientAddress, setClientAddress] = useState('');
+  const [keepAsWalkIn, setKeepAsWalkIn] = useState(false);
   const [showClientInvoices, setShowClientInvoices] = useState(false);
 
   const immediateTerm = paymentTerms.find((item) => item.requiresImmediatePayment);
@@ -94,19 +96,17 @@ export const NewSale: React.FC<NewSaleProps> = ({
   const [editGrandTotal, setEditGrandTotal] = useState(0);
   const [editNotes, setEditNotes] = useState('');
   const [editItems, setEditItems] = useState<SaleItem[]>([]);
+  const [editGeneralDiscount, setEditGeneralDiscount] = useState(0);
+  const [editKeepAsWalkIn, setEditKeepAsWalkIn] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editError, setEditError] = useState('');
 
   // Auto-sync editGrandTotal when editItems changes
   useEffect(() => {
     if (editingSale) {
-      const grand = editItems.reduce(
-        (acc, item) => acc + Math.round((item.quantity || 1) * (item.unitPrice || 0) * (1 - (item.discountPercent || 0) / 100) * 100) / 100,
-        0
-      );
-      setEditGrandTotal(Math.round(grand * 100) / 100);
+      setEditGrandTotal(calculateDocumentTotals(editItems, editGeneralDiscount).grandTotal);
     }
-  }, [editItems, editingSale]);
+  }, [editItems, editGeneralDiscount, editingSale]);
 
   const handleOpenEditSale = (doc: SaleInvoice) => {
     setEditingSale(doc);
@@ -115,6 +115,9 @@ export const NewSale: React.FC<NewSaleProps> = ({
     setEditClientAddress(doc.clientAddress || '');
     setEditGrandTotal(doc.totalAmount || 0);
     setEditNotes(doc.notes || '');
+    const lineDiscount = (doc.items || []).reduce((sum, item) => sum + (item.discountAmount || 0), 0);
+    setEditGeneralDiscount(doc.generalDiscountAmount ?? Math.max(0, (doc.descontoTotal || 0) - lineDiscount));
+    setEditKeepAsWalkIn(false);
     
     let loadedItems: SaleItem[] = doc.items && doc.items.length > 0 ? JSON.parse(JSON.stringify(doc.items)) : [];
     if (loadedItems.length === 0 && (doc.totalAmount || 0) > 0) {
@@ -128,14 +131,20 @@ export const NewSale: React.FC<NewSaleProps> = ({
         discountAmount: 0,
         ivaPercent: 16,
         total: doc.totalAmount,
+        lineType: 'MANUAL',
+        stockEffectEnabled: false,
       }];
     }
-    setEditItems(loadedItems);
+    setEditItems(recalculateSaleItems(loadedItems));
     setEditError('');
   };
 
   const handleExecuteSaveEditSale = async () => {
     if (!editingSale || !onUpdateDocument || isSavingEdit) return;
+    if (editItems.length === 0) {
+      setEditError('O documento deve manter pelo menos um artigo ou serviço.');
+      return;
+    }
     try {
       setIsSavingEdit(true);
       setEditError('');
@@ -145,7 +154,9 @@ export const NewSale: React.FC<NewSaleProps> = ({
         clientAddress: editClientAddress.trim(),
         grandTotal: Number(editGrandTotal),
         notes: editNotes.trim(),
-        items: editItems,
+        items: recalculateSaleItems(editItems),
+        generalDiscount: editGeneralDiscount,
+        keepAsWalkIn: editKeepAsWalkIn,
       });
       setEditingSale(null);
     } catch (err: any) {
@@ -160,6 +171,16 @@ export const NewSale: React.FC<NewSaleProps> = ({
   const unitPriceInputRef = useRef<HTMLInputElement>(null);
   const discountInputRef = useRef<HTMLInputElement>(null);
   const ivaInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (clients.length === 0 || selectedClientId) return;
+    const pontual = clients.find(
+      (client) => client.number === '1' || client.code === '1' || client.name.toLowerCase().includes('pontual')
+    ) || clients[0];
+    setSelectedClientId(pontual.id);
+    setSelectedClientName(pontual.number === '1' || pontual.code === '1' ? 'Cliente Pontual' : pontual.name);
+    setClientCodeInput(pontual.number || pontual.code || '1');
+  }, [clients, selectedClientId]);
 
   const confirmResetIfNeeded = (): boolean => {
     if (items.length > 0 && docStatus !== 'CONFIRMED' && docStatus !== 'READ_ONLY') {
@@ -191,12 +212,20 @@ export const NewSale: React.FC<NewSaleProps> = ({
     setClientCodeInput('1');
     setClientNuit('');
     setClientAddress('');
+    setKeepAsWalkIn(false);
     if (receiptMethod) setPaymentSelection(`METHOD:${receiptMethod.code}`);
   };
 
   const lookupClientByCode = (query: string) => {
     const clean = query.trim().toLowerCase();
-    if (!clean) return;
+    if (!clean) {
+      const hasDetails = selectedClientName.trim() !== ''
+        && !['cliente pontual', 'cliente final'].includes(selectedClientName.trim().toLowerCase());
+      if (!hasDetails && !clientNuit.trim() && !clientAddress.trim()) {
+        lookupClientByCode('1');
+      }
+      return;
+    }
 
     // Code 1 (or 01) is ALWAYS reserved for Cliente Pontual
     if (clean === '1' || clean === '01') {
@@ -209,6 +238,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
       setClientCodeInput('1');
       setClientNuit('');
       setClientAddress('');
+      setKeepAsWalkIn(false);
       setShowClientInvoices(false);
       return;
     }
@@ -230,6 +260,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
       setClientNuit(found.nuit || '');
       setClientAddress(found.address || '');
       setClientCodeInput(found.number || found.code || query);
+      setKeepAsWalkIn(false);
       if (documents?.some((d) => d.partyId === found.id && d.outstandingAmount > 0)) {
         setShowClientInvoices(true);
       } else {
@@ -253,7 +284,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
       return art.sellPriceWithIva;
     }
     if (art.sellPrice && art.sellPrice > 0) {
-      return art.sellPrice;
+      return Math.round(art.sellPrice * (1 + (art.taxRate ?? 16) / 100) * 100) / 100;
     }
     return 0;
   };
@@ -288,19 +319,19 @@ export const NewSale: React.FC<NewSaleProps> = ({
     if (!finalDesc || inputQty <= 0) return;
 
     const priceWithIva = inputUnitPrice > 0 ? inputUnitPrice : (art ? getArticlePriceWithIva(art) : 0);
-    const itemTotalWithIva = Math.round(priceWithIva * inputQty * 100) / 100;
-
-    const newItem: SaleItem = {
+    const newItem = recalculateSaleItem({
       articleId: art?.id || `custom-${Date.now()}`,
       code: art?.code || 'DIV',
       description: finalDesc,
       quantity: inputQty,
       unitPrice: Math.round(priceWithIva * 100) / 100,
       discountPercent: 0,
-      discountAmount: 0,
+      discountAmount: Math.max(0, inputDiscount),
       ivaPercent: inputIva,
-      total: itemTotalWithIva,
-    };
+      total: 0,
+      lineType: art ? 'STOCK' : 'SERVICE',
+      stockEffectEnabled: Boolean(art),
+    });
 
     setItems((current) => [...current, newItem]);
     setInputQty(1);
@@ -322,47 +353,17 @@ export const NewSale: React.FC<NewSaleProps> = ({
     setItems((current) => current.filter((_, i) => i !== index));
   };
 
-  // Helper to calculate the next sequence document number for a given document type
-  const getNextDocNumberForType = (type: 'CUSTOMER_INVOICE' | 'CASH_SALE' | 'CUSTOMER_DELIVERY_NOTE'): string => {
-    const year = new Date().getFullYear();
-    const typeCodePrefix = type === 'CASH_SALE' ? 'VD' : type === 'CUSTOMER_DELIVERY_NOTE' ? 'GR' : 'FT';
-    const docPrefix = `${typeCodePrefix}-${year}/`;
-
-    let maxSeq = 0;
-    const checkNumber = (numStr?: string) => {
-      if (!numStr) return;
-      const upper = numStr.toUpperCase();
-      if (upper.startsWith(typeCodePrefix) || (typeCodePrefix === 'FT' && upper.startsWith('A/'))) {
-        const matches = numStr.match(/\d+/g);
-        if (matches && matches.length > 0) {
-          const lastNum = parseInt(matches[matches.length - 1], 10);
-          if (!isNaN(lastNum) && lastNum > maxSeq) maxSeq = lastNum;
-        }
-      }
-    };
-
-    sales.forEach((s) => checkNumber(s.docNumber));
-    if (documents) documents.forEach((d) => checkNumber(d.displayNumber));
-
-    const nextSeq = maxSeq + 1;
-    return `${docPrefix}${String(nextSeq).padStart(6, '0')}`;
-  };
-
-  const grossTotalWithIva = items.reduce((acc, item) => acc + item.total, 0);
-  const descontoGeralValor = generalDiscount || 0;
-  const netTotalWithIva = Math.max(0, grossTotalWithIva - descontoGeralValor);
-
-  const subtotalBruto = items.reduce((acc, item) => acc + (Math.round((item.total / (1 + item.ivaPercent / 100)) * 100) / 100), 0);
-  const descontoLinhas = 0;
-  
-  const subtotalLiquido = Math.round((netTotalWithIva / 1.16) * 100) / 100;
-  const ivaTotal = Math.round((netTotalWithIva - subtotalLiquido) * 100) / 100;
-
-  const totalFinalAmount = netTotalWithIva;
+  const totals = calculateDocumentTotals(items, generalDiscount);
+  const descontoGeralValor = totals.generalDiscount;
+  const subtotalBruto = totals.grossTotal;
+  const descontoLinhas = totals.lineDiscountTotal;
+  const subtotalLiquido = totals.netTotal;
+  const ivaTotal = totals.taxTotal;
+  const totalFinalAmount = totals.grandTotal;
 
   const selectedClient = clients.find((c) => c.id === selectedClientId);
   const previousBalance = selectedClient?.pendingBalance ?? 0;
-  const newAccumulatedBalance = previousBalance + (documentType === 'CUSTOMER_DELIVERY_NOTE' ? 0 : totalFinalAmount);
+  const newAccumulatedBalance = previousBalance + (documentType === 'CUSTOMER_INVOICE' ? totalFinalAmount : 0);
 
   const handleSaveAndConfirm = async (shouldPrint: boolean = false) => {
     if (items.length === 0) {
@@ -395,7 +396,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
           ? paymentSelection.replace('TERM:', '')
           : undefined,
         sellerName: operatorName,
-        items,
+        items: totals.lines,
         subtotalBruto,
         descontoTotal: descontoLinhas + descontoGeralValor,
         subtotalLiquido,
@@ -405,6 +406,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
         pendingAmount: documentType === 'CASH_SALE' || documentType === 'CUSTOMER_DELIVERY_NOTE' ? 0 : totalFinalAmount,
         status: 'Concluída',
         notes,
+        keepAsWalkIn,
       };
 
       const savedSale = await onCompleteSale(newSale);
@@ -432,6 +434,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
     setConfirmedSaleRecord(null);
     setGeneralDiscount(0);
     setNotes('');
+    setKeepAsWalkIn(false);
 
     if (documentType === 'CASH_SALE') {
       const pontual = clients.find((c) => c.name.toLowerCase().includes('pontual')) || clients[0];
@@ -459,14 +462,11 @@ export const NewSale: React.FC<NewSaleProps> = ({
           void handleSaveAndConfirm(false);
         } else if (docStatus === 'PREPARATION') {
           if (items.length > 0) {
-            if (docNumber === 'A atribuir ao confirmar' || !docNumber) {
-              setDocNumber(getNextDocNumberForType(documentType));
-            }
+            setDocNumber('A atribuir ao confirmar');
             setDocStatus('CONFIRMING');
           } else {
-            const nextCode = getNextDocNumberForType(documentType);
-            setDocNumber(nextCode);
-            setSaveError(`Próximo número atribuído (${nextCode}). Adicione pelo menos 1 artigo para emitir.`);
+            setDocNumber('A atribuir ao confirmar');
+            setSaveError('O próximo número será atribuído ao confirmar. Adicione pelo menos 1 artigo para emitir.');
           }
         }
       } else if (e.key === 'F3') {
@@ -628,6 +628,15 @@ export const NewSale: React.FC<NewSaleProps> = ({
                 placeholder="Nome do Cliente"
                 className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-bold border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 print:p-1 text-xs print:text-[10px] focus-ring disabled:opacity-60"
               />
+              <label className="mt-1 flex items-center gap-1.5 text-[10px] text-[#43474f] dark:text-[#c3c6d1] print:hidden">
+                <input
+                  type="checkbox"
+                  checked={keepAsWalkIn}
+                  disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
+                  onChange={(e) => setKeepAsWalkIn(e.target.checked)}
+                />
+                Manter como Cliente Pontual (não criar ficha; guardar os dados apenas neste documento)
+              </label>
             </div>
           </div>
 
@@ -778,7 +787,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
                 <th className="p-3 w-20 text-center">Existência</th>
                 <th className="p-3 w-24 text-center">Quant.</th>
                 <th className="p-3 w-28 text-right">Preço Unit.</th>
-                <th className="p-3 w-20 text-center">Desc %</th>
+                <th className="p-3 w-24 text-center">Desc. MZN</th>
                 <th className="p-3 w-20 text-center">IVA %</th>
                 <th className="p-3 w-32 text-right">Total c/ IVA</th>
                 <th className="p-3 w-16 text-center print:hidden">Acção</th>
@@ -859,7 +868,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
                       ref={discountInputRef}
                       type="number"
                       min="0"
-                      max="100"
+                      step="0.01"
                       value={inputDiscount}
                       onChange={(e) => setInputDiscount(Number(e.target.value))}
                       onFocus={(e) => e.target.select()}
@@ -892,9 +901,13 @@ export const NewSale: React.FC<NewSaleProps> = ({
                     />
                   </td>
                   <td className="p-2 text-right font-extrabold text-[#006e25]">
-                    {(
-                      (inputUnitPrice > 0 ? inputUnitPrice : (() => { const a = articles.find(a => a.id === selectedArticleId); return a ? getArticlePriceWithIva(a) : 0; })()) * inputQty
-                    ).toFixed(2)}
+                    {calculateDocumentLine({
+                      quantity: inputQty,
+                      unitPrice: inputUnitPrice > 0 ? inputUnitPrice : (() => { const a = articles.find(a => a.id === selectedArticleId); return a ? getArticlePriceWithIva(a) : 0; })(),
+                      discountAmount: inputDiscount,
+                      discountPercent: 0,
+                      ivaPercent: inputIva,
+                    }).totalWithTax.toFixed(2)}
                   </td>
                   <td className="p-2 text-center">
                     <button
@@ -917,7 +930,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
                   </td>
                   <td className="p-3 text-center font-bold">{item.quantity}</td>
                   <td className="p-3 text-right">{formatMZN(item.unitPrice)}</td>
-                  <td className="p-3 text-center text-red-600">{item.discountPercent}%</td>
+                  <td className="p-3 text-center text-red-600">{formatMZN(item.discountAmount || 0)}</td>
                   <td className="p-3 text-center font-bold text-[#003366]">{item.ivaPercent}%</td>
                   <td className="p-3 text-right font-bold text-[#006e25]">{formatMZN(item.total)}</td>
                   <td className="p-3 text-center print:hidden">
@@ -1258,6 +1271,14 @@ export const NewSale: React.FC<NewSaleProps> = ({
                   />
                 </div>
               </div>
+              <label className="flex items-center gap-2 text-[11px] text-gray-600 dark:text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={editKeepAsWalkIn}
+                  onChange={(e) => setEditKeepAsWalkIn(e.target.checked)}
+                />
+                Manter como Cliente Pontual (não criar ficha; guardar o nome/NUIT/morada neste documento)
+              </label>
 
               {/* Tabela de Edição de Artigos / Items & Prices */}
               <div className="space-y-2 border-t border-b py-3 dark:border-gray-700">
@@ -1281,6 +1302,8 @@ export const NewSale: React.FC<NewSaleProps> = ({
                             discountAmount: 0,
                             ivaPercent: 16,
                             total: 0,
+                            lineType: 'MANUAL',
+                            stockEffectEnabled: false,
                           }
                         ]);
                       }}
@@ -1312,10 +1335,11 @@ export const NewSale: React.FC<NewSaleProps> = ({
                               discountAmount: 0,
                               ivaPercent: art.taxRate ?? 16,
                               total: priceWithIva,
+                              lineType: 'STOCK' as const,
+                              stockEffectEnabled: true,
                             }
                           ];
-                          const grand = updated.reduce((acc, i) => acc + Math.round(i.quantity * i.unitPrice * (1 - (i.discountPercent || 0) / 100) * 100) / 100, 0);
-                          setEditGrandTotal(Math.round(grand * 100) / 100);
+                          setEditGrandTotal(calculateDocumentTotals(updated, editGeneralDiscount).grandTotal);
                           return updated;
                         });
                       }}
@@ -1333,7 +1357,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
                 ) : (
                   <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
                     {editItems.map((item, idx) => {
-                      const lineTotal = Math.round(item.quantity * item.unitPrice * (1 - (item.discountPercent || 0) / 100) * 100) / 100;
+                      const lineTotal = calculateDocumentLine(item).totalWithTax;
                       return (
                       <div key={idx} className="bg-slate-50 dark:bg-[#282c2e] p-2.5 rounded border border-slate-200 dark:border-gray-700 text-xs space-y-1.5">
                         {/* Row 1: Code + Description + Remove */}
@@ -1377,8 +1401,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
                             onClick={() => {
                               setEditItems(prev => {
                                 const updated = prev.filter((_, i) => i !== idx);
-                                const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
-                                setEditGrandTotal(Math.round(grand * 100) / 100);
+                                setEditGrandTotal(calculateDocumentTotals(updated, editGeneralDiscount).grandTotal);
                                 return updated;
                               });
                             }}
@@ -1388,7 +1411,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
                             ✕
                           </button>
                         </div>
-                        {/* Row 2: Qty, Price c/ IVA, Desc%, IVA%, Total */}
+                        {/* Row 2: quantidade, preço com IVA, desconto em MZN, IVA e total */}
                         <div className="flex items-end gap-2">
                           <div className="w-16">
                             <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5 text-center">Qtd</span>
@@ -1400,10 +1423,8 @@ export const NewSale: React.FC<NewSaleProps> = ({
                                 const qty = Number(e.target.value);
                                 setEditItems(prev => {
                                   const updated = [...prev];
-                                  const tot = Math.round(qty * updated[idx].unitPrice * (1 - (updated[idx].discountPercent || 0) / 100) * 100) / 100;
-                                  updated[idx] = { ...updated[idx], quantity: qty, total: tot };
-                                  const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
-                                  setEditGrandTotal(Math.round(grand * 100) / 100);
+                                  updated[idx] = recalculateSaleItem({ ...updated[idx], quantity: qty });
+                                  setEditGrandTotal(calculateDocumentTotals(updated, editGeneralDiscount).grandTotal);
                                   return updated;
                                 });
                               }}
@@ -1421,10 +1442,8 @@ export const NewSale: React.FC<NewSaleProps> = ({
                                 const price = Number(e.target.value);
                                 setEditItems(prev => {
                                   const updated = [...prev];
-                                  const tot = Math.round(updated[idx].quantity * price * (1 - (updated[idx].discountPercent || 0) / 100) * 100) / 100;
-                                  updated[idx] = { ...updated[idx], unitPrice: price, total: tot };
-                                  const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
-                                  setEditGrandTotal(Math.round(grand * 100) / 100);
+                                  updated[idx] = recalculateSaleItem({ ...updated[idx], unitPrice: price });
+                                  setEditGrandTotal(calculateDocumentTotals(updated, editGeneralDiscount).grandTotal);
                                   return updated;
                                 });
                               }}
@@ -1433,21 +1452,18 @@ export const NewSale: React.FC<NewSaleProps> = ({
                             />
                           </div>
                           <div className="w-16">
-                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5 text-center">Desc %</span>
+                            <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5 text-center">Desc. MZN</span>
                             <input
                               type="number"
                               step="0.01"
                               min="0"
-                              max="100"
-                              value={item.discountPercent || 0}
+                              value={item.discountAmount || 0}
                               onChange={(e) => {
                                 const disc = Number(e.target.value);
                                 setEditItems(prev => {
                                   const updated = [...prev];
-                                  const tot = Math.round(updated[idx].quantity * updated[idx].unitPrice * (1 - disc / 100) * 100) / 100;
-                                  updated[idx] = { ...updated[idx], discountPercent: disc, total: tot };
-                                  const grand = updated.reduce((acc, it) => acc + Math.round(it.quantity * it.unitPrice * (1 - (it.discountPercent || 0) / 100) * 100) / 100, 0);
-                                  setEditGrandTotal(Math.round(grand * 100) / 100);
+                                  updated[idx] = recalculateSaleItem({ ...updated[idx], discountAmount: disc, discountPercent: 0 });
+                                  setEditGrandTotal(calculateDocumentTotals(updated, editGeneralDiscount).grandTotal);
                                   return updated;
                                 });
                               }}
@@ -1484,7 +1500,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
                     Morada do Cliente
@@ -1499,6 +1515,19 @@ export const NewSale: React.FC<NewSaleProps> = ({
                 </div>
                 <div>
                   <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
+                    Desconto Geral (MZN)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={editGeneralDiscount}
+                    onChange={(e) => setEditGeneralDiscount(Math.max(0, Number(e.target.value)))}
+                    className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-mono text-red-600"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
                     Valor Total do Documento (MZN) *
                   </label>
                   <input
@@ -1506,8 +1535,8 @@ export const NewSale: React.FC<NewSaleProps> = ({
                     step="0.01"
                     min="0"
                     value={editGrandTotal}
-                    onChange={(e) => setEditGrandTotal(Number(e.target.value))}
-                    className="w-full rounded border border-gray-300 p-2 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-mono font-black text-base text-[#006e25]"
+                    readOnly
+                    className="w-full rounded border border-gray-300 p-2 bg-gray-100 dark:bg-[#282c2e] dark:border-gray-600 dark:text-white font-mono font-black text-base text-[#006e25]"
                   />
                 </div>
               </div>
