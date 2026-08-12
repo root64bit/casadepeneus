@@ -4,6 +4,7 @@ import { ArticleSearchSelect } from '../components/ArticleSearchSelect';
 import { ArticleLedgerModal } from '../components/ArticleLedgerModal';
 import { Pagination } from '../components/Pagination';
 import { formatMZN } from '../stitch/stitchConfig';
+import { fetchStockMovementsPage } from '../lib/appData';
 
 export interface GuideLineItem {
   articleId: string;
@@ -44,6 +45,11 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
   // History Pagination
   const [movementsPage, setMovementsPage] = useState(1);
   const [movementsPageSize, setMovementsPageSize] = useState(25);
+  const [historyMovements, setHistoryMovements] = useState<StockMovement[]>([]);
+  const [historyTotalCount, setHistoryTotalCount] = useState(0);
+  const [historyTotalStock, setHistoryTotalStock] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
   
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -67,41 +73,6 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
     return articles.reduce((acc, art) => acc + (art.stock || 0), 0);
   }, [articles]);
 
-  // Calculate running balance (saldo) for each movement per article
-  const movementsWithSaldo = useMemo(() => {
-    const movementsByArticle: Record<string, StockMovement[]> = {};
-    movements.forEach((m) => {
-      if (!movementsByArticle[m.articleCode]) {
-        movementsByArticle[m.articleCode] = [];
-      }
-      movementsByArticle[m.articleCode].push(m);
-    });
-
-    const mapWithSaldo = new Map<string, number>();
-
-    Object.entries(movementsByArticle).forEach(([code, articleMovs]) => {
-      const matchedArt = articles.find((a) => a.code === code);
-      const currentStock = matchedArt?.stock ?? 0;
-
-      // Sort descending (newest first)
-      const sortedDesc = [...articleMovs].sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
-
-      let running = currentStock;
-      sortedDesc.forEach((m) => {
-        mapWithSaldo.set(m.id, running);
-        if (m.type === 'entrada') {
-          running -= m.quantity;
-        } else {
-          running += m.quantity;
-        }
-      });
-    });
-
-    return mapWithSaldo;
-  }, [movements, articles]);
-
   // Clear Filters
   const handleClearFilters = () => {
     setDateFrom('');
@@ -110,58 +81,38 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
     setSearchQuery('');
   };
 
-  // Helper to extract local YYYY-MM-DD from ISO or date string
-  const getLocalDateString = (isoOrDateStr: string): string => {
-    if (!isoOrDateStr) return '';
-    const d = new Date(isoOrDateStr);
-    if (isNaN(d.getTime())) return isoOrDateStr.substring(0, 10);
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  };
-
-  // Filtered movements based on date, type and search query
-  const filteredMovements = useMemo(() => {
-    return movements.filter((m) => {
-      const itemDate = getLocalDateString(m.date);
-      if (dateFrom && itemDate < dateFrom) return false;
-      if (dateTo && itemDate > dateTo) return false;
-      if (typeFilter !== 'ALL' && m.type !== typeFilter) return false;
-
-      if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
-        const codeLower = m.articleCode.trim().toLowerCase();
-
-        // 1. If user typed a purely numeric query (e.g. "1", "01", "001", "15"):
-        const isNumericQuery = /^\d+$/.test(q);
-        if (isNumericQuery) {
-          const numQ = parseInt(q, 10);
-          const numCode = parseInt(codeLower.replace(/\D/g, ''), 10);
-          // Match article code strictly! (e.g. article code "1", "001", "ART-1")
-          const isExactCode = codeLower === q || codeLower === String(numQ);
-          const isNumericMatch = !isNaN(numCode) && numCode === numQ;
-          return isExactCode || isNumericMatch;
+  useEffect(() => {
+    let cancelled=false;
+    const timer=window.setTimeout(() => {
+      setHistoryLoading(true);
+      setHistoryError('');
+      fetchStockMovementsPage(
+        dateFrom,dateTo,typeFilter,searchQuery,movementsPageSize,(movementsPage-1)*movementsPageSize,
+      ).then((result) => {
+        if(cancelled)return;
+        const lastAvailablePage=Math.max(1,Math.ceil(result.totalCount/movementsPageSize));
+        if(movementsPage>lastAvailablePage){
+          setMovementsPage(lastAvailablePage);
+          return;
         }
+        setHistoryMovements(result.rows);
+        setHistoryTotalCount(result.totalCount);
+        setHistoryTotalStock(result.totalStock);
+      }).catch((cause) => {
+        if(!cancelled)setHistoryError(cause instanceof Error?cause.message:'Falha ao carregar histórico de movimentos.');
+      }).finally(() => { if(!cancelled)setHistoryLoading(false); });
+    },searchQuery?250:0);
+    return()=>{cancelled=true;window.clearTimeout(timer);};
+  },[dateFrom,dateTo,typeFilter,searchQuery,movementsPage,movementsPageSize,movements]);
 
-        // 2. General query matching for non-numeric search terms (e.g. "Pneu", "FT-001", "VD", "Guia")
-        const codeMatch = codeLower.includes(q);
-        const descMatch = m.articleDescription.toLowerCase().includes(q);
-        const refMatch = m.docRef.toLowerCase().includes(q);
-        const operatorMatch = m.operator.toLowerCase().includes(q);
-
-        return codeMatch || descMatch || refMatch || operatorMatch;
-      }
-      return true;
-    });
-  }, [movements, dateFrom, dateTo, typeFilter, searchQuery]);
+  useEffect(()=>{setMovementsPage(1);},[dateFrom,dateTo,typeFilter,searchQuery,movementsPageSize]);
 
   const exportMovementsToCSV = () => {
     const headers = ['Data', 'Tipo', 'Documento / Guia', 'Código Artigo', 'Descrição Artigo', 'Entrada (Qtd)', 'Saída (Qtd)', 'Saldo Final'];
-    const sorted = [...filteredMovements].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const sorted = [...historyMovements];
     
     const rows = sorted.map((item) => {
-      const saldo = movementsWithSaldo.get(item.id) ?? 0;
+      const saldo = item.balanceAfter ?? 0;
       const formattedDate = new Date(item.date).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' });
       return [
         `"${formattedDate}"`,
@@ -182,7 +133,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
     link.href = url;
 
     const dateSuffix = dateFrom || dateTo ? `_${dateFrom || 'inicio'}_a_${dateTo || 'hoje'}` : '';
-    link.download = `movimentos-stock${dateSuffix}_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `movimentos-stock-pagina-${movementsPage}${dateSuffix}_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -623,10 +574,10 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
         <div className="flex flex-wrap items-center justify-between border-b bg-slate-100 px-4 py-3 dark:bg-slate-800 gap-2">
           <div className="flex items-center space-x-3">
             <h2 className="text-xs font-black uppercase text-slate-800 dark:text-slate-200">
-              Histórico de Movimentos de Stock ({filteredMovements.length})
+              Histórico de Movimentos de Stock ({historyTotalCount})
             </h2>
             <span className="rounded bg-emerald-100 dark:bg-emerald-950/60 px-2.5 py-1 text-[11px] font-bold text-emerald-800 dark:text-emerald-300 border border-emerald-300">
-              Stock Disponível Total: <b>{totalStockInSystem} UN</b>
+              Stock Disponível Total: <b>{historyTotalStock} UN</b>
             </span>
           </div>
 
@@ -635,7 +586,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
               type="button"
               onClick={exportMovementsToCSV}
               className="px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-extrabold flex items-center space-x-1 uppercase transition-colors"
-              title="Descarregar histórico de movimentos filtrados em formato Excel/CSV"
+              title="Descarregar a página atual do histórico em formato Excel/CSV"
             >
               <span className="material-symbols-outlined text-sm">download</span>
               <span>Baixar Excel</span>
@@ -714,12 +665,16 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
           </div>
 
           <div className="text-[#737780] font-mono text-[11px]">
-            Mostrando <b>{filteredMovements.length}</b> de <b>{movements.length}</b> registos
+            Mostrando <b>{historyMovements.length}</b> de <b>{historyTotalCount}</b> registos
           </div>
         </div>
 
         {/* Movements Table */}
-        {filteredMovements.length === 0 ? (
+        {historyError ? (
+          <div className="p-8 text-center text-red-600 font-sans text-xs font-bold">{historyError}</div>
+        ) : historyLoading && historyMovements.length === 0 ? (
+          <div className="p-8 text-center text-slate-500 font-sans text-xs">A carregar histórico de movimentos…</div>
+        ) : historyMovements.length === 0 ? (
           <div className="p-8 text-center text-slate-500 font-sans text-xs">
             Nenhum movimento de stock encontrado para os filtros seleccionados.
           </div>
@@ -738,9 +693,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#c3c6d1] dark:divide-[#43474f]">
-                {[...filteredMovements]
-                  .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-                  .slice((movementsPage - 1) * movementsPageSize, movementsPage * movementsPageSize)
+                {historyMovements
                   .map((item) => {
                     const matchedArt = articles.find((a) => a.code === item.articleCode);
                     const matchedDoc = documents.find(
@@ -759,7 +712,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
                         .replace(/CUSTOMER_CREDIT_NOTE/g, 'Nota de Crédito')
                         .replace(/CREDIT_NOTE/g, 'Nota de Crédito');
                     }
-                    const saldo = movementsWithSaldo.get(item.id) ?? (matchedArt?.stock ?? 0);
+                    const saldo = item.balanceAfter ?? (matchedArt?.stock ?? 0);
                     
                     // Format date only (no time: 04/08/2026)
                     const formattedDate = new Date(item.date).toLocaleDateString('pt-PT', {
@@ -828,7 +781,7 @@ export const StockMovements: React.FC<StockMovementsProps> = ({
             {/* Pagination Controls */}
             <Pagination
               currentPage={movementsPage}
-              totalItems={filteredMovements.length}
+              totalItems={historyTotalCount}
               pageSize={movementsPageSize}
               onPageChange={setMovementsPage}
               onPageSizeChange={setMovementsPageSize}

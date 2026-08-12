@@ -72,6 +72,7 @@ export interface SaleInvoice {
 
 export interface StockMovement {
   id: string;
+  productId?: string;
   type: 'entrada' | 'saida';
   docRef: string;
   sourceDocumentId?: string;
@@ -89,6 +90,9 @@ export interface StockMovement {
   notes?: string;
   unitCost?: number;
   sellPriceWithIva?: number; // When provided on stock entry, auto-updates product sell price
+  quantityIn?: number;
+  quantityOut?: number;
+  balanceAfter?: number;
 }
 
 export interface AccessScope {

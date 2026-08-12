@@ -2,6 +2,7 @@ import React, { useMemo, useEffect, useState } from 'react';
 import type { Article, StockMovement, DocumentRecord, SaleInvoice } from '../types';
 import { formatMZN } from '../stitch/stitchConfig';
 import { fetchStockMovementExtract, type StockExtractResult } from '../lib/appData';
+import { Pagination } from './Pagination';
 
 interface ArticleLedgerModalProps {
   isOpen: boolean;
@@ -57,6 +58,8 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
   const [dateTo, setDateTo] = useState('');
   const [movementTypeFilter, setMovementTypeFilter] = useState<'ALL' | 'ENTRADA' | 'SAIDA'>('ALL');
   const [searchCodeQuery, setSearchCodeQuery] = useState('');
+  const [extractPage, setExtractPage] = useState(1);
+  const [extractPageSize, setExtractPageSize] = useState(50);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -83,7 +86,14 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
     if (!isOpen || !article) return;
     let cancelled = false;
     setLoading(true);
-    fetchStockMovementExtract(article.id, dateFrom || undefined, dateTo || undefined)
+    fetchStockMovementExtract(
+      article.id,
+      dateFrom || undefined,
+      dateTo || undefined,
+      movementTypeFilter,
+      extractPageSize,
+      (extractPage - 1) * extractPageSize,
+    )
       .then((res) => {
         if (!cancelled) setServerExtract(res);
       })
@@ -96,7 +106,9 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, article, dateFrom, dateTo]);
+  }, [isOpen, article, dateFrom, dateTo, movementTypeFilter, extractPage, extractPageSize]);
+
+  useEffect(() => { setExtractPage(1); }, [article?.id, dateFrom, dateTo, movementTypeFilter]);
 
   // Handle article lookup on Enter
   const handleCodeSearchEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -116,7 +128,7 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
   const { articleMovements, initialBalance, totals } = useMemo(() => {
     if (!article) return { articleMovements: [], initialBalance: 0, totals: { entradasQty: 0, saidasQty: 0, entradasVal: 0, saidasVal: 0 } };
 
-    if (serverExtract && serverExtract.movements.length > 0) {
+    if (serverExtract) {
       const mapped = serverExtract.movements.map((m) => {
         const matchedDoc = documents.find(
           (d) => (m.source_document_id && d.id === m.source_document_id) || d.displayNumber.toLowerCase() === m.doc_ref.toLowerCase()
@@ -278,7 +290,7 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
         saidasVal: totalSaidasVal,
       },
     };
-  }, [article, movements, dateFrom, dateTo, movementTypeFilter, documents, serverExtract]);
+  }, [article, movements, dateFrom, dateTo, movementTypeFilter, documents, serverExtract, sales]);
 
   if (!isOpen || !article) return null;
 
@@ -306,7 +318,7 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `extracto-stock-${article.code}-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `extracto-stock-${article.code}-pagina-${extractPage}-${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -365,7 +377,7 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
             <div className="flex items-center space-x-3 font-mono text-xs">
               <div className="bg-white dark:bg-[#1f2325] p-2 rounded border border-[#c3c6d1] dark:border-[#43474f] text-center">
                 <span className="text-[10px] text-slate-500 uppercase block">Existência Actual</span>
-                <span className="font-extrabold text-sm text-[#006e25]">{article.stock.toFixed(3)} UN</span>
+            <span className="font-extrabold text-sm text-[#006e25]">{(serverExtract?.current_stock ?? article.stock).toFixed(3)} UN</span>
               </div>
               {canViewCost && (
                 <>
@@ -444,6 +456,12 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
             </div>
           </div>
         </div>
+
+        {loading && (
+          <div className="border-b border-[#c3c6d1] bg-blue-50 px-4 py-2 text-center text-xs font-bold text-[#003366] dark:border-[#43474f] dark:bg-blue-950/30 dark:text-blue-200">
+            A carregar movimentos…
+          </div>
+        )}
 
         {/* Movements Extract Table */}
         <div className="flex-1 overflow-y-auto p-4">
@@ -541,6 +559,14 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
               )}
             </tbody>
           </table>
+          <Pagination
+            currentPage={extractPage}
+            totalItems={serverExtract?.movement_count ?? articleMovements.length}
+            pageSize={extractPageSize}
+            onPageChange={setExtractPage}
+            onPageSizeChange={setExtractPageSize}
+            pageSizeOptions={[25, 50, 100, 200]}
+          />
         </div>
 
         {/* Footer Summary & Action Bar */}
@@ -560,6 +586,7 @@ export const ArticleLedgerModal: React.FC<ArticleLedgerModalProps> = ({
             <button
               type="button"
               onClick={exportCsv}
+              title="Descarregar a página atual do extracto em formato CSV"
               className="px-3 py-1.5 bg-green-700 text-white font-bold rounded hover:bg-green-800 text-xs flex items-center space-x-1"
             >
               <span>📥 Exportar CSV</span>

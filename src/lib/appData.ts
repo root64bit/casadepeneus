@@ -611,7 +611,7 @@ export async function loadAppData(scope: AppDataScope = 'all'): Promise<AppData>
         .from('stock_movements')
         .select('id,movement_type,legacy_ref,source_document_id,created_at,quantity_in,quantity_out,unit_cost,products(code,description),warehouses(id,name),user_profiles(full_name)')
         .order('created_at', { ascending: false })
-        .limit(1000) : skipped(),
+        .limit(100) : skipped(),
       wants('documents', 'entities', 'reports') ? client
         .from('payments')
         .select('id,display_number,payment_date,direction,total_amount,allocated_amount,unapplied_amount,status,customers(name),suppliers(name)')
@@ -1075,6 +1075,10 @@ export interface StockExtractResult {
   avg_cost: number;
   stock_valuation: number;
   can_view_cost: boolean;
+  reconciliation_opening?: number;
+  movement_count: number;
+  limit: number;
+  offset: number;
   movements: Array<{
     id: string;
     created_at: string;
@@ -1103,18 +1107,74 @@ export async function fetchStockMovementExtract(
   productId: string,
   from?: string,
   to?: string,
-  movementType: string = 'ALL'
+  movementType: string = 'ALL',
+  limit: number = 100,
+  offset: number = 0,
 ): Promise<StockExtractResult> {
   const client = requireSupabase();
-  const { data, error } = await client.rpc('get_stock_movement_extract', {
+  const { data, error } = await client.rpc('get_stock_movement_extract_v2', {
     p_product_id: productId,
     p_from: from || null,
     p_to: to || null,
     p_movement_type: movementType,
+    p_limit: limit,
+    p_offset: offset,
   });
 
   if (error) throw new Error(error.message || 'Falha ao carregar extracto de stock.');
   return data as StockExtractResult;
+}
+
+export interface StockMovementsPageResult {
+  rows: StockMovement[];
+  totalCount: number;
+  totalStock: number;
+}
+
+export async function fetchStockMovementsPage(
+  from: string,
+  to: string,
+  movementType: 'ALL' | 'entrada' | 'saida',
+  search: string,
+  limit: number,
+  offset: number,
+): Promise<StockMovementsPageResult> {
+  const { data, error } = await requireSupabase().rpc('get_stock_movements_page_v2', {
+    p_from: from || null,
+    p_to: to || null,
+    p_movement_type: movementType === 'entrada' ? 'ENTRADA' : movementType === 'saida' ? 'SAIDA' : 'ALL',
+    p_search: search.trim() || null,
+    p_limit: limit,
+    p_offset: offset,
+  });
+  if (error) throw new Error(error.message || 'Falha ao carregar histórico de movimentos.');
+  const result = data as Row;
+  return {
+    totalCount: numberValue(result.total_count),
+    totalStock: numberValue(result.total_stock),
+    rows: ((result.rows ?? []) as Row[]).map((row) => ({
+      id: row.id,
+      productId: row.product_id,
+      type: row.movement_direction === 'ENTRADA' ? 'entrada' : 'saida',
+      docRef: row.doc_ref ?? '',
+      sourceDocumentId: row.source_document_id ?? undefined,
+      docTypeCode: row.doc_type_code ?? undefined,
+      docTypeName: row.doc_type_name ?? undefined,
+      date: row.created_at,
+      articleCode: row.product_code,
+      articleDescription: row.product_description,
+      quantity: Math.max(numberValue(row.quantity_in), numberValue(row.quantity_out)),
+      quantityIn: numberValue(row.quantity_in),
+      quantityOut: numberValue(row.quantity_out),
+      balanceAfter: numberValue(row.balance_after),
+      entityName: '',
+      operator: row.operator_name ?? 'Sistema',
+      warehouseId: row.warehouse_id ?? undefined,
+      warehouseName: row.warehouse_name ?? undefined,
+      reason: row.reason ?? '',
+      unitCost: numberValue(row.unit_cost),
+    })),
+  };
 }
 
 export async function fetchSalesOperationalReport(

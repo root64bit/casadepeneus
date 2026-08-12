@@ -3,6 +3,9 @@ import { Article, SaleInvoice, SaleItem, Client, ReferenceOption, DocumentRecord
 import { formatMZN } from '../stitch/stitchConfig';
 import { ArticleSearchSelect } from '../components/ArticleSearchSelect';
 import { calculateDocumentLine, calculateDocumentTotals, recalculateSaleItem, recalculateSaleItems } from '../lib/documentCalculations';
+import { SaleBalanceSummary } from '../components/sale/SaleBalanceSummary';
+import { SaleTotalsSection } from '../components/sale/SaleTotalsSection';
+import { SaleDocumentHistory } from '../components/sale/SaleDocumentHistory';
 
 interface NewSaleProps {
   articles: Article[];
@@ -721,22 +724,8 @@ export const NewSale: React.FC<NewSaleProps> = ({
           </div>
 
           {selectedClientId && documentType !== 'CUSTOMER_DELIVERY_NOTE' && (
-            <div className="col-span-1 md:col-span-2 bg-[#003366]/10 p-2 print:p-1 rounded border border-[#003366]/20 flex items-center justify-between text-xs print:text-[10px] font-mono">
-              <div>
-                <span className="font-bold text-[#001e40] dark:text-white">Cliente Activo: {selectedClientName}</span>
-                {previousBalance > 0 && (
-                  <span className="ml-3 text-red-600 font-bold">
-                    Saldo Pendente Anterior: {formatMZN(previousBalance)}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center space-x-4">
-                <span>Valor Documento: <b>{formatMZN(totalFinalAmount)}</b></span>
-                <span className="text-[#006e25] font-extrabold text-sm">
-                  Novo Saldo Acumulado: {formatMZN(newAccumulatedBalance)}
-                </span>
-              </div>
-            </div>
+            <SaleBalanceSummary clientName={selectedClientName} previousBalance={previousBalance}
+              documentAmount={totalFinalAmount} accumulatedBalance={newAccumulatedBalance} />
           )}
         </div>
       </section>
@@ -959,75 +948,12 @@ export const NewSale: React.FC<NewSaleProps> = ({
         </div>
       </section>
 
-      <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-3 print:p-2 rounded-lg shadow-sm print:shadow-none space-y-3 print:space-y-1">
-        <div className="grid grid-cols-12 gap-3 print:gap-2">
-          <div className="col-span-12 md:col-span-6 space-y-2 print:space-y-1 bg-[#f3f4f5] dark:bg-[#282c2e] p-2.5 print:p-1.5 rounded-lg border border-[#c3c6d1] dark:border-[#43474f]">
-            <div className="flex items-center space-x-3 text-xs print:text-[10px]">
-              <label className="font-bold uppercase text-[#191c1d] dark:text-white">Desconto Geral (MZN):</label>
-              <input
-                type="number"
-                min="0"
-                value={generalDiscount}
-                disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
-                onChange={(e) => setGeneralDiscount(Number(e.target.value))}
-                className="w-24 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded p-0.5 text-center font-bold text-[#191c1d] dark:text-white disabled:opacity-60"
-              />
-              <span className="font-bold text-[#191c1d] dark:text-white">Aplicado: {formatMZN(descontoGeralValor)}</span>
-            </div>
+      <SaleTotalsSection generalDiscount={generalDiscount} onGeneralDiscountChange={setGeneralDiscount}
+        notes={notes} onNotesChange={setNotes} disabled={docStatus==='CONFIRMED'||docStatus==='READ_ONLY'}
+        appliedGeneralDiscount={descontoGeralValor} grossTotal={subtotalBruto} lineDiscountTotal={descontoLinhas}
+        netTotal={subtotalLiquido} taxTotal={ivaTotal} grandTotal={totalFinalAmount}>
 
-            <div>
-              <label className="block font-bold uppercase text-[#191c1d] dark:text-white mb-0.5 text-xs print:text-[10px]">Observações / Garantias:</label>
-              <textarea
-                value={notes}
-                disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Observações da fatura ou termos de garantia dos pneus..."
-                className="w-full h-12 print:h-8 bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 print:p-1 text-xs print:text-[10px] text-[#191c1d] dark:text-white focus:outline-none disabled:opacity-60"
-              ></textarea>
-            </div>
-          </div>
-
-          <div className="col-span-12 md:col-span-6 grid grid-cols-2 gap-2 print:gap-1.5">
-            <div className="border border-[#c3c6d1] dark:border-[#43474f] p-2 print:p-1.5 bg-[#f3f4f5] dark:bg-[#282c2e] text-[11px] print:text-[10px] font-mono space-y-1 rounded-lg">
-              <div className="border-b border-[#c3c6d1] dark:border-[#43474f] font-bold flex justify-between text-[#191c1d] dark:text-white uppercase text-[10px] print:text-[9px] pb-0.5">
-                <span>CD</span>
-                <span>BASE IVA</span>
-                <span>TOTAL IVA</span>
-              </div>
-              <div className="flex justify-between font-bold text-[#191c1d] dark:text-white">
-                <span>1 (16%)</span>
-                <span>{subtotalLiquido.toFixed(2)}</span>
-                <span>{ivaTotal.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-[#737780]">
-                <span>0 (0%)</span>
-                <span>0.00</span>
-                <span>0.00</span>
-              </div>
-            </div>
-
-            <div className="border border-[#c3c6d1] dark:border-[#43474f] p-2.5 print:p-1.5 bg-[#f3f4f5] dark:bg-[#282c2e] text-xs print:text-[10px] font-mono space-y-1 flex flex-col justify-between rounded-lg">
-              <div className="flex justify-between text-[#191c1d] dark:text-white">
-                <span className="font-bold">ILIQUIDO:</span>
-                <span>{formatMZN(subtotalBruto)}</span>
-              </div>
-              <div className="flex justify-between text-red-600">
-                <span>DESCONTOS:</span>
-                <span>-{formatMZN(descontoLinhas + descontoGeralValor)}</span>
-              </div>
-              <div className="flex justify-between text-[#191c1d] dark:text-white">
-                <span>IVA:</span>
-                <span>{formatMZN(ivaTotal)}</span>
-              </div>
-              <div className="pt-1 border-t border-[#c3c6d1] dark:border-[#43474f] flex justify-between items-center font-black text-[#191c1d] dark:text-white">
-                <span>TOTAL:</span>
-                <span className="text-xl print:text-sm text-[#006e25] font-extrabold">{formatMZN(totalFinalAmount)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {docStatus === 'CONFIRMING' && (
+      {docStatus === 'CONFIRMING' && (
           <div className="bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-400 p-4 rounded-lg flex flex-wrap items-center justify-between gap-4 shadow-md font-sans print:hidden">
             <div>
               <h4 className="font-black text-amber-900 dark:text-amber-200 text-sm uppercase">
@@ -1116,76 +1042,9 @@ export const NewSale: React.FC<NewSaleProps> = ({
             )}
           </div>
         </div>
-      </section>
-
-      {/* Histórico de Guias / Documentos Emitidos para Impressão */}
-      <section className="bg-white dark:bg-[#1f2325] border border-[#c3c6d1] dark:border-[#43474f] p-4 rounded-lg shadow-sm print:hidden">
-        <div className="flex items-center justify-between mb-3 border-b pb-2 dark:border-slate-700">
-          <div className="flex items-center space-x-2">
-            <span className="material-symbols-outlined text-[#003366] dark:text-[#a7c8ff]">local_shipping</span>
-            <h3 className="font-extrabold text-sm text-[#001e40] dark:text-[#a7c8ff] uppercase tracking-wide">
-              {isGuiaOnlyUser ? 'Histórico de Guias de Remessa Emitidas' : 'Histórico de Documentos Emitidos Recentemente'}
-            </h3>
-          </div>
-          <span className="text-xs text-slate-500 font-mono">Total: {issuedGuias.length} documento(s)</span>
-        </div>
-
-        {issuedGuias.length === 0 ? (
-          <div className="p-4 text-center text-xs text-slate-500 font-mono">
-            Nenhuma guia de remessa emitida recentemente.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse font-mono">
-              <thead>
-                <tr className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-b dark:border-slate-700 font-bold uppercase">
-                  <th className="p-2">Nº Documento</th>
-                  <th className="p-2">Data</th>
-                  <th className="p-2">Tipo</th>
-                  <th className="p-2">Cliente</th>
-                  <th className="p-2 text-right">Valor Total</th>
-                  <th className="p-2">Operador</th>
-                  <th className="p-2 text-center">Acção</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                {issuedGuias.slice(0, 15).map((doc: SaleInvoice) => (
-                  <tr key={doc.id || doc.docNumber} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                    <td className="p-2 font-bold text-[#003366] dark:text-[#a7c8ff]">{doc.docNumber}</td>
-                    <td className="p-2">{doc.date}</td>
-                    <td className="p-2">
-                      <span className="inline-block px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
-                        {doc.documentTypeCode === 'CUSTOMER_DELIVERY_NOTE' || doc.docNumber?.startsWith('GR') ? 'Guia de Remessa' : doc.documentTypeCode === 'CASH_SALE' ? 'VD' : 'Factura'}
-                      </span>
-                    </td>
-                    <td className="p-2 font-bold">{doc.clientName || 'Cliente Pontual'}</td>
-                    <td className="p-2 text-right font-bold text-[#006e25]">{formatMZN(doc.totalAmount)}</td>
-                    <td className="p-2 text-slate-600 dark:text-slate-400">{doc.operatorName || operatorName || 'Operador'}</td>
-                    <td className="p-2 text-center space-x-1">
-                      <button
-                        type="button"
-                        onClick={() => onOpenPrintModal(doc)}
-                        className="inline-flex items-center space-x-1 px-2.5 py-1 bg-[#003366] text-white rounded font-bold text-[11px] hover:bg-[#001e40] transition-all shadow-sm"
-                      >
-                        <span className="material-symbols-outlined text-xs">print</span>
-                        <span>Imprimir</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEditSale(doc)}
-                        className="inline-flex items-center space-x-1 px-2.5 py-1 bg-amber-600 text-white rounded font-bold text-[11px] hover:bg-amber-700 transition-all shadow-sm"
-                      >
-                        <span className="material-symbols-outlined text-xs">edit_note</span>
-                        <span>Editar</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      </SaleTotalsSection>
+      <SaleDocumentHistory documents={issuedGuias} guideOnly={isGuiaOnlyUser} operatorName={operatorName}
+        onPrint={onOpenPrintModal} onEdit={handleOpenEditSale} />
 
       <div className="flex flex-col gap-2 rounded border-t border-[#c3c6d1] bg-[#e7e8e9] px-3 py-2 text-xs font-mono font-bold text-[#191c1d] shadow-sm dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white sm:flex-row sm:items-center sm:justify-between sm:px-6 print:hidden">
         <div className="flex flex-wrap items-center gap-3 sm:gap-6">
