@@ -388,7 +388,9 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ isOpen, on
                     <td className="p-1 border-r border-black font-bold">{item.code}</td>
                     <td className="p-1 border-r border-black font-sans font-medium">{item.description}</td>
                     <td className="p-1 text-center border-r border-black font-bold">{item.quantity}</td>
-                    <td className="p-1 text-right border-r border-black">{formatWholeMeticalValue(item.lineUnitPriceExcl)}</td>
+                    <td className="p-1 text-right border-r border-black">
+                      {formatWholeMeticalValue(isQuotation ? item.unitPrice : item.lineUnitPriceExcl)}
+                    </td>
                     <td className="p-1 text-right border-r border-black font-bold">
                       {item.discountAmount && item.discountAmount > 0
                         ? formatWholeMeticalValue(item.discountAmount)
