@@ -7,6 +7,19 @@ import { SaleBalanceSummary } from '../components/sale/SaleBalanceSummary';
 import { SaleTotalsSection } from '../components/sale/SaleTotalsSection';
 import { SaleDocumentHistory } from '../components/sale/SaleDocumentHistory';
 
+const normalizeClientSearch = (value: string): string => value
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toLocaleLowerCase('pt-PT');
+
+const isWalkInClient = (client: Client): boolean => {
+  const code = String(client.number || client.code || '').trim();
+  const name = normalizeClientSearch(client.name);
+  return code === '1' || code === '01' || name.includes('pontual') || name.includes('cliente final');
+};
+
 interface NewSaleProps {
   articles: Article[];
   clients: Client[];
@@ -70,6 +83,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
   const [clientAddress, setClientAddress] = useState('');
   const [keepAsWalkIn, setKeepAsWalkIn] = useState(false);
   const [showClientInvoices, setShowClientInvoices] = useState(false);
+  const [showClientNameMatches, setShowClientNameMatches] = useState(false);
 
   const immediateTerm = paymentTerms.find((item) => item.requiresImmediatePayment);
   const creditTerm = paymentTerms.find((item) => !item.requiresImmediatePayment);
@@ -198,6 +212,68 @@ export const NewSale: React.FC<NewSaleProps> = ({
     setClientCodeInput(pontual.number || pontual.code || '1');
   }, [clients, selectedClientId]);
 
+  const clientNameMatches = useMemo(() => {
+    const query = normalizeClientSearch(selectedClientName);
+    if (!query || ['cliente pontual', 'cliente final', 'pontual'].includes(query)) return [];
+
+    return clients
+      .filter((client) => client.active !== false && !isWalkInClient(client))
+      .filter((client) => normalizeClientSearch(client.name).includes(query))
+      .sort((a, b) => {
+        const aName = normalizeClientSearch(a.name);
+        const bName = normalizeClientSearch(b.name);
+        const aRank = aName === query ? 0 : aName.startsWith(query) ? 1 : 2;
+        const bRank = bName === query ? 0 : bName.startsWith(query) ? 1 : 2;
+        return aRank - bRank || aName.localeCompare(bName, 'pt-PT');
+      })
+      .slice(0, 8);
+  }, [clients, selectedClientName]);
+
+  const applySelectedClient = (client: Client) => {
+    setSelectedClientId(client.id);
+    setSelectedClientName(client.name);
+    setClientNuit(client.nuit || '');
+    setClientAddress(client.address || '');
+    setClientCodeInput(client.number || client.code || '');
+    setKeepAsWalkIn(false);
+    setShowClientNameMatches(false);
+    setShowClientInvoices(Boolean(documents?.some((document) => document.partyId === client.id && document.outstandingAmount > 0)));
+  };
+
+  const keepManualClientDetailsUnlinked = (clearCopiedDetails = false) => {
+    const walkIn = clients.find(isWalkInClient);
+    setSelectedClientId(walkIn?.id || 'client-pontual');
+    setClientCodeInput('1');
+    if (clearCopiedDetails) {
+      setClientNuit('');
+      setClientAddress('');
+    }
+    setShowClientInvoices(false);
+  };
+
+  const handleClientNameChange = (value: string) => {
+    setSelectedClientName(value);
+
+    const normalizedValue = normalizeClientSearch(value);
+    const exactClient = clients.find(
+      (client) => client.active !== false
+        && !isWalkInClient(client)
+        && normalizeClientSearch(client.name) === normalizedValue,
+    );
+
+    if (exactClient) {
+      applySelectedClient(exactClient);
+      return;
+    }
+
+    // The previously selected client must never receive a document after its
+    // name has been changed to a different value. A new name remains eligible
+    // for the existing automatic customer-creation logic when the document is saved.
+    const previouslySelectedClient = clients.find((client) => client.id === selectedClientId);
+    keepManualClientDetailsUnlinked(Boolean(previouslySelectedClient && !isWalkInClient(previouslySelectedClient)));
+    setShowClientNameMatches(Boolean(normalizedValue));
+  };
+
   const confirmResetIfNeeded = (): boolean => {
     if (items.length > 0 && docStatus !== 'CONFIRMED' && docStatus !== 'READ_ONLY') {
       return window.confirm('Existem artigos/alterações não gravadas. Deseja descartar?');
@@ -272,17 +348,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
     );
 
     if (found) {
-      setSelectedClientId(found.id);
-      setSelectedClientName(found.name);
-      setClientNuit(found.nuit || '');
-      setClientAddress(found.address || '');
-      setClientCodeInput(found.number || found.code || query);
-      setKeepAsWalkIn(false);
-      if (documents?.some((d) => d.partyId === found.id && d.outstandingAmount > 0)) {
-        setShowClientInvoices(true);
-      } else {
-        setShowClientInvoices(false);
-      }
+      applySelectedClient(found);
     } else {
       const pontualInDb = clients.find(
         (c) => c.number === '1' || c.code === '1' || c.name.toLowerCase().includes('pontual')
@@ -293,6 +359,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
         setSelectedClientName('Cliente Pontual');
       }
       setShowClientInvoices(false);
+      setShowClientNameMatches(false);
     }
   };
 
@@ -705,24 +772,52 @@ export const NewSale: React.FC<NewSaleProps> = ({
               </div>
             </div>
 
-            <div>
+            <div className="relative">
               <label className="block font-bold text-[#737780] uppercase mb-0.5 text-[11px] print:text-[9px]">Nome do Cliente</label>
               <input
                 ref={clientNameInputRef}
                 type="text"
                 value={selectedClientName}
                 disabled={docStatus === 'CONFIRMED' || docStatus === 'READ_ONLY'}
-                onChange={(e) => setSelectedClientName(e.target.value)}
+                onChange={(e) => handleClientNameChange(e.target.value)}
+                onFocus={() => {
+                  if (clientNameMatches.length > 0) setShowClientNameMatches(true);
+                }}
+                onBlur={() => window.setTimeout(() => setShowClientNameMatches(false), 150)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
+                    if (clientNameMatches.length > 0) applySelectedClient(clientNameMatches[0]);
                     clientNuitInputRef.current?.focus();
                     clientNuitInputRef.current?.select();
+                  } else if (e.key === 'Escape') {
+                    setShowClientNameMatches(false);
                   }
                 }}
                 placeholder="Nome do Cliente"
                 className="w-full bg-white dark:bg-[#282c2e] dark:text-white font-bold border border-[#c3c6d1] dark:border-[#43474f] rounded p-1.5 print:p-1 text-xs print:text-[10px] focus-ring disabled:opacity-60"
               />
+              {showClientNameMatches && clientNameMatches.length > 0 && docStatus !== 'CONFIRMED' && docStatus !== 'READ_ONLY' && (
+                <div className="absolute z-30 mt-1 max-h-52 w-full overflow-y-auto rounded border border-[#9aa5b5] bg-white shadow-lg dark:border-[#59606a] dark:bg-[#282c2e] print:hidden">
+                  <div className="border-b border-slate-200 px-2 py-1 text-[10px] font-bold uppercase text-slate-500 dark:border-slate-600 dark:text-slate-300">
+                    Clientes encontrados — Enter seleciona o primeiro
+                  </div>
+                  {clientNameMatches.map((client) => (
+                    <button
+                      key={client.id}
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => applySelectedClient(client)}
+                      className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-2 py-2 text-left text-xs hover:bg-blue-50 last:border-b-0 dark:border-slate-700 dark:hover:bg-slate-700"
+                    >
+                      <span className="font-bold text-[#003366] dark:text-[#a7c8ff]">{client.name}</span>
+                      <span className="shrink-0 font-mono text-[10px] text-slate-600 dark:text-slate-300">
+                        Cód. {client.number || client.code || '—'}{client.nuit ? ` · NUIT ${client.nuit}` : ''}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <label className="mt-1 flex items-center gap-1.5 text-[10px] text-[#43474f] dark:text-[#c3c6d1] print:hidden">
                 <input
                   type="checkbox"
