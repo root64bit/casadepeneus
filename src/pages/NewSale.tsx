@@ -17,7 +17,9 @@ const normalizeClientSearch = (value: string): string => value
 const isWalkInClient = (client: Client): boolean => {
   const code = String(client.number || client.code || '').trim();
   const name = normalizeClientSearch(client.name);
-  return code === '1' || code === '01' || name.includes('pontual') || name.includes('cliente final');
+  // Code 1 is reserved for Cliente Pontual. Do not treat the legacy code 01
+  // as walk-in: it belongs to the existing AUTO COMPANY customer.
+  return code === '1' || name.includes('pontual') || name.includes('cliente final');
 };
 
 interface NewSaleProps {
@@ -325,8 +327,9 @@ export const NewSale: React.FC<NewSaleProps> = ({
       return;
     }
 
-    // Code 1 (or 01) is ALWAYS reserved for Cliente Pontual
-    if (clean === '1' || clean === '01') {
+    // Code 1 is ALWAYS reserved for Cliente Pontual. The historical code 01
+    // remains available to its existing customer (AUTO COMPANY).
+    if (clean === '1') {
       const pontualInDb = clients.find(
         (c) => c.number === '1' || c.code === '1' || c.name.toLowerCase().includes('pontual') || c.name.toLowerCase().includes('final')
       ) || clients[0];
