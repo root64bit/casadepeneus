@@ -261,7 +261,12 @@ export const NewSale: React.FC<NewSaleProps> = ({
         && normalizeClientSearch(client.name) === normalizedValue,
     );
 
-    if (exactClient) {
+    // A one-letter client name must not hide the autocomplete list. In this
+    // database there is a client named "a"; choosing it while the operator has
+    // only typed "A" prevents names such as AUTO COMPANY or AUGUSTO appearing.
+    // Full names continue to link automatically, while Enter/click can select
+    // any suggestion at any point.
+    if (exactClient && normalizedValue.length > 1) {
       applySelectedClient(exactClient);
       return;
     }
