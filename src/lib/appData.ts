@@ -76,10 +76,38 @@ export async function createArticle(article: Omit<Article, 'id'>): Promise<void>
 
 export async function updateArticle(article: Article): Promise<void> {
   const client = requireSupabase();
-  const { error } = await client
+  const cleanCode = article.code.toUpperCase().trim();
+
+  // Try RPC update_operational_product_v2
+  const { error } = await client.rpc('update_operational_product_v2', {
+    p_product: {
+      id: article.id,
+      code: cleanCode,
+      description: article.description.trim(),
+      unit: article.unit,
+      min_stock: article.minStock || 0,
+      cost_price: article.costPrice || 0,
+      profit_margin: article.profitMargin || 0,
+      sale_price_excl: article.sellPrice || 0,
+      sale_price_incl: article.sellPriceWithIva || 0,
+      notes: article.size ? `Medida: ${article.size}` : null,
+      category_id: article.categoryId || null,
+      category_name: article.categoryName || article.category || null,
+      brand_id: article.brandId || null,
+      brand_name: article.brandName || article.brand || null,
+      brand: article.brand || null,
+      unit_id: article.unitId || null,
+      tax_code_id: article.taxCodeId || null,
+    },
+  });
+
+  if (!error) return;
+
+  // Fallback to direct update if RPC fails
+  const fallback = await client
     .from('products')
     .update({
-      code: article.code.toUpperCase().trim(),
+      code: cleanCode,
       description: article.description.trim(),
       min_stock: article.minStock || 0,
       avg_cost: article.costPrice || 0,
@@ -88,12 +116,15 @@ export async function updateArticle(article: Article): Promise<void> {
       sale_price_incl: article.sellPriceWithIva || 0,
       category_id: article.categoryId || null,
       brand_id: article.brandId || null,
-      unit_id: article.unitId,
-      tax_code_id: article.taxCodeId,
+      unit_id: article.unitId || null,
+      tax_code_id: article.taxCodeId || null,
+      updated_at: new Date().toISOString(),
     })
     .eq('id', article.id);
 
-  if (error) throw new Error(error.message || 'Falha ao atualizar artigo.');
+  if (fallback.error) {
+    throw new Error(error.message || fallback.error.message || 'Falha ao atualizar artigo.');
+  }
 }
 
 export async function deleteArticle(id: string): Promise<void> {
@@ -245,7 +276,8 @@ export async function postStockMovement(movement: StockMovement): Promise<void> 
     await client
       .from('products')
       .update({
-        sell_price: newSellPrice,
+        sale_price_excl: newSellPrice,
+        sale_price_incl: movement.sellPriceWithIva,
         updated_at: new Date().toISOString(),
       })
       .eq('id', articleResult.data.id);
