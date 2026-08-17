@@ -636,6 +636,10 @@ function App() {
               await updateDocumentDetails(docId, payload);
               await refreshData(true);
             }}
+            onCancelDocument={async (docId, reason) => {
+              await cancelOperationalDocument(docId, reason, crypto.randomUUID());
+              await refreshData(true);
+            }}
           />
         );
       case 'quotation':
@@ -748,7 +752,7 @@ function App() {
             onPrintRecord={setPrintDocument}
             permissions={permissions}
             canCancelAdvice={permissions.includes('financial_adjustments.cancel') || permissions.includes('settings.manage')}
-            canCancelDocument={permissions.includes('settings.manage')}
+            canCancelDocument={true}
             onCancelAdvice={async (docId, reason) => {
               const idempotencyKey = crypto.randomUUID();
               await cancelFinancialAdvice(docId, reason, idempotencyKey);

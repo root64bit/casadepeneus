@@ -34,6 +34,7 @@ interface NewSaleProps {
   documents?: DocumentRecord[];
   permissions?: string[];
   onUpdateDocument?: (documentId: string, payload: { documentDate?: string; clientName?: string; clientNuit?: string; clientAddress?: string; grandTotal?: number; notes?: string; items?: SaleItem[]; generalDiscount?: number; keepAsWalkIn?: boolean }) => Promise<void>;
+  onCancelDocument?: (documentId: string, reason: string) => Promise<void>;
 }
 
 export const NewSale: React.FC<NewSaleProps> = ({
@@ -49,6 +50,7 @@ export const NewSale: React.FC<NewSaleProps> = ({
   documents,
   permissions = [],
   onUpdateDocument,
+  onCancelDocument,
 }) => {
   const isGuiaOnlyUser = permissions.length > 0 && !permissions.includes('settings.manage') && !permissions.includes('products.view');
 
@@ -187,6 +189,41 @@ export const NewSale: React.FC<NewSaleProps> = ({
       setEditError(err?.message || 'Falha ao guardar alterações do documento.');
     } finally {
       setIsSavingEdit(false);
+    }
+  };
+
+  // Cancellation Modal State for History
+  const [cancellingSale, setCancellingSale] = useState<SaleInvoice | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
+  const [cancelError, setCancelError] = useState('');
+  const [cancelSuccessMsg, setCancelSuccessMsg] = useState('');
+
+  const handleOpenCancelSale = (doc: SaleInvoice) => {
+    setCancellingSale(doc);
+    setCancelReason('');
+    setCancelError('');
+  };
+
+  const handleExecuteCancelSale = async () => {
+    if (!cancellingSale || !cancelReason.trim() || isSubmittingCancel) return;
+    if (!onCancelDocument) {
+      setCancelError('Operação de cancelamento indisponível.');
+      return;
+    }
+    try {
+      setIsSubmittingCancel(true);
+      setCancelError('');
+      await onCancelDocument(cancellingSale.id, cancelReason.trim());
+      const docNum = cancellingSale.docNumber || 'Documento';
+      setCancellingSale(null);
+      setCancelReason('');
+      setCancelSuccessMsg(`Guia / Documento ${docNum} cancelado com sucesso! O stock foi devolvido ao inventário.`);
+      setTimeout(() => setCancelSuccessMsg(''), 6000);
+    } catch (err: any) {
+      setCancelError(err?.message || 'Falha ao cancelar o documento.');
+    } finally {
+      setIsSubmittingCancel(false);
     }
   };
 
@@ -1272,8 +1309,20 @@ export const NewSale: React.FC<NewSaleProps> = ({
           </div>
         </div>
       </SaleTotalsSection>
-      <SaleDocumentHistory documents={issuedGuias} guideOnly={isGuiaOnlyUser} operatorName={operatorName}
-        onPrint={onOpenPrintModal} onEdit={handleOpenEditSale} />
+      {cancelSuccessMsg && (
+        <div className="p-3 bg-emerald-100 border border-emerald-300 text-emerald-800 font-bold text-xs rounded-lg flex items-center space-x-2">
+          <span className="material-symbols-outlined text-sm">check_circle</span>
+          <span>{cancelSuccessMsg}</span>
+        </div>
+      )}
+      <SaleDocumentHistory
+        documents={issuedGuias}
+        guideOnly={isGuiaOnlyUser}
+        operatorName={operatorName}
+        onPrint={onOpenPrintModal}
+        onEdit={handleOpenEditSale}
+        onCancel={onCancelDocument ? handleOpenCancelSale : undefined}
+      />
 
       <div className="flex flex-col gap-2 rounded border-t border-[#c3c6d1] bg-[#e7e8e9] px-3 py-2 text-xs font-mono font-bold text-[#191c1d] shadow-sm dark:border-[#43474f] dark:bg-[#282c2e] dark:text-white sm:flex-row sm:items-center sm:justify-between sm:px-6 print:hidden">
         <div className="flex flex-wrap items-center gap-3 sm:gap-6">
@@ -1669,6 +1718,68 @@ export const NewSale: React.FC<NewSaleProps> = ({
                 className="rounded bg-[#003366] px-4 py-2 text-xs font-bold text-white hover:bg-[#002244] disabled:opacity-50"
               >
                 {isSavingEdit ? 'A guardar…' : 'Gravar Alterações'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancellation Modal */}
+      {cancellingSale && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 print:hidden">
+          <div className="w-full max-w-md rounded-lg border bg-white p-6 shadow-2xl dark:bg-[#1f2325] dark:border-[#43474f] space-y-4">
+            <div className="flex items-center space-x-2 border-b pb-3 text-red-700 dark:text-red-400">
+              <span className="material-symbols-outlined text-2xl">cancel</span>
+              <h3 className="font-black text-sm uppercase tracking-wide">
+                Cancelar Documento {cancellingSale.docNumber}
+              </h3>
+            </div>
+
+            {cancelError && (
+              <div className="p-3 rounded bg-red-100 border border-red-300 text-red-800 font-bold text-xs">
+                ⚠️ {cancelError}
+              </div>
+            )}
+
+            <div className="space-y-2 text-xs font-mono bg-slate-50 dark:bg-[#282c2e] p-3 rounded border">
+              <div>Documento: <b>{cancellingSale.docNumber}</b></div>
+              <div>Cliente: <b>{cancellingSale.clientName || 'Cliente Pontual'}</b></div>
+              <div>Total: <b>{formatMZN(cancellingSale.totalAmount)}</b></div>
+              <div className="text-red-700 dark:text-red-300 font-bold">
+                ⚠️ Ao cancelar este documento, todos os artigos serão devolvidos imediatamente ao inventário/stock.
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold uppercase text-slate-700 dark:text-slate-300 mb-1">
+                Motivo Obrigatório de Cancelamento *
+              </label>
+              <input
+                type="text"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="Ex: Engano na quantidade, cliente desistiu..."
+                className="w-full rounded border p-2 text-xs font-sans dark:bg-[#282c2e] dark:border-gray-600 dark:text-white"
+                autoFocus
+              />
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                disabled={isSubmittingCancel}
+                onClick={() => setCancellingSale(null)}
+                className="px-4 py-2 rounded border font-bold text-xs uppercase hover:bg-slate-100 dark:hover:bg-[#282c2e]"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                disabled={!cancelReason.trim() || isSubmittingCancel}
+                onClick={handleExecuteCancelSale}
+                className="px-4 py-2 rounded bg-red-700 font-bold text-xs uppercase text-white hover:bg-red-800 disabled:opacity-50"
+              >
+                {isSubmittingCancel ? 'A cancelar…' : 'Confirmar Cancelamento'}
               </button>
             </div>
           </div>
